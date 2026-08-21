@@ -1,0 +1,15 @@
+# Local code intelligence index
+.gitnexus/
+
+# Local agent workflow (not public project source)
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+CONTEXT-MAP.md
+docs/agents/
+.scratch/
+.hermes/
+.agent/
+.agents/
+.claude/
+.codex/
