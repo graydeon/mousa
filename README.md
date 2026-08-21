@@ -6,7 +6,7 @@ Mousa is a local-first retrieval and memory backbone for agents and other softwa
 
 ## Why Mousa?
 
-*Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
+*Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—the titan Goddess of Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
 
 ## The problem
 
