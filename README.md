@@ -1,4 +1,4 @@
-![Mousa — an experimental memory instrument](assets/mousa-readme-banner.png)
+![Mousa — an experimental memory instrument](assets/mousa_readme_banner_v2_1600x480.png)
 
 > **Status:** Repository initialization / pre-alpha. Mousa does not yet provide a working engine, supported installation path, or stable API.
 
