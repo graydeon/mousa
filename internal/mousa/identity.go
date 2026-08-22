@@ -7,46 +7,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash"
+	"unicode/utf8"
 )
 
-type DocumentID [sha256.Size]byte
+type SourceID [sha256.Size]byte
 
-type ChunkID [sha256.Size]byte
+type ObservationID [sha256.Size]byte
 
 type SHA256 [sha256.Size]byte
 
-func NewDocumentID(sourceID string, normalizedContentSHA256 SHA256) DocumentID {
-	digest := sha256.New()
-	writeTuple(digest, []byte("mousa.document.v1"), []byte(sourceID), normalizedContentSHA256[:])
-	return DocumentID(digest.Sum(nil))
-}
-
-func NewChunkID(documentID DocumentID, ordinal, startByte, endByte uint64, textSHA256 SHA256) (ChunkID, error) {
-	if endByte < startByte {
-		return ChunkID{}, newValidationError("end_byte", ValidationCodeInvalidRange, "must be greater than or equal to start_byte", nil)
+func NewSourceID(namespace, externalSourceID string) (SourceID, error) {
+	if err := validateIdentityInput("namespace", namespace); err != nil {
+		return SourceID{}, err
+	}
+	if err := validateIdentityInput("external_source_id", externalSourceID); err != nil {
+		return SourceID{}, err
 	}
 	digest := sha256.New()
-	var ordinalBytes, startBytes, endBytes [8]byte
-	binary.BigEndian.PutUint64(ordinalBytes[:], ordinal)
-	binary.BigEndian.PutUint64(startBytes[:], startByte)
-	binary.BigEndian.PutUint64(endBytes[:], endByte)
-	writeTuple(
-		digest,
-		[]byte("mousa.chunk.v1"),
-		documentID[:],
-		ordinalBytes[:],
-		startBytes[:],
-		endBytes[:],
-		textSHA256[:],
-	)
-	return ChunkID(digest.Sum(nil)), nil
+	writeTuple(digest, []byte("mousa.source.v1"), []byte(namespace), []byte(externalSourceID))
+	return SourceID(digest.Sum(nil)), nil
 }
 
-func (id DocumentID) String() string {
+func NewObservationID(sourceID SourceID, externalObservationID string) (ObservationID, error) {
+	if err := validateIdentityInput("external_observation_id", externalObservationID); err != nil {
+		return ObservationID{}, err
+	}
+	digest := sha256.New()
+	writeTuple(digest, []byte("mousa.observation.v1"), sourceID[:], []byte(externalObservationID))
+	return ObservationID(digest.Sum(nil)), nil
+}
+
+func (id SourceID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
-func (id ChunkID) String() string {
+func (id ObservationID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
@@ -54,32 +49,32 @@ func (digest SHA256) String() string {
 	return hex.EncodeToString(digest[:])
 }
 
-func ParseDocumentID(value string) (DocumentID, error) {
+func ParseSourceID(value string) (SourceID, error) {
 	decoded, err := decodeLowerHex("id", ValidationCodeInvalidID, value)
 	if err != nil {
-		return DocumentID{}, err
+		return SourceID{}, err
 	}
-	return DocumentID(decoded), nil
+	return SourceID(decoded), nil
 }
 
-func ParseChunkID(value string) (ChunkID, error) {
+func ParseObservationID(value string) (ObservationID, error) {
 	decoded, err := decodeLowerHex("id", ValidationCodeInvalidID, value)
 	if err != nil {
-		return ChunkID{}, err
+		return ObservationID{}, err
 	}
-	return ChunkID(decoded), nil
+	return ObservationID(decoded), nil
 }
 
-func (id DocumentID) MarshalJSON() ([]byte, error) {
+func (id SourceID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id.String())
 }
 
-func (id *DocumentID) UnmarshalJSON(data []byte) error {
+func (id *SourceID) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return newValidationError("id", ValidationCodeInvalidID, "must be a lowercase SHA-256 value", err)
 	}
-	parsed, err := ParseDocumentID(value)
+	parsed, err := ParseSourceID(value)
 	if err != nil {
 		return err
 	}
@@ -87,16 +82,16 @@ func (id *DocumentID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (id ChunkID) MarshalJSON() ([]byte, error) {
+func (id ObservationID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id.String())
 }
 
-func (id *ChunkID) UnmarshalJSON(data []byte) error {
+func (id *ObservationID) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return newValidationError("id", ValidationCodeInvalidID, "must be a lowercase SHA-256 value", err)
 	}
-	parsed, err := ParseChunkID(value)
+	parsed, err := ParseObservationID(value)
 	if err != nil {
 		return err
 	}
@@ -143,6 +138,16 @@ func decodeLowerHex(field string, code ValidationCode, value string) ([sha256.Si
 		return result, newValidationError(field, code, "must contain 64 lowercase hexadecimal characters", fmt.Errorf("decode hexadecimal value: %w", err))
 	}
 	return result, nil
+}
+
+func validateIdentityInput(field, value string) error {
+	if value == "" {
+		return newValidationError(field, ValidationCodeInvalidValue, "must not be empty", nil)
+	}
+	if !utf8.ValidString(value) {
+		return newValidationError(field, ValidationCodeInvalidValue, "must be valid UTF-8", nil)
+	}
+	return nil
 }
 
 func writeTuple(digest hash.Hash, fields ...[]byte) {
