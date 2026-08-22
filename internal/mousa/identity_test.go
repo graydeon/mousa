@@ -2,103 +2,126 @@ package mousa
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 )
 
-func TestDocumentIDMatchesCanonicalVector(t *testing.T) {
-	digestBytes, err := hex.DecodeString("e9024f1a07d29d52ad3aa5e1a18e94db1f3a9fd32b89e39d47c472cd99071e13")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var digest [32]byte
-	copy(digest[:], digestBytes)
+const (
+	canonicalSourceID      = "f111237310ae4db59c528c5e0e53581384059910adab736913c6e29f0ef91d41"
+	canonicalObservationID = "8ad5e465541e71ad6246c21fdd9da960736394e1ac4688e034471910784ea12a"
+)
 
-	got := NewDocumentID("source:a", SHA256(digest))
-	const want = "70ec22ca22cbfee77d6be8ce3f542c805efa64a210781ff3fd225ae8026400f3"
-	if got.String() != want {
-		t.Fatalf("NewDocumentID() = %q, want %q", got.String(), want)
+func TestSourceIDMatchesCanonicalVector(t *testing.T) {
+	got, err := NewSourceID("example.mailbox", "account:alpha")
+	if err != nil {
+		t.Fatalf("NewSourceID(): %v", err)
+	}
+	if got.String() != canonicalSourceID {
+		t.Fatalf("NewSourceID() = %q, want %q", got.String(), canonicalSourceID)
 	}
 }
 
-func TestDocumentIDStrictParsingAndJSON(t *testing.T) {
-	const valid = "70ec22ca22cbfee77d6be8ce3f542c805efa64a210781ff3fd225ae8026400f3"
-	id, err := ParseDocumentID(valid)
-	if err != nil {
-		t.Fatalf("ParseDocumentID(valid): %v", err)
+func TestSourceIDRejectsInvalidInputs(t *testing.T) {
+	tests := []struct {
+		name, namespace, externalSourceID, field string
+	}{
+		{"empty namespace", "", "account:alpha", "namespace"},
+		{"invalid namespace UTF-8", string([]byte{0xff}), "account:alpha", "namespace"},
+		{"empty external source ID", "example.mailbox", "", "external_source_id"},
+		{"invalid external source ID UTF-8", "example.mailbox", string([]byte{0xff}), "external_source_id"},
 	}
-	encoded, err := json.Marshal(id)
-	if err != nil {
-		t.Fatalf("json.Marshal(): %v", err)
-	}
-	if string(encoded) != `"`+valid+`"` {
-		t.Fatalf("json.Marshal() = %s", encoded)
-	}
-
-	var decoded DocumentID
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal(valid): %v", err)
-	}
-	if decoded != id {
-		t.Fatalf("decoded ID = %s, want %s", decoded, id)
-	}
-
-	for _, input := range []string{
-		strings.ToUpper(valid),
-		valid[:63],
-		valid + "0",
-		strings.Repeat("g", 64),
-	} {
-		t.Run(input, func(t *testing.T) {
-			_, err := ParseDocumentID(input)
-			var validationErr *ValidationError
-			if !errors.As(err, &validationErr) {
-				t.Fatalf("error = %v, want *ValidationError", err)
-			}
-			if validationErr.Field != "id" || validationErr.Code != ValidationCodeInvalidID {
-				t.Fatalf("validation evidence = %q/%q, want id/%q", validationErr.Field, validationErr.Code, ValidationCodeInvalidID)
-			}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewSourceID(test.namespace, test.externalSourceID)
+			requireValidationError(t, err, test.field, ValidationCodeInvalidValue)
 		})
 	}
-
-	if err := json.Unmarshal([]byte(`"`+strings.ToUpper(valid)+`"`), &decoded); err == nil {
-		t.Fatal("json.Unmarshal(uppercase) succeeded")
-	}
 }
 
-func TestChunkIDMatchesCanonicalVector(t *testing.T) {
-	documentID, err := ParseDocumentID("70ec22ca22cbfee77d6be8ce3f542c805efa64a210781ff3fd225ae8026400f3")
+func TestSourceIDPreservesExactUTF8Bytes(t *testing.T) {
+	composedText := string([]byte{'c', 'a', 'f', 0xc3, 0xa9})
+	decomposedText := string([]byte{'c', 'a', 'f', 'e', 0xcc, 0x81})
+	composed, err := NewSourceID("example.mailbox", composedText)
 	if err != nil {
 		t.Fatal(err)
 	}
-	digestBytes, err := hex.DecodeString("1a989ea86150171c687b0727f218eedbb94c4665a7da9b0add1bf5de607f2bf1")
+	decomposed, err := NewSourceID("example.mailbox", decomposedText)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var digest SHA256
-	copy(digest[:], digestBytes)
-
-	got, err := NewChunkID(documentID, 3, 12, 22, digest)
+	spaced, err := NewSourceID("example.mailbox", " "+composedText+" ")
 	if err != nil {
-		t.Fatalf("NewChunkID(): %v", err)
+		t.Fatal(err)
 	}
-	const want = "14d47ddbacb490a34c4223517eb4b841546d8c6980b4116198fdf0c1ff4529cf"
-	if got.String() != want {
-		t.Fatalf("NewChunkID() = %q, want %q", got.String(), want)
+	if composed == decomposed || composed == spaced {
+		t.Fatal("NewSourceID normalized distinct valid UTF-8 inputs")
 	}
 }
 
-func TestChunkIDRejectsInvalidRange(t *testing.T) {
-	_, err := NewChunkID(DocumentID{}, 0, 2, 1, SHA256{})
-	var validationErr *ValidationError
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("error = %v, want *ValidationError", err)
+func TestSourceIDStrictParsingAndJSON(t *testing.T) {
+	testStrictID(t, canonicalSourceID, func(value string) (string, error) {
+		id, err := ParseSourceID(value)
+		return id.String(), err
+	}, func(data []byte) (string, error) {
+		var id SourceID
+		err := json.Unmarshal(data, &id)
+		return id.String(), err
+	})
+}
+
+func TestObservationIDMatchesCanonicalVector(t *testing.T) {
+	sourceID := mustParseSourceID(t, canonicalSourceID)
+	got, err := NewObservationID(sourceID, "message:42")
+	if err != nil {
+		t.Fatalf("NewObservationID(): %v", err)
 	}
-	if validationErr.Field != "end_byte" || validationErr.Code != ValidationCodeInvalidRange {
-		t.Fatalf("validation evidence = %q/%q, want end_byte/%q", validationErr.Field, validationErr.Code, ValidationCodeInvalidRange)
+	if got.String() != canonicalObservationID {
+		t.Fatalf("NewObservationID() = %q, want %q", got.String(), canonicalObservationID)
+	}
+}
+
+func TestObservationIDRejectsInvalidInputs(t *testing.T) {
+	sourceID := mustParseSourceID(t, canonicalSourceID)
+	for _, value := range []string{"", string([]byte{0xff})} {
+		_, err := NewObservationID(sourceID, value)
+		requireValidationError(t, err, "external_observation_id", ValidationCodeInvalidValue)
+	}
+}
+
+func TestObservationIDStrictParsingAndJSON(t *testing.T) {
+	testStrictID(t, canonicalObservationID, func(value string) (string, error) {
+		id, err := ParseObservationID(value)
+		return id.String(), err
+	}, func(data []byte) (string, error) {
+		var id ObservationID
+		err := json.Unmarshal(data, &id)
+		return id.String(), err
+	})
+}
+
+func TestSourceIDAndObservationIDAreDeterministic(t *testing.T) {
+	firstSource, err := NewSourceID("example.mailbox", "account:alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSource, err := NewSourceID("example.mailbox", "account:alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstSource != secondSource {
+		t.Fatal("repeated source identity generation differed")
+	}
+	firstObservation, err := NewObservationID(firstSource, "message:42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondObservation, err := NewObservationID(firstSource, "message:42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstObservation != secondObservation {
+		t.Fatal("repeated observation identity generation differed")
 	}
 }
 
@@ -109,21 +132,13 @@ func TestSHA256StrictParsingAndJSON(t *testing.T) {
 		t.Fatalf("ParseSHA256(valid): %v", err)
 	}
 	encoded, err := json.Marshal(digest)
-	if err != nil {
-		t.Fatalf("json.Marshal(): %v", err)
+	if err != nil || string(encoded) != `"`+valid+`"` {
+		t.Fatalf("json.Marshal() = %s, %v", encoded, err)
 	}
-	if string(encoded) != `"`+valid+`"` {
-		t.Fatalf("json.Marshal() = %s", encoded)
-	}
-
-	for _, input := range []string{strings.ToUpper(valid), valid[:63], valid + "0", strings.Repeat("g", 64)} {
+	for _, input := range invalidHexValues(valid) {
 		_, err := ParseSHA256(input)
-		var validationErr *ValidationError
-		if !errors.As(err, &validationErr) || validationErr.Field != "sha256" || validationErr.Code != ValidationCodeInvalidDigest {
-			t.Fatalf("ParseSHA256(%q) error = %#v, want sha256/%q", input, validationErr, ValidationCodeInvalidDigest)
-		}
+		requireValidationError(t, err, "sha256", ValidationCodeInvalidDigest)
 	}
-
 	var decoded SHA256
 	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != digest {
 		t.Fatalf("json.Unmarshal(valid) = %s, %v", decoded, err)
@@ -133,53 +148,7 @@ func TestSHA256StrictParsingAndJSON(t *testing.T) {
 	}
 }
 
-func TestChunkIDStrictParsingAndJSON(t *testing.T) {
-	const valid = "14d47ddbacb490a34c4223517eb4b841546d8c6980b4116198fdf0c1ff4529cf"
-	id, err := ParseChunkID(valid)
-	if err != nil {
-		t.Fatalf("ParseChunkID(valid): %v", err)
-	}
-	encoded, err := json.Marshal(id)
-	if err != nil || string(encoded) != `"`+valid+`"` {
-		t.Fatalf("json.Marshal() = %s, %v", encoded, err)
-	}
-	var decoded ChunkID
-	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != id {
-		t.Fatalf("json.Unmarshal(valid) = %s, %v", decoded, err)
-	}
-	for _, input := range []string{strings.ToUpper(valid), valid[:63], valid + "0", strings.Repeat("g", 64)} {
-		_, err := ParseChunkID(input)
-		var validationErr *ValidationError
-		if !errors.As(err, &validationErr) || validationErr.Field != "id" || validationErr.Code != ValidationCodeInvalidID {
-			t.Fatalf("ParseChunkID(%q) error = %#v, want id/%q", input, validationErr, ValidationCodeInvalidID)
-		}
-	}
-}
-
-func TestDocumentIDAndChunkIDAreDeterministic(t *testing.T) {
-	digest, err := ParseSHA256("e9024f1a07d29d52ad3aa5e1a18e94db1f3a9fd32b89e39d47c472cd99071e13")
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstDocument := NewDocumentID("source:a", digest)
-	secondDocument := NewDocumentID("source:a", digest)
-	if firstDocument != secondDocument {
-		t.Fatal("repeated document identity generation differed")
-	}
-	firstChunk, err := NewChunkID(firstDocument, 3, 12, 22, digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondChunk, err := NewChunkID(firstDocument, 3, 12, 22, digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if firstChunk != secondChunk {
-		t.Fatal("repeated chunk identity generation differed")
-	}
-}
-
-func TestDocumentIDTupleEncodingDistinguishesFieldBoundaries(t *testing.T) {
+func TestTupleEncodingDistinguishesFieldBoundaries(t *testing.T) {
 	left := sha256.New()
 	writeTuple(left, []byte("ab"), []byte("c"))
 	right := sha256.New()
@@ -187,4 +156,37 @@ func TestDocumentIDTupleEncodingDistinguishesFieldBoundaries(t *testing.T) {
 	if string(left.Sum(nil)) == string(right.Sum(nil)) {
 		t.Fatal("length-prefixed tuple encoding collided across field boundaries")
 	}
+}
+
+func testStrictID(t testing.TB, valid string, parse func(string) (string, error), unmarshal func([]byte) (string, error)) {
+	t.Helper()
+	got, err := parse(valid)
+	if err != nil || got != valid {
+		t.Fatalf("parse(valid) = %q, %v", got, err)
+	}
+	for _, input := range invalidHexValues(valid) {
+		_, err := parse(input)
+		requireValidationError(t, err, "id", ValidationCodeInvalidID)
+	}
+	got, err = unmarshal([]byte(`"` + valid + `"`))
+	if err != nil || got != valid {
+		t.Fatalf("unmarshal(valid) = %q, %v", got, err)
+	}
+	for _, data := range [][]byte{[]byte(`null`), []byte(`1`), []byte(`{}`), []byte(`[]`), []byte(`"` + strings.ToUpper(valid) + `"`)} {
+		_, err := unmarshal(data)
+		requireValidationError(t, err, "id", ValidationCodeInvalidID)
+	}
+}
+
+func invalidHexValues(valid string) []string {
+	return []string{strings.ToUpper(valid), valid[:63], valid + "0", strings.Repeat("g", 64)}
+}
+
+func mustParseSourceID(t testing.TB, value string) SourceID {
+	t.Helper()
+	id, err := ParseSourceID(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }
