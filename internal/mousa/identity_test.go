@@ -100,6 +100,276 @@ func TestObservationIDStrictParsingAndJSON(t *testing.T) {
 	})
 }
 
+func TestArtifactIDMatchesCanonicalVector(t *testing.T) {
+	observationID, err := ParseObservationID(canonicalObservationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got ArtifactID
+	got, err = NewArtifactID(observationID, "raw-message")
+	if err != nil {
+		t.Fatalf("NewArtifactID(): %v", err)
+	}
+	const want = "4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839"
+	if got.String() != want {
+		t.Fatalf("NewArtifactID() = %q, want %q", got.String(), want)
+	}
+}
+
+func TestArtifactIDRejectsInvalidArtifactKey(t *testing.T) {
+	observationID := mustParseObservationID(t, canonicalObservationID)
+	for _, value := range []string{"", string([]byte{0xff})} {
+		_, err := NewArtifactID(observationID, value)
+		requireValidationError(t, err, "artifact_key", ValidationCodeInvalidValue)
+	}
+}
+
+func TestArtifactIDPreservesExactUTF8Bytes(t *testing.T) {
+	observationID := mustParseObservationID(t, canonicalObservationID)
+	composed, err := NewArtifactID(observationID, "caf\u00e9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decomposed, err := NewArtifactID(observationID, "cafe\u0301")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spaced, err := NewArtifactID(observationID, " caf\u00e9 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if composed == decomposed || composed == spaced {
+		t.Fatal("NewArtifactID normalized distinct valid UTF-8 inputs")
+	}
+}
+
+func TestArtifactIDChangesWithObservation(t *testing.T) {
+	first := mustParseObservationID(t, canonicalObservationID)
+	second := first
+	second[0] ^= 1
+	firstID, err := NewArtifactID(first, "raw-message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondID, err := NewArtifactID(second, "raw-message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstID == secondID {
+		t.Fatal("different Observation IDs produced the same Artifact ID")
+	}
+}
+
+func TestArtifactIDStrictParsingAndJSON(t *testing.T) {
+	const valid = "4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839"
+	testStrictID(t, valid, func(value string) (string, error) {
+		id, err := ParseArtifactID(value)
+		return id.String(), err
+	}, func(data []byte) (string, error) {
+		var id ArtifactID
+		err := json.Unmarshal(data, &id)
+		return id.String(), err
+	})
+}
+
+func TestRepresentationIDMatchesCanonicalVector(t *testing.T) {
+	artifactID, err := ParseArtifactID("4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parametersSHA256, err := ParseSHA256("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentSHA256, err := ParseSHA256("f0df22d2bcadf69b874b74b12a790a236cf590850b779e427dcdebd4d464ae3d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got RepresentationID
+	got, err = NewRepresentationID(
+		[]DerivationInput{NewArtifactDerivationInput(artifactID)},
+		"example.text-extractor",
+		"1.0.0",
+		parametersSHA256,
+		"text/plain; charset=utf-8",
+		contentSHA256,
+	)
+	if err != nil {
+		t.Fatalf("NewRepresentationID(): %v", err)
+	}
+	const want = "c30b39a8e1595804b964dfb86b4ce16f8fbcffe0af4c65d0c23742c1cc6774ae"
+	if got.String() != want {
+		t.Fatalf("NewRepresentationID() = %q, want %q", got.String(), want)
+	}
+}
+
+func TestSegmentIDMatchesCanonicalVector(t *testing.T) {
+	representationID, err := ParseRepresentationID("c30b39a8e1595804b964dfb86b4ce16f8fbcffe0af4c65d0c23742c1cc6774ae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentSHA256, err := ParseSHA256("185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got SegmentID
+	got, err = NewSegmentID(representationID, NewTextByteRangeSelector(0, 5), contentSHA256)
+	if err != nil {
+		t.Fatalf("NewSegmentID(): %v", err)
+	}
+	const want = "a454fa6d452787a2ec079bb3f453a9842a9a7d36da099123676093247e423492"
+	if got.String() != want {
+		t.Fatalf("NewSegmentID() = %q, want %q", got.String(), want)
+	}
+}
+
+func TestRepresentationIDStrictParsingAndJSON(t *testing.T) {
+	const valid = "c30b39a8e1595804b964dfb86b4ce16f8fbcffe0af4c65d0c23742c1cc6774ae"
+	testStrictID(t, valid, func(value string) (string, error) {
+		id, err := ParseRepresentationID(value)
+		return id.String(), err
+	}, func(data []byte) (string, error) {
+		var id RepresentationID
+		err := json.Unmarshal(data, &id)
+		return id.String(), err
+	})
+}
+
+func TestSegmentIDStrictParsingAndJSON(t *testing.T) {
+	const valid = "a454fa6d452787a2ec079bb3f453a9842a9a7d36da099123676093247e423492"
+	testStrictID(t, valid, func(value string) (string, error) {
+		id, err := ParseSegmentID(value)
+		return id.String(), err
+	}, func(data []byte) (string, error) {
+		var id SegmentID
+		err := json.Unmarshal(data, &id)
+		return id.String(), err
+	})
+}
+
+func TestRepresentationIDIncludesEveryDerivationField(t *testing.T) {
+	artifactID, err := ParseArtifactID("4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondArtifactID := artifactID
+	secondArtifactID[0] ^= 1
+	parametersSHA256, err := ParseSHA256("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentSHA256, err := ParseSHA256("f0df22d2bcadf69b874b74b12a790a236cf590850b779e427dcdebd4d464ae3d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseInputs := []DerivationInput{
+		NewArtifactDerivationInput(artifactID),
+		NewArtifactDerivationInput(secondArtifactID),
+	}
+	base, err := NewRepresentationID(baseInputs, "example.text-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, contentSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedParameters := parametersSHA256
+	changedParameters[0] ^= 1
+	changedContent := contentSHA256
+	changedContent[0] ^= 1
+	tests := []struct {
+		name             string
+		inputs           []DerivationInput
+		processorID      string
+		processorVersion string
+		parameters       SHA256
+		mediaType        string
+		content          SHA256
+	}{
+		{"input kind", []DerivationInput{NewRepresentationDerivationInput(RepresentationID(artifactID)), NewArtifactDerivationInput(secondArtifactID)}, "example.text-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, contentSHA256},
+		{"input ID", []DerivationInput{NewArtifactDerivationInput(secondArtifactID), NewArtifactDerivationInput(secondArtifactID)}, "example.text-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, contentSHA256},
+		{"input order", []DerivationInput{NewArtifactDerivationInput(secondArtifactID), NewArtifactDerivationInput(artifactID)}, "example.text-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, contentSHA256},
+		{"processor ID", baseInputs, "example.other-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, contentSHA256},
+		{"processor version", baseInputs, "example.text-extractor", "1.0.1", parametersSHA256, UTF8TextMediaType, contentSHA256},
+		{"parameter digest", baseInputs, "example.text-extractor", "1.0.0", changedParameters, UTF8TextMediaType, contentSHA256},
+		{"media type", baseInputs, "example.text-extractor", "1.0.0", parametersSHA256, "text/markdown", contentSHA256},
+		{"output digest", baseInputs, "example.text-extractor", "1.0.0", parametersSHA256, UTF8TextMediaType, changedContent},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := NewRepresentationID(test.inputs, test.processorID, test.processorVersion, test.parameters, test.mediaType, test.content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == base {
+				t.Fatalf("changing %s did not change Representation ID", test.name)
+			}
+		})
+	}
+}
+
+func TestRepresentationIDPreservesExactUTF8Bytes(t *testing.T) {
+	artifactID := mustParseArtifactID(t, "4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839")
+	parametersSHA256 := mustParseSHA256(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	contentSHA256 := mustParseSHA256(t, "f0df22d2bcadf69b874b74b12a790a236cf590850b779e427dcdebd4d464ae3d")
+	inputs := []DerivationInput{NewArtifactDerivationInput(artifactID)}
+	base, err := NewRepresentationID(inputs, "caf\u00e9", "versi\u00f3n", parametersSHA256, "text/pl\u00e1in", contentSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		values [3]string
+	}{
+		{"processor ID", [3]string{"cafe\u0301", "versi\u00f3n", "text/pl\u00e1in"}},
+		{"processor version", [3]string{"caf\u00e9", "versio\u0301n", "text/pl\u00e1in"}},
+		{"media type", [3]string{"caf\u00e9", "versi\u00f3n", "text/pla\u0301in"}},
+	} {
+		name, values := test.name, test.values
+		got, err := NewRepresentationID(inputs, values[0], values[1], parametersSHA256, values[2], contentSHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == base {
+			t.Fatalf("%s was Unicode-normalized", name)
+		}
+	}
+}
+
+func TestIdentityConstructorsRejectInvalidEvidence(t *testing.T) {
+	artifactID := mustParseArtifactID(t, "4e177fd6c764534dd4c12c5f745da6e0daff5a81dcfe55f7a4b6596d1559d839")
+	digest := mustParseSHA256(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	validInputs := []DerivationInput{NewArtifactDerivationInput(artifactID)}
+	for _, test := range []struct {
+		name, field string
+		code        ValidationCode
+		inputs      []DerivationInput
+		processorID string
+		version     string
+		parameters  SHA256
+		mediaType   string
+		content     SHA256
+	}{
+		{"empty inputs", "inputs", ValidationCodeInvalidValue, nil, "processor", "1", digest, "text/plain", digest},
+		{"unknown input kind", "inputs[0].kind", ValidationCodeInvalidEnum, []DerivationInput{{}}, "processor", "1", digest, "text/plain", digest},
+		{"zero artifact input", "inputs[0].id", ValidationCodeInvalidID, []DerivationInput{NewArtifactDerivationInput(ArtifactID{})}, "processor", "1", digest, "text/plain", digest},
+		{"empty processor", "processor_id", ValidationCodeInvalidValue, validInputs, "", "1", digest, "text/plain", digest},
+		{"invalid version UTF-8", "processor_version", ValidationCodeInvalidValue, validInputs, "processor", string([]byte{0xff}), digest, "text/plain", digest},
+		{"zero parameters", "parameters_sha256", ValidationCodeInvalidDigest, validInputs, "processor", "1", SHA256{}, "text/plain", digest},
+		{"empty media type", "media_type", ValidationCodeInvalidValue, validInputs, "processor", "1", digest, "", digest},
+		{"zero content", "content_sha256", ValidationCodeInvalidDigest, validInputs, "processor", "1", digest, "text/plain", SHA256{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewRepresentationID(test.inputs, test.processorID, test.version, test.parameters, test.mediaType, test.content)
+			requireValidationError(t, err, test.field, test.code)
+		})
+	}
+	representationID := mustParseRepresentationID(t, "c30b39a8e1595804b964dfb86b4ce16f8fbcffe0af4c65d0c23742c1cc6774ae")
+	_, err := NewSegmentID(representationID, NewTextByteRangeSelector(5, 5), digest)
+	requireValidationError(t, err, "selector.end", ValidationCodeInvalidRange)
+	_, err = NewSegmentID(representationID, NewTextByteRangeSelector(6, 5), digest)
+	requireValidationError(t, err, "selector.end", ValidationCodeInvalidRange)
+	_, err = NewSegmentID(representationID, NewTextByteRangeSelector(0, 1), SHA256{})
+	requireValidationError(t, err, "content_sha256", ValidationCodeInvalidDigest)
+}
+
 func TestSourceIDAndObservationIDAreDeterministic(t *testing.T) {
 	firstSource, err := NewSourceID("example.mailbox", "account:alpha")
 	if err != nil {
@@ -189,4 +459,40 @@ func mustParseSourceID(t testing.TB, value string) SourceID {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func mustParseObservationID(t testing.TB, value string) ObservationID {
+	t.Helper()
+	id, err := ParseObservationID(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustParseArtifactID(t testing.TB, value string) ArtifactID {
+	t.Helper()
+	id, err := ParseArtifactID(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustParseRepresentationID(t testing.TB, value string) RepresentationID {
+	t.Helper()
+	id, err := ParseRepresentationID(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustParseSHA256(t testing.TB, value string) SHA256 {
+	t.Helper()
+	digest, err := ParseSHA256(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }
