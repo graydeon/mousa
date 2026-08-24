@@ -1,9 +1,12 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -85,7 +88,7 @@ func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestina
 			t.Fatalf("Open: %v", err)
 		}
 		var version int
-		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 2 {
+		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
 			t.Fatalf("version = %d err=%v", version, err)
 		}
 		assertRecordGraph(t, store, source, observation, artifact, base, mixed, segment)
@@ -173,6 +176,198 @@ func TestIngestMigrationExactHash(t *testing.T) {
 	}
 }
 
+func TestLexicalMigrationExactSchemaAndHash(t *testing.T) {
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) != 3 {
+		t.Fatalf("migration count = %d, want 3", len(migrations))
+	}
+	if migrations[2].version != 3 || migrations[2].name != "lexical" {
+		t.Fatalf("migration 3 = version %d name %q, want version 3 name lexical", migrations[2].version, migrations[2].name)
+	}
+	if len(migrations[2].sql) != 359 || fmt.Sprintf("%x", migrations[2].hash) != "73d3387b252bc19792dcf0d181a20737f9c4786db199005e4e6a6174cd6bcbdc" || migrations[2].sql[len(migrations[2].sql)-1] != '\n' {
+		t.Fatalf("migration 3 bytes/hash/newline = %d/%x/%v", len(migrations[2].sql), migrations[2].hash, migrations[2].sql[len(migrations[2].sql)-1] == '\n')
+	}
+	store, err := Open(context.Background(), filepath.Join(t.TempDir(), "schema.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rows, err := store.db.Query(`SELECT type || ':' || name FROM sqlite_schema WHERE name LIKE 'segment_lexical_%' ORDER BY type || ':' || name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var objects []string
+	for rows.Next() {
+		var object string
+		if err := rows.Scan(&object); err != nil {
+			t.Fatal(err)
+		}
+		objects = append(objects, object)
+	}
+	rows.Close()
+	wantObjects := []string{"table:segment_lexical_fts", "table:segment_lexical_fts_config", "table:segment_lexical_fts_content", "table:segment_lexical_fts_data", "table:segment_lexical_fts_docsize", "table:segment_lexical_fts_idx", "table:segment_lexical_rows"}
+	if !equalStrings(objects, wantObjects) {
+		t.Fatalf("lexical objects = %v, want %v", objects, wantObjects)
+	}
+	var triggers int
+	if err := store.db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type = 'trigger'`).Scan(&triggers); err != nil || triggers != 0 {
+		t.Fatalf("trigger count = %d err=%v, want 0", triggers, err)
+	}
+	var storedHash []byte
+	if err := store.db.QueryRow(`SELECT sha256 FROM schema_migrations WHERE version = 3 AND name = 'lexical'`).Scan(&storedHash); err != nil || !bytes.Equal(storedHash, migrations[2].hash[:]) {
+		t.Fatalf("stored migration hash = %x err=%v", storedHash, err)
+	}
+}
+
+func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "records.sqlite")
+	createVersionTwo(t, path)
+	source, observation, artifact, base, mixed, segment := seedVersionOneRecordGraph(t, path)
+	v2DB, err := connect(ctx, path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Store := &Store{db: v2DB, path: path}
+	sequence := uint64(7)
+	batch := testPushBatch(t, "v2-backup", &sequence)
+	if err := v2Store.ApplyIngest(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
+	wantState, err := v2Store.GetIngestState(ctx, batch.Source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v2Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	backupDB, err := connect(ctx, path+".pre-migrate-v2-to-v3.sqlite", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupStore := &Store{db: backupDB, readOnly: true, path: path + ".pre-migrate-v2-to-v3.sqlite"}
+	assertRecordGraph(t, backupStore, source, observation, artifact, base, mixed, segment)
+	if gotState, err := backupStore.GetIngestState(ctx, batch.Source.ID); err != nil || !reflect.DeepEqual(gotState, wantState) {
+		t.Fatalf("backup ingest state = %#v err=%v, want %#v", gotState, err, wantState)
+	}
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, backupDB, migrations, 2, false); err != nil {
+		t.Fatalf("verify v2 backup: %v", err)
+	}
+	backupStore.Close()
+	backupPath := path + ".pre-migrate-v2-to-v3.sqlite"
+	backupBytes, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatalf("read v2 backup: %v", err)
+	}
+	restoredPath := filepath.Join(dir, "restored.sqlite")
+	if err := os.WriteFile(restoredPath, backupBytes, 0o600); err != nil {
+		t.Fatalf("restore v2 backup: %v", err)
+	}
+	restored, err := Open(ctx, restoredPath)
+	if err != nil {
+		t.Fatalf("Open restored v2 backup: %v", err)
+	}
+	defer restored.Close()
+	var version int
+	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
+		t.Fatalf("restored version = %d err=%v, want 3", version, err)
+	}
+	assertRecordGraph(t, restored, source, observation, artifact, base, mixed, segment)
+	if gotState, err := restored.GetIngestState(ctx, batch.Source.ID); err != nil || !reflect.DeepEqual(gotState, wantState) {
+		t.Fatalf("restored ingest state = %#v err=%v, want %#v", gotState, err, wantState)
+	}
+}
+
+func TestVersionTwoMigrationBackupConflictAndReadOnlyRefusal(t *testing.T) {
+	ctx := context.Background()
+	t.Run("backup conflict", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "records.sqlite")
+		createVersionTwo(t, path)
+		if err := os.WriteFile(path+".pre-migrate-v2-to-v3.sqlite", []byte("occupied"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(ctx, path); !IsCode(err, CodeConflict) {
+			t.Fatalf("Open error = %v, want conflict", err)
+		}
+		assertMigrationVersion(t, path, 2)
+	})
+	t.Run("read only old version", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "records.sqlite")
+		createVersionTwo(t, path)
+		if _, err := OpenReadOnly(ctx, path); !IsCode(err, CodeReadOnly) {
+			t.Fatalf("OpenReadOnly error = %v, want read_only", err)
+		}
+		if _, err := os.Stat(path + ".pre-migrate-v2-to-v3.sqlite"); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read-only open created backup: %v", err)
+		}
+	})
+}
+
+func TestLexicalMigrationRejectsDamageAndPlausibleNewerVersion(t *testing.T) {
+	ctx := context.Background()
+	t.Run("damaged projection", func(t *testing.T) {
+		store := openLexicalStore(t)
+		representation, content, _ := addLexicalDocument(t, store, "migration-damage", "alpha")
+		if err := store.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.ExecContext(ctx, `DELETE FROM segment_lexical_fts`); err != nil {
+			t.Fatal(err)
+		}
+		path := store.path
+		store.Close()
+		if _, err := Open(ctx, path); !IsCode(err, CodeIntegrity) {
+			t.Fatalf("Open damaged error = %v, want integrity", err)
+		}
+	})
+	t.Run("plausible newer", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "newer.sqlite")
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 4, name = 'future' WHERE version = 3`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 4`); err != nil {
+			t.Fatal(err)
+		}
+		store.Close()
+		if _, err := Open(ctx, path); !IsCode(err, CodeIncompatibleSchema) {
+			t.Fatalf("Open newer error = %v, want incompatible_schema", err)
+		}
+	})
+}
+
+func assertMigrationVersion(t *testing.T, path string, want int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var got int
+	if err := db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&got); err != nil || got != want {
+		t.Fatalf("migration version = %d err=%v, want %d", got, err, want)
+	}
+}
+
 func createVersionOne(t *testing.T, path string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -190,6 +385,28 @@ func createVersionOne(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	if err := applyMigration(context.Background(), conn, migration{version: 1, name: "records", sql: data, hash: sha256.Sum256(data)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createVersionTwo(t *testing.T, path string) {
+	t.Helper()
+	createVersionOne(t, path)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0002_ingest.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), conn, migration{version: 2, name: "ingest", sql: data, hash: sha256.Sum256(data)}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -262,7 +479,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer migration", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `UPDATE schema_migrations SET version = 3 WHERE version = 2`)
+			rawExec(t, path, `UPDATE schema_migrations SET version = 4 WHERE version = 3`)
 		}, CodeIncompatibleSchema},
 		{"changed hash", func(t *testing.T, path string) {
 			createCurrent(t, path)
@@ -333,7 +550,7 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
 			rawExec(t, path, `
-				UPDATE schema_migrations SET version = 3 WHERE version = 2;
+				UPDATE schema_migrations SET version = 4 WHERE version = 3;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
 			`)
 			before, err := os.ReadFile(path)

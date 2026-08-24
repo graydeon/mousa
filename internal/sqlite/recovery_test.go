@@ -146,7 +146,7 @@ func TestFailedMigrationRollsBackAllState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := createVerifiedMigrationBackup(ctx, path, migrations); err != nil {
+	if err := createVerifiedMigrationBackup(ctx, path, migrations, 1); err != nil {
 		t.Fatalf("create verified backup: %v", err)
 	}
 	backupPath := path + ".pre-migrate-v1-to-v2.sqlite"
@@ -264,7 +264,7 @@ func TestInjectedCommittedMigrationResumesAsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := createVerifiedMigrationBackup(ctx, path, migrations); err != nil {
+	if err := createVerifiedMigrationBackup(ctx, path, migrations, 1); err != nil {
 		t.Fatalf("create verified backup: %v", err)
 	}
 	backupPath := path + ".pre-migrate-v1-to-v2.sqlite"
@@ -282,8 +282,8 @@ func TestInjectedCommittedMigrationResumesAsCurrent(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("migration count: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("migration count = %d, want 2", count)
+	if count != 3 {
+		t.Fatalf("migration count = %d, want 3", count)
 	}
 	backupAfter, err := os.ReadFile(backupPath)
 	if err != nil {
@@ -352,8 +352,8 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 			t.Fatalf("migration count: %v", err)
 		}
-		if migrationCount != 2 {
-			t.Fatalf("migration count = %d, want 2", migrationCount)
+		if migrationCount != 3 {
+			t.Fatalf("migration count = %d, want 3", migrationCount)
 		}
 		backup, err := connect(ctx, path+".pre-migrate-v1-to-v2.sqlite", true)
 		if err != nil {
@@ -461,6 +461,68 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 	})
 }
 
+func TestFailedLexicalMigrationRollsBackAllState(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "failed-lexical.sqlite")
+	createVersionTwo(t, path)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0003_lexical.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSQL := append(append([]byte(nil), data...), []byte("INSERT INTO schema_migrations(version, name, sha256) VALUES(3, 'lexical', zeroblob(32));\nSELECT * FROM missing_lexical_migration_table;\n")...)
+	if err := applyMigration(ctx, conn, migration{version: 3, name: "lexical", sql: failedSQL, hash: sha256.Sum256(failedSQL)}); err == nil {
+		t.Fatal("failed lexical migration succeeded")
+	}
+	var objects int
+	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE name LIKE 'segment_lexical_%'`).Scan(&objects); err != nil || objects != 0 {
+		t.Fatalf("lexical objects after rollback = %d err=%v, want 0", objects, err)
+	}
+	assertMigrationVersion(t, path, 2)
+}
+
+func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
+	ctx := context.Background()
+	t.Run("interrupted after every migration write", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "interrupted-lexical.sqlite")
+		createVersionTwo(t, path)
+		runCrashHelper(t, "lexical-migration", path)
+		assertMigrationVersion(t, path, 2)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		var version int
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
+			t.Fatalf("recovered version = %d err=%v, want 3", version, err)
+		}
+	})
+	t.Run("committed before marker", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "committed-lexical.sqlite")
+		createVersionTwo(t, path)
+		runCrashHelper(t, "committed-lexical-migration", path)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		var version int
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
+			t.Fatalf("committed version = %d err=%v, want 3", version, err)
+		}
+	})
+}
+
 func TestCrashHelper(t *testing.T) {
 	mode := os.Getenv("MOUSA_SQLITE_CRASH_MODE")
 	if mode == "" {
@@ -479,8 +541,14 @@ func TestCrashHelper(t *testing.T) {
 		os.Exit(4)
 	}
 	switch mode {
-	case "migration", "committed-migration":
-		migrationSQL, err := migrationFiles.ReadFile("migrations/0002_ingest.sql")
+	case "migration", "committed-migration", "lexical-migration", "committed-lexical-migration":
+		migrationPath := "migrations/0002_ingest.sql"
+		version, name := 2, "ingest"
+		if mode == "lexical-migration" || mode == "committed-lexical-migration" {
+			migrationPath = "migrations/0003_lexical.sql"
+			version, name = 3, "lexical"
+		}
+		migrationSQL, err := migrationFiles.ReadFile(migrationPath)
 		if err != nil {
 			os.Exit(5)
 		}
@@ -488,10 +556,10 @@ func TestCrashHelper(t *testing.T) {
 			os.Exit(6)
 		}
 		hash := sha256.Sum256(migrationSQL)
-		if _, err := conn.ExecContext(context.Background(), `INSERT INTO schema_migrations(version, name, sha256) VALUES(2, 'ingest', ?)`, hash[:]); err != nil {
+		if _, err := conn.ExecContext(context.Background(), `INSERT INTO schema_migrations(version, name, sha256) VALUES(?, ?, ?)`, version, name, hash[:]); err != nil {
 			os.Exit(14)
 		}
-		if mode == "committed-migration" {
+		if mode == "committed-migration" || mode == "committed-lexical-migration" {
 			if _, err := conn.ExecContext(context.Background(), `COMMIT`); err != nil {
 				os.Exit(15)
 			}

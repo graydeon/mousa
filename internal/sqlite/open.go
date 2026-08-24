@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -133,8 +134,8 @@ func preflightWritable(ctx context.Context, path string, migrations []migration)
 		if err := verifyVersion(ctx, db, migrations, version, false); err != nil {
 			return err
 		}
-		if version == 1 && len(migrations) == 2 {
-			return createVerifiedMigrationBackup(ctx, path, migrations)
+		if version > 0 && version < len(migrations) {
+			return createVerifiedMigrationBackup(ctx, path, migrations, version)
 		}
 		return nil
 	default:
@@ -169,8 +170,8 @@ func verifyReadOnly(ctx context.Context, db *sql.DB, migrations []migration) err
 	return nil
 }
 
-func createVerifiedMigrationBackup(ctx context.Context, path string, migrations []migration) error {
-	destination := path + ".pre-migrate-v1-to-v2.sqlite"
+func createVerifiedMigrationBackup(ctx context.Context, path string, migrations []migration, version int) error {
+	destination := path + fmt.Sprintf(".pre-migrate-v%d-to-v%d.sqlite", version, version+1)
 	if _, err := os.Lstat(destination); err == nil {
 		return wrap(CodeConflict, "pre-migration backup", errors.New("backup destination already exists"))
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -189,7 +190,7 @@ func createVerifiedMigrationBackup(ctx context.Context, path string, migrations 
 		return wrap(CodeIntegrity, "verify pre-migration backup", err)
 	}
 	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, 1, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, version, false); err != nil {
 		return wrap(CodeIntegrity, "verify pre-migration backup", err)
 	}
 	return nil
