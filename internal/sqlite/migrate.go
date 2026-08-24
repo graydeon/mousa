@@ -51,6 +51,16 @@ var requiredObjectsV2 = append(append([]string(nil), requiredObjectsV1...),
 	"table:source_withdrawals",
 )
 
+var requiredObjectsV3 = append(append([]string(nil), requiredObjectsV2...),
+	"table:segment_lexical_fts",
+	"table:segment_lexical_fts_config",
+	"table:segment_lexical_fts_content",
+	"table:segment_lexical_fts_data",
+	"table:segment_lexical_fts_docsize",
+	"table:segment_lexical_fts_idx",
+	"table:segment_lexical_rows",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -226,6 +236,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	requiredObjects := requiredObjectsV1
 	if wantVersion == 2 {
 		requiredObjects = requiredObjectsV2
+	} else if wantVersion == 3 {
+		requiredObjects = requiredObjectsV3
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -255,8 +267,13 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	if err := verifyCanonicalRecords(ctx, db); err != nil {
 		return err
 	}
-	if wantVersion == 2 {
+	if wantVersion >= 2 {
 		if err := verifyIngestRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion == 3 {
+		if err := verifyLexicalRecords(ctx, db); err != nil {
 			return err
 		}
 	}
