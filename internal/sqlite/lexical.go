@@ -59,15 +59,15 @@ func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.Repres
 	})
 }
 
-// SearchLexical returns verified FTS5 candidates in raw BM25 order.
-func (store *Store) SearchLexical(ctx context.Context, expression string, limit int) ([]LexicalCandidate, error) {
+// searchLexical returns verified FTS5 candidates in raw BM25 order through q.
+func searchLexical(ctx context.Context, q queryer, expression string, limit int) ([]LexicalCandidate, error) {
 	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 || containsNUL(expression) || limit < 1 || limit > 100 {
 		return nil, wrap(CodeInvalidQuery, "search lexical", errors.New("query expression or limit is out of bounds"))
 	}
-	if err := verifyLexicalRecords(ctx, store.db); err != nil {
+	if err := verifyLexicalRecords(ctx, q); err != nil {
 		return nil, err
 	}
-	rows, err := store.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT r.segment_id, f.text, f.content_sha256, bm25(segment_lexical_fts)
 		FROM segment_lexical_fts AS f
 		JOIN segment_lexical_rows AS r ON r.rowid = f.rowid
@@ -100,7 +100,7 @@ func (store *Store) SearchLexical(ctx context.Context, expression string, limit 
 	candidates := make([]LexicalCandidate, 0, len(rawCandidates))
 	seen := make(map[mousa.SegmentID]struct{}, len(rawCandidates))
 	for _, candidate := range rawCandidates {
-		segment, err := lexicalSegmentByRawID(ctx, store.db, candidate.id)
+		segment, err := lexicalSegmentByRawID(ctx, q, candidate.id)
 		if err != nil {
 			return nil, err
 		}
@@ -316,4 +316,9 @@ func containsNUL(value string) bool {
 		}
 	}
 	return false
+}
+
+// SearchLexical returns verified FTS5 candidates in raw BM25 order.
+func (store *Store) SearchLexical(ctx context.Context, expression string, limit int) ([]LexicalCandidate, error) {
+	return searchLexical(ctx, store.db, expression, limit)
 }
