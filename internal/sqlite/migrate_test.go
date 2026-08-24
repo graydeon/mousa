@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"testing/fstest"
 
@@ -72,6 +73,183 @@ func TestMigrationLoaderRejectsInvalidSets(t *testing.T) {
 	}
 }
 
+func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestination(t *testing.T) {
+	ctx := context.Background()
+	t.Run("migrates with verified backup", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "records.sqlite")
+		createVersionOne(t, path)
+		source, observation, artifact, base, mixed, segment := seedVersionOneRecordGraph(t, path)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		var version int
+		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 2 {
+			t.Fatalf("version = %d err=%v", version, err)
+		}
+		assertRecordGraph(t, store, source, observation, artifact, base, mixed, segment)
+		if err := store.Close(); err != nil {
+			t.Fatalf("close migrated source: %v", err)
+		}
+		backup, err := connect(ctx, path+".pre-migrate-v1-to-v2.sqlite", true)
+		if err != nil {
+			t.Fatalf("open backup: %v", err)
+		}
+		migrations, err := loadMigrations(migrationFiles)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyVersion(ctx, backup, migrations, 1, false); err != nil {
+			t.Fatalf("verify backup: %v", err)
+		}
+		if err := backup.Close(); err != nil {
+			t.Fatalf("close backup: %v", err)
+		}
+		backupBytes, err := os.ReadFile(path + ".pre-migrate-v1-to-v2.sqlite")
+		if err != nil {
+			t.Fatalf("read backup: %v", err)
+		}
+		restoredPath := filepath.Join(dir, "restored.sqlite")
+		if err := os.WriteFile(restoredPath, backupBytes, 0o600); err != nil {
+			t.Fatalf("restore backup: %v", err)
+		}
+		restored, err := Open(ctx, restoredPath)
+		if err != nil {
+			t.Fatalf("Open restored backup: %v", err)
+		}
+		defer restored.Close()
+		assertRecordGraph(t, restored, source, observation, artifact, base, mixed, segment)
+	})
+	t.Run("existing destination", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "records.sqlite")
+		createVersionOne(t, path)
+		if err := os.WriteFile(path+".pre-migrate-v1-to-v2.sqlite", []byte("occupied"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if store, err := Open(ctx, path); store != nil || !IsCode(err, CodeConflict) {
+			if store != nil {
+				store.Close()
+			}
+			t.Fatalf("Open = %v, %v", store, err)
+		}
+		db, err := connect(ctx, path, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var version int
+		if err := db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 1 {
+			t.Fatalf("version = %d err=%v", version, err)
+		}
+	})
+}
+
+func TestReadOnlyVersionOneRefusesMigrationWithoutBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "records.sqlite")
+	createVersionOne(t, path)
+	if store, err := OpenReadOnly(context.Background(), path); store != nil || !IsCode(err, CodeReadOnly) {
+		if store != nil {
+			store.Close()
+		}
+		t.Fatalf("OpenReadOnly = %v, %v", store, err)
+	}
+	if _, err := os.Stat(path + ".pre-migrate-v1-to-v2.sqlite"); !os.IsNotExist(err) {
+		t.Fatalf("backup stat = %v", err)
+	}
+}
+
+func TestIngestMigrationExactHash(t *testing.T) {
+	data, err := migrationFiles.ReadFile("migrations/0002_ingest.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [32]byte{0x18, 0xf3, 0xed, 0x8a, 0x3c, 0x54, 0x52, 0xe7, 0x78, 0x23, 0x6a, 0x4b, 0x55, 0x51, 0xa3, 0xeb, 0x07, 0x9f, 0xa6, 0x70, 0xcd, 0x4b, 0xb9, 0x11, 0x8a, 0x1b, 0xfd, 0x72, 0x80, 0x70, 0xa4, 0x50}
+	if got := sha256.Sum256(data); got != want {
+		t.Fatalf("hash = %x, want %x", got, want)
+	}
+	if len(data) != 3384 || data[len(data)-1] != '\n' {
+		t.Fatalf("migration bytes = %d, trailing newline = %v", len(data), len(data) > 0 && data[len(data)-1] == '\n')
+	}
+}
+
+func createVersionOne(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0001_records.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), conn, migration{version: 1, name: "records", sql: data, hash: sha256.Sum256(data)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedVersionOneRecordGraph(t *testing.T, path string) (mousa.Source, mousa.Observation, mousa.Artifact, mousa.Representation, mousa.Representation, mousa.Segment) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := connect(ctx, path, false)
+	if err != nil {
+		t.Fatalf("connect v1: %v", err)
+	}
+	store := &Store{db: db, path: path}
+	source, observation, artifact, base, mixed, segment := testRecordGraph(t)
+	for _, write := range []struct {
+		name string
+		put  func() error
+	}{
+		{"source", func() error { return store.PutSource(ctx, source) }},
+		{"observation", func() error { return store.PutObservation(ctx, observation) }},
+		{"artifact", func() error { return store.PutArtifact(ctx, artifact) }},
+		{"base representation", func() error { return store.PutRepresentation(ctx, base) }},
+		{"mixed representation", func() error { return store.PutRepresentation(ctx, mixed) }},
+		{"segment", func() error { return store.PutSegment(ctx, segment) }},
+	} {
+		if err := write.put(); err != nil {
+			t.Fatalf("put v1 %s: %v", write.name, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close v1 record graph: %v", err)
+	}
+	return source, observation, artifact, base, mixed, segment
+}
+
+func assertRecordGraph(t *testing.T, store *Store, source mousa.Source, observation mousa.Observation, artifact mousa.Artifact, base, mixed mousa.Representation, segment mousa.Segment) {
+	t.Helper()
+	ctx := context.Background()
+	checks := []struct {
+		name string
+		got  func() (any, error)
+		want any
+	}{
+		{"source", func() (any, error) { return store.GetSource(ctx, source.ID) }, source},
+		{"observation", func() (any, error) { return store.GetObservation(ctx, observation.ID) }, observation},
+		{"artifact", func() (any, error) { return store.GetArtifact(ctx, artifact.ID) }, artifact},
+		{"base representation", func() (any, error) { return store.GetRepresentation(ctx, base.ID) }, base},
+		{"mixed representation", func() (any, error) { return store.GetRepresentation(ctx, mixed.ID) }, mixed},
+		{"segment", func() (any, error) { return store.GetSegment(ctx, segment.ID) }, segment},
+	}
+	for _, check := range checks {
+		got, err := check.got()
+		if err != nil {
+			t.Fatalf("get %s: %v", check.name, err)
+		}
+		if !reflect.DeepEqual(got, check.want) {
+			t.Fatalf("%s = %#v, want %#v", check.name, got, check.want)
+		}
+	}
+}
+
 func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
@@ -84,7 +262,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer migration", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `UPDATE schema_migrations SET version = 2 WHERE version = 1`)
+			rawExec(t, path, `UPDATE schema_migrations SET version = 3 WHERE version = 2`)
 		}, CodeIncompatibleSchema},
 		{"changed hash", func(t *testing.T, path string) {
 			createCurrent(t, path)
@@ -155,7 +333,7 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
 			rawExec(t, path, `
-				UPDATE schema_migrations SET version = 2 WHERE version = 1;
+				UPDATE schema_migrations SET version = 3 WHERE version = 2;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
 			`)
 			before, err := os.ReadFile(path)
@@ -212,54 +390,6 @@ func TestMigrationLoaderRejectsDuplicateVersions(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("loadMigrations accepted duplicate version 1")
-	}
-}
-
-func TestVersionOneDamageFailsWithoutRepairWrites(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		mutate func(*testing.T, string)
-	}{
-		{"changed migration name", func(t *testing.T, path string) {
-			rawExec(t, path, `UPDATE schema_migrations SET name = 'renamed' WHERE version = 1`)
-		}},
-		{"changed migration hash", func(t *testing.T, path string) {
-			rawExec(t, path, `UPDATE schema_migrations SET sha256 = randomblob(32) WHERE version = 1`)
-		}},
-		{"unexpected v1 object", func(t *testing.T, path string) {
-			rawExec(t, path, `CREATE TABLE unexpected_object(id INTEGER PRIMARY KEY) STRICT`)
-		}},
-		{"partial schema", func(t *testing.T, path string) {
-			rawExec(t, path, `DROP TABLE segments`)
-		}},
-		{"malformed schema", func(t *testing.T, path string) {
-			rawExec(t, path, `PRAGMA writable_schema=ON; UPDATE sqlite_schema SET sql='broken' WHERE name='sources'; PRAGMA writable_schema=OFF`)
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "damaged.sqlite")
-			createCurrent(t, path)
-			test.mutate(t, path)
-			before, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read before open: %v", err)
-			}
-			store, err := Open(context.Background(), path)
-			if store != nil {
-				store.Close()
-				t.Fatal("Open returned a store")
-			}
-			if !IsCode(err, CodeIntegrity) {
-				t.Fatalf("Open error = %v, want integrity", err)
-			}
-			after, readErr := os.ReadFile(path)
-			if readErr != nil {
-				t.Fatalf("read after open: %v", readErr)
-			}
-			if string(after) != string(before) {
-				t.Fatal("failed startup changed database bytes")
-			}
-		})
 	}
 }
 

@@ -39,19 +39,18 @@ func open(ctx context.Context, path string, readOnly bool) (*Store, error) {
 	if err != nil {
 		return nil, wrap(CodeInternal, "load migration", err)
 	}
-	currentHash := migrations[len(migrations)-1].hash
 	if readOnly {
 		db, err := connect(ctx, absolute, true)
 		if err != nil {
 			return nil, err
 		}
-		if err := verifyReadOnly(ctx, db, currentHash); err != nil {
+		if err := verifyReadOnly(ctx, db, migrations); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
 		return &Store{db: db, readOnly: true, path: absolute}, nil
 	}
-	if err := preflightWritable(ctx, absolute, currentHash); err != nil {
+	if err := preflightWritable(ctx, absolute, migrations); err != nil {
 		return nil, err
 	}
 	db, err := connect(ctx, absolute, false)
@@ -97,7 +96,7 @@ func connect(ctx context.Context, absolute string, readOnly bool) (*sql.DB, erro
 	return db, nil
 }
 
-func preflightWritable(ctx context.Context, path string, migrationHash [32]byte) error {
+func preflightWritable(ctx context.Context, path string, migrations []migration) error {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -124,13 +123,26 @@ func preflightWritable(ctx context.Context, path string, migrationHash [32]byte)
 		}
 		return nil
 	case applicationID:
-		return verifyCurrent(ctx, db, migrationHash, false)
+		version, err := databaseVersion(ctx, db)
+		if err != nil {
+			return err
+		}
+		if version > len(migrations) {
+			return wrap(CodeIncompatibleSchema, "preflight database", errors.New("database schema is newer than this binary"))
+		}
+		if err := verifyVersion(ctx, db, migrations, version, false); err != nil {
+			return err
+		}
+		if version == 1 && len(migrations) == 2 {
+			return createVerifiedMigrationBackup(ctx, path, migrations)
+		}
+		return nil
 	default:
 		return wrap(CodeIncompatibleSchema, "preflight database", errors.New("foreign SQLite application ID"))
 	}
 }
 
-func verifyReadOnly(ctx context.Context, db *sql.DB, migrationHash [32]byte) error {
+func verifyReadOnly(ctx context.Context, db *sql.DB, migrations []migration) error {
 	applicationIDValue, objects, err := inspectDatabase(ctx, db)
 	if err != nil {
 		return startupError("verify read-only database", err)
@@ -141,7 +153,69 @@ func verifyReadOnly(ctx context.Context, db *sql.DB, migrationHash [32]byte) err
 	if applicationIDValue != applicationID {
 		return wrap(CodeIncompatibleSchema, "verify read-only database", errors.New("foreign SQLite application ID"))
 	}
-	return verifyCurrent(ctx, db, migrationHash, false)
+	version, err := databaseVersion(ctx, db)
+	if err != nil {
+		return err
+	}
+	if version > len(migrations) {
+		return wrap(CodeIncompatibleSchema, "verify read-only database", errors.New("database schema is newer than this binary"))
+	}
+	if err := verifyVersion(ctx, db, migrations, version, false); err != nil {
+		return err
+	}
+	if version < len(migrations) {
+		return wrap(CodeReadOnly, "verify read-only database", errors.New("database requires migration"))
+	}
+	return nil
+}
+
+func createVerifiedMigrationBackup(ctx context.Context, path string, migrations []migration) error {
+	destination := path + ".pre-migrate-v1-to-v2.sqlite"
+	if _, err := os.Lstat(destination); err == nil {
+		return wrap(CodeConflict, "pre-migration backup", errors.New("backup destination already exists"))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return wrap(CodeInternal, "pre-migration backup", err)
+	}
+	vacuumSource, err := connectMigrationBackupSource(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer vacuumSource.Close()
+	if _, err := vacuumSource.ExecContext(ctx, `VACUUM INTO ?`, destination); err != nil {
+		return classify("pre-migration backup", err)
+	}
+	backup, err := connect(ctx, destination, true)
+	if err != nil {
+		return wrap(CodeIntegrity, "verify pre-migration backup", err)
+	}
+	defer backup.Close()
+	if err := verifyVersion(ctx, backup, migrations, 1, false); err != nil {
+		return wrap(CodeIntegrity, "verify pre-migration backup", err)
+	}
+	return nil
+}
+
+func connectMigrationBackupSource(ctx context.Context, path string) (*sql.DB, error) {
+	query := url.Values{
+		"mode":          {"ro"},
+		"_foreign_keys": {"1"},
+		"_busy_timeout": {"1000"},
+		"_defensive":    {"1"},
+		"_pragma":       {"trusted_schema(0)"},
+	}
+	dsn := (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
+	connector, err := modernsqlite.NewConnector(dsn)
+	if err != nil {
+		return nil, wrap(CodeInternal, "open pre-migration backup source", err)
+	}
+	db := sql.OpenDB(connector)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, startupError("open pre-migration backup source", err)
+	}
+	return db, nil
 }
 
 // Close releases the store connection.
