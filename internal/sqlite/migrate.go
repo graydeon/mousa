@@ -27,7 +27,7 @@ type migration struct {
 	hash    [32]byte
 }
 
-var requiredObjects = []string{
+var requiredObjectsV1 = []string{
 	"index:artifacts_observation_id_idx",
 	"index:observations_source_id_idx",
 	"index:representation_inputs_artifact_id_idx",
@@ -42,12 +42,20 @@ var requiredObjects = []string{
 	"table:sources",
 }
 
+var requiredObjectsV2 = append(append([]string(nil), requiredObjectsV1...),
+	"index:ingest_receipts_source_id_idx",
+	"index:source_withdrawals_source_id_idx",
+	"table:ingest_gaps",
+	"table:ingest_receipts",
+	"table:source_ingest_state",
+	"table:source_withdrawals",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
 		return wrap(CodeInternal, "load migration", err)
 	}
-	current := migrations[len(migrations)-1]
 
 	applicationIDValue, objects, err := inspectDatabase(ctx, db)
 	if err != nil {
@@ -59,23 +67,41 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			return wrap(CodeIncompatibleSchema, "inspect database", errors.New("application ID is zero but user objects exist"))
 		}
 	case applicationID:
-		return verifyCurrent(ctx, db, current.hash, true)
+		version, err := databaseVersion(ctx, db)
+		if err != nil {
+			return err
+		}
+		if version > len(migrations) {
+			return wrap(CodeIncompatibleSchema, "verify migrations", fmt.Errorf("schema version %d is newer than %d", version, len(migrations)))
+		}
+		if err := verifyVersion(ctx, db, migrations, version, true); err != nil {
+			return err
+		}
+		if version == len(migrations) {
+			return nil
+		}
 	default:
 		return wrap(CodeIncompatibleSchema, "inspect database", fmt.Errorf("foreign SQLite application ID %d", applicationIDValue))
 	}
 
+	version, err := databaseVersion(ctx, db)
+	if err != nil {
+		return err
+	}
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return startupError("acquire migration connection", err)
 	}
 	defer conn.Close()
-	if err := applyMigration(ctx, conn, current.sql, current.hash); err != nil {
-		return err
+	for _, migration := range migrations[version:] {
+		if err := applyMigration(ctx, conn, migration); err != nil {
+			return err
+		}
 	}
 	if err := conn.Close(); err != nil {
 		return wrap(CodeInternal, "release migration connection", err)
 	}
-	return verifyCurrent(ctx, db, current.hash, true)
+	return verifyVersion(ctx, db, migrations, len(migrations), true)
 }
 
 func loadMigrations(fsys fs.FS) ([]migration, error) {
@@ -121,7 +147,7 @@ func loadMigrations(fsys fs.FS) ([]migration, error) {
 	return migrations, nil
 }
 
-func applyMigration(ctx context.Context, conn *sql.Conn, migrationSQL []byte, migrationHash [32]byte) error {
+func applyMigration(ctx context.Context, conn *sql.Conn, migration migration) error {
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return startupError("begin migration", err)
 	}
@@ -131,20 +157,21 @@ func applyMigration(ctx context.Context, conn *sql.Conn, migrationSQL []byte, mi
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		}
 	}()
-	if _, err := conn.ExecContext(ctx, string(migrationSQL)); err != nil {
-		return startupError("apply migration 0001_records.sql", err)
+	label := fmt.Sprintf("%04d_%s.sql", migration.version, migration.name)
+	if _, err := conn.ExecContext(ctx, string(migration.sql)); err != nil {
+		return startupError("apply migration "+label, err)
 	}
-	if _, err := conn.ExecContext(ctx, `INSERT INTO schema_migrations(version, name, sha256) VALUES(1, 'records', ?)`, migrationHash[:]); err != nil {
-		return startupError("record migration 0001_records.sql", err)
+	if _, err := conn.ExecContext(ctx, `INSERT INTO schema_migrations(version, name, sha256) VALUES(?, ?, ?)`, migration.version, migration.name, migration.hash[:]); err != nil {
+		return startupError("record migration "+label, err)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return startupError("commit migration 0001_records.sql", err)
+		return startupError("commit migration "+label, err)
 	}
 	committed = true
 	return nil
 }
 
-func verifyCurrent(ctx context.Context, db *sql.DB, migrationHash [32]byte, requireWAL bool) error {
+func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVersion int, requireWAL bool) error {
 	applicationIDValue, objects, err := inspectDatabase(ctx, db)
 	if err != nil {
 		return startupError("verify database", err)
@@ -160,7 +187,7 @@ func verifyCurrent(ctx context.Context, db *sql.DB, migrationHash [32]byte, requ
 		}
 	}
 	if !hasMigrationTable {
-		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
+		return integrity("verify database", "schema_migrations is missing")
 	}
 
 	rows, err := db.QueryContext(ctx, `SELECT version, name, sha256 FROM schema_migrations ORDER BY version`)
@@ -184,18 +211,21 @@ func verifyCurrent(ctx context.Context, db *sql.DB, migrationHash [32]byte, requ
 	if err := rows.Close(); err != nil {
 		return startupError("verify migrations", err)
 	}
-	if len(migrations) != 1 {
-		if len(migrations) > 0 && migrations[len(migrations)-1].version > 1 {
-			return wrap(CodeIncompatibleSchema, "verify migrations", fmt.Errorf("schema version %d is newer than 1", migrations[len(migrations)-1].version))
+	if len(migrations) != wantVersion {
+		if len(migrations) > 0 && migrations[len(migrations)-1].version > len(embedded) {
+			return wrap(CodeIncompatibleSchema, "verify migrations", fmt.Errorf("schema version %d is newer than %d", migrations[len(migrations)-1].version, len(embedded)))
 		}
 		return integrity("verify migrations", fmt.Sprintf("migration row count is %d", len(migrations)))
 	}
-	migration := migrations[0]
-	if migration.version > 1 {
-		return wrap(CodeIncompatibleSchema, "verify migrations", fmt.Errorf("schema version %d is newer than 1", migration.version))
+	for index, applied := range migrations {
+		want := embedded[index]
+		if applied.version != want.version || applied.name != want.name || !equalBytes(applied.hash, want.hash[:]) {
+			return integrity("verify migrations", "migration name or hash disagrees with embedded migration")
+		}
 	}
-	if migration.version != 1 || migration.name != "records" || !equalBytes(migration.hash, migrationHash[:]) {
-		return integrity("verify migrations", "migration name or hash disagrees with embedded migration")
+	requiredObjects := requiredObjectsV1
+	if wantVersion == 2 {
+		requiredObjects = requiredObjectsV2
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -225,7 +255,27 @@ func verifyCurrent(ctx context.Context, db *sql.DB, migrationHash [32]byte, requ
 	if err := verifyCanonicalRecords(ctx, db); err != nil {
 		return err
 	}
+	if wantVersion == 2 {
+		if err := verifyIngestRecords(ctx, db); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func databaseVersion(ctx context.Context, db *sql.DB) (int, error) {
+	var exists int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&exists); err != nil {
+		return 0, startupError("inspect migration version", err)
+	}
+	if exists == 0 {
+		return 0, nil
+	}
+	var version int
+	if err := db.QueryRowContext(ctx, `SELECT coalesce(max(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+		return 0, startupError("inspect migration version", err)
+	}
+	return version, nil
 }
 
 func inspectDatabase(ctx context.Context, db *sql.DB) (int, []string, error) {

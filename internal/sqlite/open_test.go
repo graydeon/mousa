@@ -50,7 +50,7 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
-	want := []string{"artifacts", "observations", "representation_inputs", "representations", "schema_migrations", "segments", "sources"}
+	want := []string{"artifacts", "ingest_gaps", "ingest_receipts", "observations", "representation_inputs", "representations", "schema_migrations", "segments", "source_ingest_state", "source_withdrawals", "sources"}
 	if !equalStrings(got, want) {
 		t.Fatalf("tables = %v, want %v", got, want)
 	}
@@ -66,6 +66,12 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	}
 	if version != 1 || name != "records" || len(hash) != 32 {
 		t.Fatalf("migration = (%d, %q, %x), want version 1, name records, 32-byte hash", version, name, hash)
+	}
+	if err := store.db.QueryRow(`SELECT version, name, sha256 FROM schema_migrations WHERE version = 2`).Scan(&version, &name, &hash); err != nil {
+		t.Fatalf("read ingest migration: %v", err)
+	}
+	if version != 2 || name != "ingest" || len(hash) != 32 {
+		t.Fatalf("migration = (%d, %q, %x), want version 2, name ingest, 32-byte hash", version, name, hash)
 	}
 }
 
