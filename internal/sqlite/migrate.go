@@ -61,6 +61,21 @@ var requiredObjectsV3 = append(append([]string(nil), requiredObjectsV2...),
 	"table:segment_lexical_rows",
 )
 
+var requiredObjectsV4 = append(append([]string(nil), requiredObjectsV3...),
+	"index:classification_bases_artifact_id_idx",
+	"index:classification_bases_observation_id_idx",
+	"index:classification_bases_representation_id_idx",
+	"index:classification_bases_segment_id_idx",
+	"index:classification_bases_source_id_idx",
+	"index:classifications_subject_artifact_id_idx",
+	"index:classifications_subject_observation_id_idx",
+	"index:classifications_subject_representation_id_idx",
+	"index:classifications_subject_segment_id_idx",
+	"index:classifications_subject_source_id_idx",
+	"table:classification_bases",
+	"table:classifications",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -238,6 +253,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV2
 	} else if wantVersion == 3 {
 		requiredObjects = requiredObjectsV3
+	} else if wantVersion == 4 {
+		requiredObjects = requiredObjectsV4
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -272,8 +289,13 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 			return err
 		}
 	}
-	if wantVersion == 3 {
+	if wantVersion >= 3 {
 		if err := verifyLexicalRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion == 4 {
+		if err := verifyClassificationRecords(ctx, db); err != nil {
 			return err
 		}
 	}

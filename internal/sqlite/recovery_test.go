@@ -282,8 +282,8 @@ func TestInjectedCommittedMigrationResumesAsCurrent(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("migration count: %v", err)
 	}
-	if count != 3 {
-		t.Fatalf("migration count = %d, want 3", count)
+	if count != 4 {
+		t.Fatalf("migration count = %d, want 4", count)
 	}
 	backupAfter, err := os.ReadFile(backupPath)
 	if err != nil {
@@ -352,8 +352,8 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 			t.Fatalf("migration count: %v", err)
 		}
-		if migrationCount != 3 {
-			t.Fatalf("migration count = %d, want 3", migrationCount)
+		if migrationCount != 4 {
+			t.Fatalf("migration count = %d, want 4", migrationCount)
 		}
 		backup, err := connect(ctx, path+".pre-migrate-v1-to-v2.sqlite", true)
 		if err != nil {
@@ -503,8 +503,8 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
-			t.Fatalf("recovered version = %d err=%v, want 3", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
+			t.Fatalf("recovered version = %d err=%v, want 4", version, err)
 		}
 	})
 	t.Run("committed before marker", func(t *testing.T) {
@@ -517,8 +517,107 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
-			t.Fatalf("committed version = %d err=%v, want 3", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
+			t.Fatalf("committed version = %d err=%v, want 4", version, err)
+		}
+	})
+}
+
+func TestFailedClassificationMigrationRollsBackAllState(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "failed-classification.sqlite")
+	createVersionThree(t, path)
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createVerifiedMigrationBackup(ctx, path, migrations, 3); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := path + ".pre-migrate-v3-to-v4.sqlite"
+	backupBefore, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := migrationFiles.ReadFile("migrations/0004_classifications.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSQL := append(append([]byte(nil), data...), []byte("SELECT * FROM missing_classification_migration_table;\n")...)
+	if err := applyMigration(ctx, conn, migration{version: 4, name: "classifications", sql: failedSQL, hash: sha256.Sum256(failedSQL)}); err == nil {
+		t.Fatal("failed classification migration succeeded")
+	}
+	conn.Close()
+	db.Close()
+	assertMigrationVersion(t, path, 3)
+	verify, err := connect(ctx, path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, verify, migrations, 3, false); err != nil {
+		t.Fatalf("source is not valid v3: %v", err)
+	}
+	var objects int
+	if err := verify.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name IN ('classifications', 'classification_bases') OR name LIKE 'classifications_subject_%_idx' OR name LIKE 'classification_bases_%_idx'`).Scan(&objects); err != nil || objects != 0 {
+		t.Fatalf("classification objects after rollback = %d err=%v", objects, err)
+	}
+	verify.Close()
+	backupAfter, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(backupAfter, backupBefore) {
+		t.Fatal("failed classification migration changed verified backup")
+	}
+}
+
+func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testing.T) {
+	ctx := context.Background()
+	t.Run("interrupted after every migration write", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "interrupted-classification.sqlite")
+		createVersionThree(t, path)
+		runCrashHelper(t, "classification-migration", path)
+		assertMigrationVersion(t, path, 3)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		assertMigrationVersion(t, path, 4)
+		backup, err := connect(ctx, path+".pre-migrate-v3-to-v4.sqlite", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		migrations, err := loadMigrations(migrationFiles)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyVersion(ctx, backup, migrations, 3, false); err != nil {
+			t.Fatalf("classification backup is not valid v3: %v", err)
+		}
+		backup.Close()
+	})
+	t.Run("committed before marker", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "committed-classification.sqlite")
+		createVersionThree(t, path)
+		runCrashHelper(t, "committed-classification-migration", path)
+		assertMigrationVersion(t, path, 4)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		assertMigrationVersion(t, path, 4)
+		if _, err := os.Stat(path + ".pre-migrate-v3-to-v4.sqlite"); !os.IsNotExist(err) {
+			t.Fatalf("current committed reopen created backup: %v", err)
 		}
 	})
 }
@@ -541,12 +640,15 @@ func TestCrashHelper(t *testing.T) {
 		os.Exit(4)
 	}
 	switch mode {
-	case "migration", "committed-migration", "lexical-migration", "committed-lexical-migration":
+	case "migration", "committed-migration", "lexical-migration", "committed-lexical-migration", "classification-migration", "committed-classification-migration":
 		migrationPath := "migrations/0002_ingest.sql"
 		version, name := 2, "ingest"
 		if mode == "lexical-migration" || mode == "committed-lexical-migration" {
 			migrationPath = "migrations/0003_lexical.sql"
 			version, name = 3, "lexical"
+		} else if mode == "classification-migration" || mode == "committed-classification-migration" {
+			migrationPath = "migrations/0004_classifications.sql"
+			version, name = 4, "classifications"
 		}
 		migrationSQL, err := migrationFiles.ReadFile(migrationPath)
 		if err != nil {
@@ -559,7 +661,7 @@ func TestCrashHelper(t *testing.T) {
 		if _, err := conn.ExecContext(context.Background(), `INSERT INTO schema_migrations(version, name, sha256) VALUES(?, ?, ?)`, version, name, hash[:]); err != nil {
 			os.Exit(14)
 		}
-		if mode == "committed-migration" || mode == "committed-lexical-migration" {
+		if mode == "committed-migration" || mode == "committed-lexical-migration" || mode == "committed-classification-migration" {
 			if _, err := conn.ExecContext(context.Background(), `COMMIT`); err != nil {
 				os.Exit(15)
 			}
