@@ -89,7 +89,7 @@ func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestina
 			t.Fatalf("Open: %v", err)
 		}
 		var version int
-		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
+		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
 			t.Fatalf("version = %d err=%v", version, err)
 		}
 		assertRecordGraph(t, store, source, observation, artifact, base, mixed, segment)
@@ -182,8 +182,8 @@ func TestLexicalMigrationExactSchemaAndHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 4 {
-		t.Fatalf("migration count = %d, want 4", len(migrations))
+	if len(migrations) != 5 {
+		t.Fatalf("migration count = %d, want 5", len(migrations))
 	}
 	if migrations[2].version != 3 || migrations[2].name != "lexical" {
 		t.Fatalf("migration 3 = version %d name %q, want version 3 name lexical", migrations[2].version, migrations[2].name)
@@ -228,7 +228,7 @@ func TestClassificationMigrationExactSchemaBackupAndRetrievalEquivalence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 4 || migrations[3].version != 4 || migrations[3].name != "classifications" {
+	if len(migrations) != 5 || migrations[3].version != 4 || migrations[3].name != "classifications" {
 		t.Fatalf("migration 4 = %#v", migrations)
 	}
 	if len(migrations[3].sql) != 6563 || fmt.Sprintf("%x", migrations[3].hash) != "cd2f3dd48e6b107900c53ad5036f80a046f2dc414102dc05c06677e53156416a" || migrations[3].sql[len(migrations[3].sql)-1] != '\n' {
@@ -343,6 +343,150 @@ func TestClassificationMigrationExactSchemaBackupAndRetrievalEquivalence(t *test
 	}
 }
 
+func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) != 5 || migrations[4].version != 5 || migrations[4].name != "policy_definitions" {
+		t.Fatalf("migration 5 = %#v", migrations)
+	}
+	if len(migrations[4].sql) != 697 || fmt.Sprintf("%x", migrations[4].hash) != "36fe39648b615c52739c6eaf1a19ebf0c85325a9e45416cb01690304a888add4" || migrations[4].sql[len(migrations[4].sql)-1] != '\n' {
+		t.Fatalf("migration 5 bytes/hash/newline = %d/%x/%v", len(migrations[4].sql), migrations[4].hash, migrations[4].sql[len(migrations[4].sql)-1] == '\n')
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "records.sqlite")
+	createVersionFour(t, path)
+	db, err := connect(ctx, path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v4 := &Store{db: db, path: path}
+	representation, content, _ := addLexicalDocument(t, v4, "policy-migration", "alpha evidence")
+	if err := v4.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	graph, classification := classificationRecordGraph(t)
+	for _, put := range []func() error{
+		func() error { return v4.PutSource(ctx, graph.source) },
+		func() error { return v4.PutObservation(ctx, graph.observation) },
+		func() error { return v4.PutArtifact(ctx, graph.artifact) },
+		func() error { return v4.PutRepresentation(ctx, graph.base) },
+		func() error { return v4.PutRepresentation(ctx, graph.mixed) },
+		func() error { return v4.PutSegment(ctx, graph.segment) },
+		func() error { return v4.PutClassification(ctx, classification) },
+	} {
+		if err := put(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	beforeLexical, err := v4.SearchLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeVerified, err := v4.SearchVerifiedLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v4.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if got, err := store.GetClassification(ctx, classification.ID); err != nil || !reflect.DeepEqual(got, classification) {
+		t.Fatalf("classification after v5 migration = %#v, %v", got, err)
+	}
+	afterLexical, err := store.SearchLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterVerified, err := store.SearchVerifiedLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterLexical, beforeLexical) || !reflect.DeepEqual(afterVerified, beforeVerified) {
+		t.Fatalf("retrieval changed: lexical %v -> %v; verified %v -> %v", beforeLexical, afterLexical, beforeVerified, afterVerified)
+	}
+	var tableSQL string
+	if err := store.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'policy_definitions'`).Scan(&tableSQL); err != nil || !strings.HasSuffix(tableSQL, " STRICT") || !strings.Contains(tableSQL, "UNIQUE (namespace, external_policy_id, external_policy_version)") {
+		t.Fatalf("policy_definitions schema = %q err=%v", tableSQL, err)
+	}
+	var storedHash []byte
+	if err := store.db.QueryRow(`SELECT sha256 FROM schema_migrations WHERE version = 5 AND name = 'policy_definitions'`).Scan(&storedHash); err != nil || !bytes.Equal(storedHash, migrations[4].hash[:]) {
+		t.Fatalf("stored migration hash = %x err=%v", storedHash, err)
+	}
+	backupPath := path + ".pre-migrate-v4-to-v5.sqlite"
+	backup, err := connect(ctx, backupPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, backup, migrations, 4, false); err != nil {
+		t.Fatalf("verify v4 backup: %v", err)
+	}
+	backup.Close()
+	backupBytes, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredPath := filepath.Join(dir, "restored.sqlite")
+	if err := os.WriteFile(restoredPath, backupBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Open(ctx, restoredPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if got, err := restored.GetClassification(ctx, classification.ID); err != nil || !reflect.DeepEqual(got, classification) {
+		t.Fatalf("restored classification = %#v, %v", got, err)
+	}
+	gotLexical, err := restored.SearchLexical(ctx, "alpha", 10)
+	if err != nil || !reflect.DeepEqual(gotLexical, beforeLexical) {
+		t.Fatalf("restored lexical = %v, %v", gotLexical, err)
+	}
+	gotVerified, err := restored.SearchVerifiedLexical(ctx, "alpha", 10)
+	if err != nil || !reflect.DeepEqual(gotVerified, beforeVerified) {
+		t.Fatalf("restored verified = %v, %v", gotVerified, err)
+	}
+	t.Run("occupied backup fails closed", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "occupied.sqlite")
+		createVersionFour(t, path)
+		backupPath := path + ".pre-migrate-v4-to-v5.sqlite"
+		const occupied = "occupied"
+		if err := os.WriteFile(backupPath, []byte(occupied), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if store, err := Open(ctx, path); store != nil || !IsCode(err, CodeConflict) {
+			if store != nil {
+				store.Close()
+			}
+			t.Fatalf("Open with occupied backup = %v, %v", store, err)
+		}
+		if got, err := os.ReadFile(backupPath); err != nil || string(got) != occupied {
+			t.Fatalf("occupied backup = %q, %v", got, err)
+		}
+		assertMigrationVersion(t, path, 4)
+	})
+	t.Run("read-only v4 refuses migration", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "readonly.sqlite")
+		createVersionFour(t, path)
+		if store, err := OpenReadOnly(ctx, path); store != nil || !IsCode(err, CodeReadOnly) {
+			if store != nil {
+				store.Close()
+			}
+			t.Fatalf("OpenReadOnly v4 = %v, %v", store, err)
+		}
+		assertMigrationVersion(t, path, 4)
+		if _, err := os.Stat(path + ".pre-migrate-v4-to-v5.sqlite"); !os.IsNotExist(err) {
+			t.Fatalf("read-only migration created backup: %v", err)
+		}
+	})
+}
+
 func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -406,8 +550,8 @@ func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	}
 	defer restored.Close()
 	var version int
-	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
-		t.Fatalf("restored version = %d err=%v, want 4", version, err)
+	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+		t.Fatalf("restored version = %d err=%v, want 5", version, err)
 	}
 	assertRecordGraph(t, restored, source, observation, artifact, base, mixed, segment)
 	if gotState, err := restored.GetIngestState(ctx, batch.Source.ID); err != nil || !reflect.DeepEqual(gotState, wantState) {
@@ -463,10 +607,10 @@ func TestLexicalMigrationRejectsDamageAndPlausibleNewerVersion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 5, name = 'future' WHERE version = 4`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 6, name = 'future' WHERE version = 5`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 5`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 6`); err != nil {
 			t.Fatal(err)
 		}
 		store.Close()
@@ -554,6 +698,28 @@ func createVersionThree(t *testing.T, path string) {
 	}
 }
 
+func createVersionFour(t *testing.T, path string) {
+	t.Helper()
+	createVersionThree(t, path)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0004_classifications.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), conn, migration{version: 4, name: "classifications", sql: data, hash: sha256.Sum256(data)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedVersionOneRecordGraph(t *testing.T, path string) (mousa.Source, mousa.Observation, mousa.Artifact, mousa.Representation, mousa.Representation, mousa.Segment) {
 	t.Helper()
 	ctx := context.Background()
@@ -622,7 +788,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer migration", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `UPDATE schema_migrations SET version = 5 WHERE version = 4`)
+			rawExec(t, path, `UPDATE schema_migrations SET version = 6 WHERE version = 5`)
 		}, CodeIncompatibleSchema},
 		{"changed hash", func(t *testing.T, path string) {
 			createCurrent(t, path)
@@ -693,7 +859,7 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
 			rawExec(t, path, `
-				UPDATE schema_migrations SET version = 5 WHERE version = 4;
+				UPDATE schema_migrations SET version = 6 WHERE version = 5;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
 			`)
 			before, err := os.ReadFile(path)
@@ -794,6 +960,7 @@ func TestReadOnlyStoreRejectsEveryWriteMethodFirst(t *testing.T) {
 		{"PutArtifact", func() error { return store.PutArtifact(ctx, mousa.Artifact{}) }},
 		{"PutRepresentation", func() error { return store.PutRepresentation(ctx, mousa.Representation{}) }},
 		{"PutSegment", func() error { return store.PutSegment(ctx, mousa.Segment{}) }},
+		{"PutPolicyDefinition", func() error { return store.PutPolicyDefinition(ctx, mousa.PolicyDefinition{}) }},
 		{"Checkpoint", func() error { return store.Checkpoint(ctx) }},
 		{"Backup", func() error { return store.Backup(ctx, filepath.Join(t.TempDir(), "backup.sqlite")) }},
 	} {
