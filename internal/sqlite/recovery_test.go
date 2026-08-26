@@ -282,8 +282,8 @@ func TestInjectedCommittedMigrationResumesAsCurrent(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("migration count: %v", err)
 	}
-	if count != 4 {
-		t.Fatalf("migration count = %d, want 4", count)
+	if count != 5 {
+		t.Fatalf("migration count = %d, want 5", count)
 	}
 	backupAfter, err := os.ReadFile(backupPath)
 	if err != nil {
@@ -352,8 +352,8 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 			t.Fatalf("migration count: %v", err)
 		}
-		if migrationCount != 4 {
-			t.Fatalf("migration count = %d, want 4", migrationCount)
+		if migrationCount != 5 {
+			t.Fatalf("migration count = %d, want 5", migrationCount)
 		}
 		backup, err := connect(ctx, path+".pre-migrate-v1-to-v2.sqlite", true)
 		if err != nil {
@@ -503,8 +503,8 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
-			t.Fatalf("recovered version = %d err=%v, want 4", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+			t.Fatalf("recovered version = %d err=%v, want 5", version, err)
 		}
 	})
 	t.Run("committed before marker", func(t *testing.T) {
@@ -517,8 +517,8 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
-			t.Fatalf("committed version = %d err=%v, want 4", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+			t.Fatalf("committed version = %d err=%v, want 5", version, err)
 		}
 	})
 }
@@ -591,7 +591,7 @@ func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testin
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 4)
+		assertMigrationVersion(t, path, 5)
 		backup, err := connect(ctx, path+".pre-migrate-v3-to-v4.sqlite", true)
 		if err != nil {
 			t.Fatal(err)
@@ -615,8 +615,123 @@ func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testin
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 4)
+		assertMigrationVersion(t, path, 5)
 		if _, err := os.Stat(path + ".pre-migrate-v3-to-v4.sqlite"); !os.IsNotExist(err) {
+			t.Fatalf("current committed reopen created backup: %v", err)
+		}
+	})
+}
+
+func TestFailedPolicyDefinitionMigrationRollsBackAllState(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "failed-policy-definition.sqlite")
+	createVersionFour(t, path)
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createVerifiedMigrationBackup(ctx, path, migrations, 4); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := path + ".pre-migrate-v4-to-v5.sqlite"
+	backupBefore, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := migrationFiles.ReadFile("migrations/0005_policy_definitions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSQL := append(append([]byte(nil), data...), []byte("SELECT * FROM missing_policy_definition_migration_table;\n")...)
+	if err := applyMigration(ctx, conn, migration{version: 5, name: "policy_definitions", sql: failedSQL, hash: sha256.Sum256(failedSQL)}); err == nil {
+		t.Fatal("failed policy definition migration succeeded")
+	}
+	conn.Close()
+	db.Close()
+	assertMigrationVersion(t, path, 4)
+	verify, err := connect(ctx, path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, verify, migrations, 4, false); err != nil {
+		t.Fatalf("source is not valid v4: %v", err)
+	}
+	var objects int
+	if err := verify.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name = 'policy_definitions'`).Scan(&objects); err != nil || objects != 0 {
+		t.Fatalf("policy definition objects after rollback = %d err=%v, want 0", objects, err)
+	}
+	verify.Close()
+	backupAfter, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(backupAfter, backupBefore) {
+		t.Fatal("failed policy definition migration changed verified backup")
+	}
+}
+
+func TestInterruptedPolicyDefinitionWriteRollsBackOnReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "interrupted-policy-definition-write.sqlite")
+	createCurrent(t, path)
+	record := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
+	runCrashHelper(t, "policy-definition-record", path)
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.GetPolicyDefinition(ctx, record.ID); !IsCode(err, CodeNotFound) {
+		t.Fatalf("interrupted policy definition write = %v, want not_found", err)
+	}
+}
+
+func TestInterruptedAndCommittedPolicyDefinitionMigrationRecoverOnReopen(t *testing.T) {
+	ctx := context.Background()
+	t.Run("interrupted after every migration write", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "interrupted-policy-definition.sqlite")
+		createVersionFour(t, path)
+		runCrashHelper(t, "policy-definition-migration", path)
+		assertMigrationVersion(t, path, 4)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		assertMigrationVersion(t, path, 5)
+		backup, err := connect(ctx, path+".pre-migrate-v4-to-v5.sqlite", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		migrations, err := loadMigrations(migrationFiles)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyVersion(ctx, backup, migrations, 4, false); err != nil {
+			t.Fatalf("policy definition backup is not valid v4: %v", err)
+		}
+		backup.Close()
+	})
+	t.Run("committed before marker", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "committed-policy-definition.sqlite")
+		createVersionFour(t, path)
+		runCrashHelper(t, "committed-policy-definition-migration", path)
+		assertMigrationVersion(t, path, 5)
+		store, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		assertMigrationVersion(t, path, 5)
+		if _, err := os.Stat(path + ".pre-migrate-v4-to-v5.sqlite"); !os.IsNotExist(err) {
 			t.Fatalf("current committed reopen created backup: %v", err)
 		}
 	})
@@ -640,7 +755,7 @@ func TestCrashHelper(t *testing.T) {
 		os.Exit(4)
 	}
 	switch mode {
-	case "migration", "committed-migration", "lexical-migration", "committed-lexical-migration", "classification-migration", "committed-classification-migration":
+	case "migration", "committed-migration", "lexical-migration", "committed-lexical-migration", "classification-migration", "committed-classification-migration", "policy-definition-migration", "committed-policy-definition-migration":
 		migrationPath := "migrations/0002_ingest.sql"
 		version, name := 2, "ingest"
 		if mode == "lexical-migration" || mode == "committed-lexical-migration" {
@@ -649,6 +764,9 @@ func TestCrashHelper(t *testing.T) {
 		} else if mode == "classification-migration" || mode == "committed-classification-migration" {
 			migrationPath = "migrations/0004_classifications.sql"
 			version, name = 4, "classifications"
+		} else if mode == "policy-definition-migration" || mode == "committed-policy-definition-migration" {
+			migrationPath = "migrations/0005_policy_definitions.sql"
+			version, name = 5, "policy_definitions"
 		}
 		migrationSQL, err := migrationFiles.ReadFile(migrationPath)
 		if err != nil {
@@ -661,7 +779,7 @@ func TestCrashHelper(t *testing.T) {
 		if _, err := conn.ExecContext(context.Background(), `INSERT INTO schema_migrations(version, name, sha256) VALUES(?, ?, ?)`, version, name, hash[:]); err != nil {
 			os.Exit(14)
 		}
-		if mode == "committed-migration" || mode == "committed-lexical-migration" || mode == "committed-classification-migration" {
+		if mode == "committed-migration" || mode == "committed-lexical-migration" || mode == "committed-classification-migration" || mode == "committed-policy-definition-migration" {
 			if _, err := conn.ExecContext(context.Background(), `COMMIT`); err != nil {
 				os.Exit(15)
 			}
@@ -678,6 +796,15 @@ func TestCrashHelper(t *testing.T) {
 		}
 		if _, err := conn.ExecContext(context.Background(), `INSERT INTO sources(id, record_json) VALUES(?, ?)`, id[:], data); err != nil {
 			os.Exit(9)
+		}
+	case "policy-definition-record":
+		record := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
+		data, err := mousa.EncodePolicyDefinition(record)
+		if err != nil {
+			os.Exit(22)
+		}
+		if _, err := conn.ExecContext(context.Background(), `INSERT INTO policy_definitions(id, namespace, external_policy_id, external_policy_version, record_json) VALUES(?, ?, ?, ?, ?)`, record.ID[:], record.Namespace, record.ExternalPolicyID, record.ExternalPolicyVersion, data); err != nil {
+			os.Exit(23)
 		}
 	case "ingest":
 		sequence := uint64(3)

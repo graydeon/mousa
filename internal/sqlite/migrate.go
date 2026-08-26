@@ -76,6 +76,10 @@ var requiredObjectsV4 = append(append([]string(nil), requiredObjectsV3...),
 	"table:classifications",
 )
 
+var requiredObjectsV5 = append(append([]string(nil), requiredObjectsV4...),
+	"table:policy_definitions",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -255,6 +259,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV3
 	} else if wantVersion == 4 {
 		requiredObjects = requiredObjectsV4
+	} else if wantVersion == 5 {
+		requiredObjects = requiredObjectsV5
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -294,8 +300,13 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 			return err
 		}
 	}
-	if wantVersion == 4 {
+	if wantVersion >= 4 {
 		if err := verifyClassificationRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion == 5 {
+		if err := verifyPolicyDefinitionRecords(ctx, db); err != nil {
 			return err
 		}
 	}
