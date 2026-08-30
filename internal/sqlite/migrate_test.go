@@ -89,7 +89,7 @@ func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestina
 			t.Fatalf("Open: %v", err)
 		}
 		var version int
-		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
 			t.Fatalf("version = %d err=%v", version, err)
 		}
 		assertRecordGraph(t, store, source, observation, artifact, base, mixed, segment)
@@ -182,8 +182,8 @@ func TestLexicalMigrationExactSchemaAndHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 5 {
-		t.Fatalf("migration count = %d, want 5", len(migrations))
+	if len(migrations) != 6 {
+		t.Fatalf("migration count = %d, want 6", len(migrations))
 	}
 	if migrations[2].version != 3 || migrations[2].name != "lexical" {
 		t.Fatalf("migration 3 = version %d name %q, want version 3 name lexical", migrations[2].version, migrations[2].name)
@@ -228,7 +228,7 @@ func TestClassificationMigrationExactSchemaBackupAndRetrievalEquivalence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 5 || migrations[3].version != 4 || migrations[3].name != "classifications" {
+	if len(migrations) != 6 || migrations[3].version != 4 || migrations[3].name != "classifications" {
 		t.Fatalf("migration 4 = %#v", migrations)
 	}
 	if len(migrations[3].sql) != 6563 || fmt.Sprintf("%x", migrations[3].hash) != "cd2f3dd48e6b107900c53ad5036f80a046f2dc414102dc05c06677e53156416a" || migrations[3].sql[len(migrations[3].sql)-1] != '\n' {
@@ -348,7 +348,7 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 5 || migrations[4].version != 5 || migrations[4].name != "policy_definitions" {
+	if len(migrations) != 6 || migrations[4].version != 5 || migrations[4].name != "policy_definitions" {
 		t.Fatalf("migration 5 = %#v", migrations)
 	}
 	if len(migrations[4].sql) != 697 || fmt.Sprintf("%x", migrations[4].hash) != "36fe39648b615c52739c6eaf1a19ebf0c85325a9e45416cb01690304a888add4" || migrations[4].sql[len(migrations[4].sql)-1] != '\n' {
@@ -487,6 +487,149 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 	})
 }
 
+func TestPolicyBindingMigrationExactSchemaBackupAndRetrievalEquivalence(t *testing.T) {
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) != 6 || migrations[5].version != 6 || migrations[5].name != "policy_bindings" {
+		t.Fatalf("migration 6 = %#v", migrations)
+	}
+	if len(migrations[5].sql) != 4550 || fmt.Sprintf("%x", migrations[5].hash) != "89f9a11f99e3bc9c4fb18994310a9ece14d6d6a635e3a5b092601e64e1600b1e" || migrations[5].sql[len(migrations[5].sql)-1] != '\n' {
+		t.Fatalf("migration 6 bytes/hash/newline = %d/%x/%v", len(migrations[5].sql), migrations[5].hash, migrations[5].sql[len(migrations[5].sql)-1] == '\n')
+	}
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v5.sqlite")
+	createVersionFive(t, path)
+	db, err := connect(ctx, path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := &Store{db: db, path: path}
+	representation, content, _ := addLexicalDocument(t, legacy, "policy-binding-migration", "alpha evidence")
+	if err := legacy.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	beforeLexical, err := legacy.SearchLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeVerified, err := legacy.SearchVerifiedLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Close()
+	if readOnly, err := OpenReadOnly(ctx, path); readOnly != nil || !IsCode(err, CodeReadOnly) {
+		if readOnly != nil {
+			readOnly.Close()
+		}
+		t.Fatalf("OpenReadOnly v5 = %v, %v", readOnly, err)
+	}
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	afterLexical, err := store.SearchLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterVerified, err := store.SearchVerifiedLexical(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(beforeLexical, afterLexical) || !reflect.DeepEqual(beforeVerified, afterVerified) {
+		t.Fatalf("retrieval changed: lexical %v -> %v; verified %v -> %v", beforeLexical, afterLexical, beforeVerified, afterVerified)
+	}
+	for _, table := range []string{"policy_bindings", "policy_activations", "policy_binding_state"} {
+		var tableSQL string
+		if err := store.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?`, table).Scan(&tableSQL); err != nil || !strings.HasSuffix(tableSQL, " STRICT") {
+			t.Fatalf("%s schema = %q err=%v", table, tableSQL, err)
+		}
+	}
+	for table, want := range map[string][]string{
+		"policy_bindings":      {"id", "namespace", "external_binding_id", "external_binding_version", "scope_kind", "subject_id", "policy_definition_id", "record_json"},
+		"policy_activations":   {"id", "namespace", "external_binding_id", "external_activation_id", "expected_previous_activation_id", "active_binding_id", "record_json"},
+		"policy_binding_state": {"namespace", "external_binding_id", "current_activation_id", "active_binding_id"},
+	} {
+		rows, err := store.db.Query(`SELECT name FROM pragma_table_info(?) ORDER BY cid`, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, name)
+		}
+		rows.Close()
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s columns = %v, want %v", table, got, want)
+		}
+	}
+	for table, want := range map[string]int{"policy_bindings": 1, "policy_activations": 6, "policy_binding_state": 6} {
+		var got int
+		if err := store.db.QueryRow(`SELECT count(*) FROM pragma_foreign_key_list(?)`, table).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s foreign keys = %d err=%v, want %d", table, got, err, want)
+		}
+	}
+	var storedHash []byte
+	for _, want := range []struct {
+		name   string
+		table  string
+		unique bool
+	}{
+		{"policy_activations_active_binding_id_idx", "policy_activations", false},
+		{"policy_activations_predecessor_idx", "policy_activations", true},
+		{"policy_activations_root_idx", "policy_activations", true},
+		{"policy_activations_series_idx", "policy_activations", false},
+		{"policy_bindings_definition_id_idx", "policy_bindings", false},
+		{"policy_bindings_scope_idx", "policy_bindings", false},
+		{"policy_binding_state_active_binding_id_idx", "policy_binding_state", false},
+	} {
+		var count, unique int
+		if err := store.db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = ?`, want.name).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("index %s count = %d err=%v", want.name, count, err)
+		}
+		if err := store.db.QueryRow(`SELECT "unique" FROM pragma_index_list(?) WHERE name = ?`, want.table, want.name).Scan(&unique); err != nil {
+			t.Fatalf("index %s uniqueness = %v", want.name, err)
+		}
+		if (unique != 0) != want.unique {
+			t.Fatalf("index %s unique = %d, want %v", want.name, unique, want.unique)
+		}
+	}
+	for _, want := range []struct{ name, sql string }{
+		{"policy_activations_active_binding_id_idx", "CREATE INDEX policy_activations_active_binding_id_idx ON policy_activations(active_binding_id) WHERE active_binding_id IS NOT NULL"},
+		{"policy_binding_state_active_binding_id_idx", "CREATE INDEX policy_binding_state_active_binding_id_idx ON policy_binding_state(active_binding_id) WHERE active_binding_id IS NOT NULL"},
+	} {
+		var got string
+		if err := store.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type = 'index' AND name = ?`, want.name).Scan(&got); err != nil || got != want.sql {
+			t.Fatalf("index %s SQL = %q err=%v, want %q", want.name, got, err, want.sql)
+		}
+	}
+	var triggers, views int
+	if err := store.db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type = 'trigger'`).Scan(&triggers); err != nil || triggers != 0 {
+		t.Fatalf("trigger count = %d err=%v", triggers, err)
+	}
+	if err := store.db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type = 'view'`).Scan(&views); err != nil || views != 0 {
+		t.Fatalf("view count = %d err=%v", views, err)
+	}
+	if err := store.db.QueryRow(`SELECT sha256 FROM schema_migrations WHERE version = 6 AND name = 'policy_bindings'`).Scan(&storedHash); err != nil || !bytes.Equal(storedHash, migrations[5].hash[:]) {
+		t.Fatalf("stored migration hash = %x err=%v", storedHash, err)
+	}
+	backupPath := path + ".pre-migrate-v5-to-v6.sqlite"
+	backup, err := connect(ctx, backupPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backup.Close()
+	if err := verifyVersion(ctx, backup, migrations, 5, false); err != nil {
+		t.Fatalf("v5 backup: %v", err)
+	}
+}
+
 func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -550,8 +693,8 @@ func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	}
 	defer restored.Close()
 	var version int
-	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
-		t.Fatalf("restored version = %d err=%v, want 5", version, err)
+	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
+		t.Fatalf("restored version = %d err=%v, want 6", version, err)
 	}
 	assertRecordGraph(t, restored, source, observation, artifact, base, mixed, segment)
 	if gotState, err := restored.GetIngestState(ctx, batch.Source.ID); err != nil || !reflect.DeepEqual(gotState, wantState) {
@@ -607,10 +750,10 @@ func TestLexicalMigrationRejectsDamageAndPlausibleNewerVersion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 6, name = 'future' WHERE version = 5`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 7, name = 'future' WHERE version = 6`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 6`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 7`); err != nil {
 			t.Fatal(err)
 		}
 		store.Close()
@@ -720,6 +863,28 @@ func createVersionFour(t *testing.T, path string) {
 	}
 }
 
+func createVersionFive(t *testing.T, path string) {
+	t.Helper()
+	createVersionFour(t, path)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0005_policy_definitions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), conn, migration{version: 5, name: "policy_definitions", sql: data, hash: sha256.Sum256(data)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedVersionOneRecordGraph(t *testing.T, path string) (mousa.Source, mousa.Observation, mousa.Artifact, mousa.Representation, mousa.Representation, mousa.Segment) {
 	t.Helper()
 	ctx := context.Background()
@@ -788,7 +953,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer migration", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `UPDATE schema_migrations SET version = 6 WHERE version = 5`)
+			rawExec(t, path, `UPDATE schema_migrations SET version = 7 WHERE version = 6`)
 		}, CodeIncompatibleSchema},
 		{"changed hash", func(t *testing.T, path string) {
 			createCurrent(t, path)
@@ -859,7 +1024,7 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
 			rawExec(t, path, `
-				UPDATE schema_migrations SET version = 6 WHERE version = 5;
+				UPDATE schema_migrations SET version = 7 WHERE version = 6;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
 			`)
 			before, err := os.ReadFile(path)
