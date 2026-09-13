@@ -467,3 +467,273 @@ func candidateByID(candidates []mousa.VerifiedLexicalCandidate, id mousa.Segment
 	}
 	return mousa.VerifiedLexicalCandidate{}
 }
+
+// addEnforcedDocument indexes one text document for an existing pushed Source observation so the
+// enforced source combines active ingest state with searchable content.
+func addEnforcedDocument(t *testing.T, store *Store, observation mousa.Observation, key, text string) verifiedLexicalDocument {
+	t.Helper()
+	ctx := context.Background()
+	artifactID, err := mousa.NewArtifactID(observation.ID, key)
+	if err != nil {
+		t.Fatalf("NewArtifactID: %v", err)
+	}
+	content := []byte(text)
+	artifact := mousa.Artifact{Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observation.ID, ArtifactKey: key, MediaType: mousa.UTF8TextMediaType, ContentSHA256: testDigest(text), ByteLength: uint64(len(content))}
+	if err := store.PutArtifact(ctx, artifact); err != nil {
+		t.Fatalf("PutArtifact: %v", err)
+	}
+	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, content)
+	if err != nil || !bytes.Equal(normalized, content) {
+		t.Fatalf("NormalizeUTF8Text = %v, normalized=%q", err, normalized)
+	}
+	segments, err := mousa.SegmentUTF8Text(representation, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutRepresentation(ctx, representation); err != nil {
+		t.Fatalf("PutRepresentation: %v", err)
+	}
+	for _, segment := range segments {
+		if err := store.PutSegment(ctx, segment); err != nil {
+			t.Fatalf("PutSegment: %v", err)
+		}
+	}
+	if err := store.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
+		t.Fatalf("IndexTextRepresentation: %v", err)
+	}
+	return verifiedLexicalDocument{observation: observation, artifact: artifact, representation: representation, segments: segments}
+}
+
+func seedEnforcedRetrieval(t *testing.T, store *Store, text string) (mousa.PolicyEvaluationRequest, verifiedLexicalDocument) {
+	t.Helper()
+	seedEvaluationFixture(t, store)
+	sequence := uint64(1)
+	batch := testPushBatch(t, "enforced", &sequence)
+	if err := store.ApplyIngest(context.Background(), batch); err != nil {
+		t.Fatalf("ApplyIngest: %v", err)
+	}
+	document := addEnforcedDocument(t, store, batch.Observation, "enforced-body", text)
+	request := testEvaluationRequest(t, batch.Source.ID, "request-enforced")
+	return request, document
+}
+
+func acceptedSegmentIDs(candidates []mousa.VerifiedLexicalCandidate, sourceID mousa.SourceID) []mousa.SegmentID {
+	ids := make([]mousa.SegmentID, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Disposition != mousa.CandidateAccepted || len(candidate.Sources) != 1 || candidate.Sources[0].SourceID != sourceID {
+			continue
+		}
+		ids = append(ids, candidate.Segment.ID)
+	}
+	return ids
+}
+
+func TestSearchEnforcedLexicalScopesToDecisionSource(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, document := seedEnforcedRetrieval(t, store, "sharedterm enforced evidence")
+	addVerifiedLexicalDocument(t, store, "enforced-peer", "sharedterm peer evidence")
+
+	decision, err := store.EvaluateSourceRetrieval(ctx, request)
+	if err != nil || decision.Outcome != mousa.PolicyOutcomeAllow {
+		t.Fatalf("EvaluateSourceRetrieval = %#v, %v", decision, err)
+	}
+	result, err := store.SearchEnforcedLexical(ctx, request, "sharedterm", 10)
+	if err != nil {
+		t.Fatalf("SearchEnforcedLexical: %v", err)
+	}
+	if !reflect.DeepEqual(result.Decision, decision) {
+		t.Fatalf("result decision = %#v, want %#v", result.Decision, decision)
+	}
+	if len(result.Candidates) == 0 || result.Candidates[0].Segment.ID != document.segments[0].ID {
+		t.Fatalf("enforced candidates = %#v, want exactly the decision source segment", result.Candidates)
+	}
+	unrestricted, err := store.SearchVerifiedLexical(ctx, "sharedterm", 10)
+	if err != nil {
+		t.Fatalf("SearchVerifiedLexical: %v", err)
+	}
+	if !reflect.DeepEqual(acceptedSegmentIDs(result.Candidates, decision.Request.SourceID), acceptedSegmentIDs(unrestricted, decision.Request.SourceID)) {
+		t.Fatalf("enforced candidates = %#v, want restricted %#v", result.Candidates, unrestricted)
+	}
+	for _, candidate := range result.Candidates {
+		for _, source := range candidate.Sources {
+			if source.SourceID != decision.Request.SourceID {
+				t.Fatalf("candidate %x carries foreign source %x", candidate.Segment.ID, source.SourceID)
+			}
+		}
+	}
+	if len(result.Candidates) == 0 {
+		t.Fatal("enforced search returned no candidates")
+	}
+	if _, err := store.GetPolicyDecision(ctx, result.Decision.ID); err != nil {
+		t.Fatalf("GetPolicyDecision: %v", err)
+	}
+
+}
+
+func TestSearchEnforcedLexicalLimitAppliesWithinDecisionSource(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, document := seedEnforcedRetrieval(t, store, "filler filler filler filler filler filler filler filler scopebound once")
+	for index := range 3 {
+		addVerifiedLexicalDocument(t, store, fmt.Sprintf("scope-peer-%d", index), "scopebound scopebound scopebound")
+	}
+
+	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
+		t.Fatalf("EvaluateSourceRetrieval: %v", err)
+	}
+	raw, err := store.SearchLexical(ctx, "scopebound", 100)
+	if err != nil || len(raw) < 2 {
+		t.Fatalf("SearchLexical = %#v, %v", raw, err)
+	}
+	position := 0
+	for index, candidate := range raw {
+		if candidate.Segment.ID == document.segments[0].ID {
+			position = index + 1
+		}
+	}
+	if position <= 1 {
+		t.Fatalf("fixture premise: enforced candidate must rank below a peer candidate, position %d", position)
+	}
+	limit := position - 1
+	unrestricted, err := store.SearchVerifiedLexical(ctx, "scopebound", limit)
+	if err != nil {
+		t.Fatalf("SearchVerifiedLexical: %v", err)
+	}
+	if len(acceptedSegmentIDs(unrestricted, mousa.SourceID{})) > 0 {
+		// Presence alone does not break the premise; the enforced segment must be absent.
+	}
+	for _, candidate := range unrestricted {
+		if candidate.Segment.ID == document.segments[0].ID {
+			t.Fatalf("fixture premise: unenforced limit %d already returns the decision source candidate", limit)
+		}
+	}
+	result, err := store.SearchEnforcedLexical(ctx, request, "scopebound", 1)
+	if err != nil {
+		t.Fatalf("SearchEnforcedLexical: %v", err)
+	}
+	if len(result.Candidates) != 1 || result.Candidates[0].Segment.ID != document.segments[0].ID {
+		t.Fatalf("enforced candidates = %#v, want exactly the decision source candidate", result.Candidates)
+	}
+}
+
+func TestSearchEnforcedLexicalDenyMissingInvalidAndTamper(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, _ := seedEnforcedRetrieval(t, store, "gate enforced evidence")
+	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
+		t.Fatalf("EvaluateSourceRetrieval: %v", err)
+	}
+
+	t.Run("never evaluated request", func(t *testing.T) {
+		missing := testEvaluationRequest(t, request.SourceID, "request-never-evaluated")
+		result, err := store.SearchEnforcedLexical(ctx, missing, "gate", 10)
+		if result.Decision.ID != (mousa.PolicyDecisionID{}) || len(result.Candidates) != 0 {
+			t.Fatalf("missing decision result = %#v", result)
+		}
+		if !IsCode(err, CodeNotFound) {
+			t.Fatalf("missing decision = %v, want not_found", err)
+		}
+	})
+	t.Run("deny decision authorizes no candidate", func(t *testing.T) {
+		deniedSource := mousa.Source{Schema: mousa.SourceSchema}
+		deniedSourceID, err := mousa.NewSourceID("lexical-test", "enforced-denied")
+		if err != nil {
+			t.Fatal(err)
+		}
+		deniedSource = mousa.Source{Schema: mousa.SourceSchema, ID: deniedSourceID, Namespace: "lexical-test", ExternalSourceID: "enforced-denied"}
+		if err := store.PutSource(ctx, deniedSource); err != nil {
+			t.Fatalf("PutSource: %v", err)
+		}
+		deniedRequest := testEvaluationRequest(t, deniedSourceID, "request-denied")
+		decision, err := store.EvaluateSourceRetrieval(ctx, deniedRequest)
+		if err != nil || decision.Outcome != mousa.PolicyOutcomeDeny {
+			t.Fatalf("deny decision = %#v, %v", decision, err)
+		}
+		result, err := store.SearchEnforcedLexical(ctx, deniedRequest, "gate", 10)
+		if err != nil {
+			t.Fatalf("enforced deny = %v, want decision data without error", err)
+		}
+		if !reflect.DeepEqual(result.Decision, decision) || len(result.Candidates) != 0 {
+			t.Fatalf("enforced deny result = %#v", result)
+		}
+	})
+	t.Run("invalid requests", func(t *testing.T) {
+		if _, err := store.SearchEnforcedLexical(ctx, mousa.PolicyEvaluationRequest{}, "gate", 10); !IsCode(err, CodeInvalidRecord) {
+			t.Fatalf("empty request = %v", err)
+		}
+		tampered := request
+		tampered.ExternalRequestID = "request-tampered"
+		if _, err := store.SearchEnforcedLexical(ctx, tampered, "gate", 10); !IsCode(err, CodeInvalidRecord) {
+			t.Fatalf("identity-mismatched request = %v", err)
+		}
+		if _, err := store.SearchEnforcedLexical(ctx, request, "gate", 0); !IsCode(err, CodeInvalidQuery) {
+			t.Fatalf("invalid limit = %v", err)
+		}
+	})
+	t.Run("tampered projection is integrity", func(t *testing.T) {
+		if _, err := store.db.ExecContext(ctx, `UPDATE policy_decisions SET outcome = 'deny' WHERE request_id = ?`, request.ID[:]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.SearchEnforcedLexical(ctx, request, "gate", 10); !IsCode(err, CodeIntegrity) {
+			t.Fatalf("tampered outcome = %v, want integrity", err)
+		}
+	})
+}
+
+func TestSearchEnforcedLexicalReadOnlyWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "enforced-readonly.sqlite")
+	writer, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, document := seedEnforcedRetrieval(t, writer, "readonly enforced evidence")
+	addVerifiedLexicalDocument(t, writer, "readonly-peer", "readonly peer")
+	decision, err := writer.EvaluateSourceRetrieval(ctx, request)
+	if err != nil || decision.Outcome != mousa.PolicyOutcomeAllow {
+		t.Fatalf("EvaluateSourceRetrieval = %#v, %v", decision, err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	readOnly, err := OpenReadOnly(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readOnly.Close()
+	before, err := snapshotRowCounts(ctx, readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := readOnly.SearchEnforcedLexical(ctx, request, "readonly", 10)
+	if err != nil || len(result.Candidates) == 0 || result.Candidates[0].Segment.ID != document.segments[0].ID {
+		t.Fatalf("read-only enforced search = %#v, %v", result, err)
+	}
+	after, err := snapshotRowCounts(ctx, readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("read-only enforcement changed rows: before %v after %v", before, after)
+	}
+	foreign, err := readOnly.SearchEnforcedLexical(ctx, request, "peer", 10)
+	if err != nil || len(foreign.Candidates) != 0 {
+		t.Fatalf("foreign expression = %#v, %v; want zero candidates", foreign, err)
+	}
+}
+
+func snapshotRowCounts(ctx context.Context, store *Store) (map[string]int, error) {
+	counts := map[string]int{}
+	for _, table := range []string{"policy_decisions", "policy_decision_inputs", "segment_lexical_rows"} {
+		var count int
+		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {
+			return nil, err
+		}
+		counts[table] = count
+	}
+	return counts, nil
+}
