@@ -7,7 +7,7 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
-func testSource(t *testing.T) mousa.Source {
+func testSource(t testing.TB) mousa.Source {
 	t.Helper()
 	id, err := mousa.NewSourceID("test", "source-1")
 	if err != nil {
