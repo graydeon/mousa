@@ -93,6 +93,11 @@ var requiredObjectsV6 = append(append([]string(nil), requiredObjectsV5...),
 	"table:policy_bindings",
 )
 
+var requiredObjectsV7 = append(append([]string(nil), requiredObjectsV6...),
+	"table:policy_decision_inputs",
+	"table:policy_decisions",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -276,6 +281,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV5
 	} else if wantVersion == 6 {
 		requiredObjects = requiredObjectsV6
+	} else if wantVersion == 7 {
+		requiredObjects = requiredObjectsV7
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -327,6 +334,11 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	}
 	if wantVersion >= 6 {
 		if err := verifyPolicyBindingRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 7 {
+		if err := verifyPolicyDecisionRecords(ctx, db); err != nil {
 			return err
 		}
 	}

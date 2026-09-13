@@ -282,8 +282,8 @@ func TestInjectedCommittedMigrationResumesAsCurrent(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("migration count: %v", err)
 	}
-	if count != 6 {
-		t.Fatalf("migration count = %d, want 6", count)
+	if count != 7 {
+		t.Fatalf("migration count = %d, want 7", count)
 	}
 	backupAfter, err := os.ReadFile(backupPath)
 	if err != nil {
@@ -352,8 +352,8 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 			t.Fatalf("migration count: %v", err)
 		}
-		if migrationCount != 6 {
-			t.Fatalf("migration count = %d, want 6", migrationCount)
+		if migrationCount != 7 {
+			t.Fatalf("migration count = %d, want 7", migrationCount)
 		}
 		backup, err := connect(ctx, path+".pre-migrate-v1-to-v2.sqlite", true)
 		if err != nil {
@@ -503,8 +503,8 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
-			t.Fatalf("recovered version = %d err=%v, want 6", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
+			t.Fatalf("recovered version = %d err=%v, want 7", version, err)
 		}
 	})
 	t.Run("committed before marker", func(t *testing.T) {
@@ -517,8 +517,8 @@ func TestInterruptedAndCommittedLexicalMigrationRecoverOnReopen(t *testing.T) {
 		}
 		defer store.Close()
 		var version int
-		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
-			t.Fatalf("committed version = %d err=%v, want 6", version, err)
+		if err := store.db.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
+			t.Fatalf("committed version = %d err=%v, want 7", version, err)
 		}
 	})
 }
@@ -591,7 +591,7 @@ func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testin
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		backup, err := connect(ctx, path+".pre-migrate-v3-to-v4.sqlite", true)
 		if err != nil {
 			t.Fatal(err)
@@ -615,7 +615,7 @@ func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testin
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		if _, err := os.Stat(path + ".pre-migrate-v3-to-v4.sqlite"); !os.IsNotExist(err) {
 			t.Fatalf("current committed reopen created backup: %v", err)
 		}
@@ -761,7 +761,7 @@ func TestInterruptedAndCommittedPolicyDefinitionMigrationRecoverOnReopen(t *test
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		backup, err := connect(ctx, path+".pre-migrate-v4-to-v5.sqlite", true)
 		if err != nil {
 			t.Fatal(err)
@@ -785,7 +785,7 @@ func TestInterruptedAndCommittedPolicyDefinitionMigrationRecoverOnReopen(t *test
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		if _, err := os.Stat(path + ".pre-migrate-v4-to-v5.sqlite"); !os.IsNotExist(err) {
 			t.Fatalf("current committed reopen created backup: %v", err)
 		}
@@ -860,7 +860,7 @@ func TestInterruptedAndCommittedPolicyBindingMigrationRecoverOnReopen(t *testing
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		backup, err := connect(ctx, path+".pre-migrate-v5-to-v6.sqlite", true)
 		if err != nil {
 			t.Fatal(err)
@@ -880,7 +880,7 @@ func TestInterruptedAndCommittedPolicyBindingMigrationRecoverOnReopen(t *testing
 			t.Fatal(err)
 		}
 		defer store.Close()
-		assertMigrationVersion(t, path, 6)
+		assertMigrationVersion(t, path, 7)
 		if _, err := os.Stat(path + ".pre-migrate-v5-to-v6.sqlite"); !os.IsNotExist(err) {
 			t.Fatalf("current committed reopen created backup: %v", err)
 		}

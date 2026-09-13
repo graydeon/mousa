@@ -89,7 +89,7 @@ func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestina
 			t.Fatalf("Open: %v", err)
 		}
 		var version int
-		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
+		if err := store.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
 			t.Fatalf("version = %d err=%v", version, err)
 		}
 		assertRecordGraph(t, store, source, observation, artifact, base, mixed, segment)
@@ -182,8 +182,8 @@ func TestLexicalMigrationExactSchemaAndHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 6 {
-		t.Fatalf("migration count = %d, want 6", len(migrations))
+	if len(migrations) != 7 {
+		t.Fatalf("migration count = %d, want 7", len(migrations))
 	}
 	if migrations[2].version != 3 || migrations[2].name != "lexical" {
 		t.Fatalf("migration 3 = version %d name %q, want version 3 name lexical", migrations[2].version, migrations[2].name)
@@ -228,7 +228,7 @@ func TestClassificationMigrationExactSchemaBackupAndRetrievalEquivalence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 6 || migrations[3].version != 4 || migrations[3].name != "classifications" {
+	if len(migrations) != 7 || migrations[3].version != 4 || migrations[3].name != "classifications" {
 		t.Fatalf("migration 4 = %#v", migrations)
 	}
 	if len(migrations[3].sql) != 6563 || fmt.Sprintf("%x", migrations[3].hash) != "cd2f3dd48e6b107900c53ad5036f80a046f2dc414102dc05c06677e53156416a" || migrations[3].sql[len(migrations[3].sql)-1] != '\n' {
@@ -348,7 +348,7 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 6 || migrations[4].version != 5 || migrations[4].name != "policy_definitions" {
+	if len(migrations) != 7 || migrations[4].version != 5 || migrations[4].name != "policy_definitions" {
 		t.Fatalf("migration 5 = %#v", migrations)
 	}
 	if len(migrations[4].sql) != 697 || fmt.Sprintf("%x", migrations[4].hash) != "36fe39648b615c52739c6eaf1a19ebf0c85325a9e45416cb01690304a888add4" || migrations[4].sql[len(migrations[4].sql)-1] != '\n' {
@@ -492,7 +492,7 @@ func TestPolicyBindingMigrationExactSchemaBackupAndRetrievalEquivalence(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 6 || migrations[5].version != 6 || migrations[5].name != "policy_bindings" {
+	if len(migrations) != 7 || migrations[5].version != 6 || migrations[5].name != "policy_bindings" {
 		t.Fatalf("migration 6 = %#v", migrations)
 	}
 	if len(migrations[5].sql) != 4550 || fmt.Sprintf("%x", migrations[5].hash) != "89f9a11f99e3bc9c4fb18994310a9ece14d6d6a635e3a5b092601e64e1600b1e" || migrations[5].sql[len(migrations[5].sql)-1] != '\n' {
@@ -693,8 +693,8 @@ func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	}
 	defer restored.Close()
 	var version int
-	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
-		t.Fatalf("restored version = %d err=%v, want 6", version, err)
+	if err := restored.db.QueryRowContext(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
+		t.Fatalf("restored version = %d err=%v, want 7", version, err)
 	}
 	assertRecordGraph(t, restored, source, observation, artifact, base, mixed, segment)
 	if gotState, err := restored.GetIngestState(ctx, batch.Source.ID); err != nil || !reflect.DeepEqual(gotState, wantState) {
@@ -750,10 +750,10 @@ func TestLexicalMigrationRejectsDamageAndPlausibleNewerVersion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 7, name = 'future' WHERE version = 6`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `UPDATE schema_migrations SET version = 8, name = 'future' WHERE version = 6`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 7`); err != nil {
+		if _, err := store.db.ExecContext(ctx, `PRAGMA user_version = 8`); err != nil {
 			t.Fatal(err)
 		}
 		store.Close()
@@ -885,6 +885,28 @@ func createVersionFive(t *testing.T, path string) {
 	}
 }
 
+func createVersionSix(t *testing.T, path string) {
+	t.Helper()
+	createVersionFive(t, path)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, err := migrationFiles.ReadFile("migrations/0006_policy_bindings.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), conn, migration{version: 6, name: "policy_bindings", sql: data, hash: sha256.Sum256(data)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedVersionOneRecordGraph(t *testing.T, path string) (mousa.Source, mousa.Observation, mousa.Artifact, mousa.Representation, mousa.Representation, mousa.Segment) {
 	t.Helper()
 	ctx := context.Background()
@@ -953,7 +975,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer migration", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `UPDATE schema_migrations SET version = 7 WHERE version = 6`)
+			rawExec(t, path, `UPDATE schema_migrations SET version = 8 WHERE version = 6`)
 		}, CodeIncompatibleSchema},
 		{"changed hash", func(t *testing.T, path string) {
 			createCurrent(t, path)
@@ -1024,7 +1046,7 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
 			rawExec(t, path, `
-				UPDATE schema_migrations SET version = 7 WHERE version = 6;
+				UPDATE schema_migrations SET version = 8 WHERE version = 6;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
 			`)
 			before, err := os.ReadFile(path)
