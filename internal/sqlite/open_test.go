@@ -50,7 +50,7 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
-	want := []string{"artifacts", "classification_bases", "classifications", "ingest_gaps", "ingest_receipts", "observations", "policy_activations", "policy_binding_state", "policy_bindings", "policy_decision_inputs", "policy_decisions", "policy_definitions", "representation_inputs", "representations", "schema_migrations", "segment_lexical_fts", "segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data", "segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments", "source_ingest_state", "source_withdrawals", "sources"}
+	want := []string{"artifacts", "callers", "classification_bases", "classifications", "ingest_gaps", "ingest_receipts", "observations", "policy_activations", "policy_binding_state", "policy_bindings", "policy_decision_inputs", "policy_decisions", "policy_definitions", "purposes", "representation_inputs", "representations", "schema_migrations", "segment_lexical_fts", "segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data", "segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments", "source_ingest_state", "source_withdrawals", "sources"}
 	if !equalStrings(got, want) {
 		t.Fatalf("tables = %v, want %v", got, want)
 	}
@@ -67,11 +67,11 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	if version != 1 || name != "records" || len(hash) != 32 {
 		t.Fatalf("migration = (%d, %q, %x), want version 1, name records, 32-byte hash", version, name, hash)
 	}
-	if err := store.db.QueryRow(`SELECT version, name, sha256 FROM schema_migrations WHERE version = 2`).Scan(&version, &name, &hash); err != nil {
-		t.Fatalf("read ingest migration: %v", err)
+	if err := store.db.QueryRow(`SELECT version, name, sha256 FROM schema_migrations WHERE version = 8`).Scan(&version, &name, &hash); err != nil {
+		t.Fatalf("read caller identities migration: %v", err)
 	}
-	if version != 2 || name != "ingest" || len(hash) != 32 {
-		t.Fatalf("migration = (%d, %q, %x), want version 2, name ingest, 32-byte hash", version, name, hash)
+	if version != 8 || name != "caller_identities" || len(hash) != 32 {
+		t.Fatalf("migration = (%d, %q, %x), want version 8, name caller_identities, 32-byte hash", version, name, hash)
 	}
 }
 
