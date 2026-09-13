@@ -98,6 +98,11 @@ var requiredObjectsV7 = append(append([]string(nil), requiredObjectsV6...),
 	"table:policy_decisions",
 )
 
+var requiredObjectsV8 = append(append([]string(nil), requiredObjectsV7...),
+	"table:callers",
+	"table:purposes",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -130,7 +135,6 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	default:
 		return wrap(CodeIncompatibleSchema, "inspect database", fmt.Errorf("foreign SQLite application ID %d", applicationIDValue))
 	}
-
 	version, err := databaseVersion(ctx, db)
 	if err != nil {
 		return err
@@ -283,6 +287,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV6
 	} else if wantVersion == 7 {
 		requiredObjects = requiredObjectsV7
+	} else if wantVersion == 8 {
+		requiredObjects = requiredObjectsV8
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -339,6 +345,11 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	}
 	if wantVersion >= 7 {
 		if err := verifyPolicyDecisionRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 8 {
+		if err := verifyCallerIdentityRecords(ctx, db); err != nil {
 			return err
 		}
 	}

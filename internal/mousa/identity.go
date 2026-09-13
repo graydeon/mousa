@@ -20,6 +20,10 @@ type RepresentationID [sha256.Size]byte
 
 type SegmentID [sha256.Size]byte
 
+type CallerID [sha256.Size]byte
+
+type PurposeID [sha256.Size]byte
+
 type SHA256 [sha256.Size]byte
 
 type derivationInputKind string
@@ -87,6 +91,83 @@ func NewObservationID(sourceID SourceID, externalObservationID string) (Observat
 	digest := sha256.New()
 	writeTuple(digest, []byte("mousa.observation.v1"), sourceID[:], []byte(externalObservationID))
 	return ObservationID(digest.Sum(nil)), nil
+}
+
+// NewCallerID derives the caller identity from the caller schema, namespace, and external caller ID.
+
+func NewCallerID(namespace, externalCallerID string) (CallerID, error) {
+	if err := validateIdentityInput("namespace", namespace); err != nil {
+		return CallerID{}, err
+	}
+	if err := validateIdentityInput("external_caller_id", externalCallerID); err != nil {
+		return CallerID{}, err
+	}
+	digest := sha256.New()
+	writeTuple(digest, []byte(CallerSchema), []byte(namespace), []byte(externalCallerID))
+	return CallerID(digest.Sum(nil)), nil
+}
+
+// NewPurposeID derives the purpose identity from the purpose schema, namespace, and external purpose ID.
+func NewPurposeID(namespace, externalPurposeID string) (PurposeID, error) {
+	if err := validateIdentityInput("namespace", namespace); err != nil {
+		return PurposeID{}, err
+	}
+	if err := validateIdentityInput("external_purpose_id", externalPurposeID); err != nil {
+		return PurposeID{}, err
+	}
+	digest := sha256.New()
+	writeTuple(digest, []byte(PurposeSchema), []byte(namespace), []byte(externalPurposeID))
+	return PurposeID(digest.Sum(nil)), nil
+}
+
+func (id CallerID) String() string { return hex.EncodeToString(id[:]) }
+
+func (id PurposeID) String() string { return hex.EncodeToString(id[:]) }
+
+func ParseCallerID(value string) (CallerID, error) {
+	decoded, err := decodeLowerHex("id", ValidationCodeInvalidID, value)
+	if err != nil {
+		return CallerID{}, err
+	}
+	return CallerID(decoded), nil
+}
+
+func ParsePurposeID(value string) (PurposeID, error) {
+	decoded, err := decodeLowerHex("id", ValidationCodeInvalidID, value)
+	if err != nil {
+		return PurposeID{}, err
+	}
+	return PurposeID(decoded), nil
+}
+
+func (id CallerID) MarshalJSON() ([]byte, error) { return json.Marshal(id.String()) }
+
+func (id *CallerID) UnmarshalJSON(data []byte) error {
+	decoded, err := decodeLowerHexJSON("id", data)
+	if err != nil {
+		return err
+	}
+	*id = CallerID(decoded)
+	return nil
+}
+
+func (id PurposeID) MarshalJSON() ([]byte, error) { return json.Marshal(id.String()) }
+
+func (id *PurposeID) UnmarshalJSON(data []byte) error {
+	decoded, err := decodeLowerHexJSON("id", data)
+	if err != nil {
+		return err
+	}
+	*id = PurposeID(decoded)
+	return nil
+}
+
+func decodeLowerHexJSON(field string, data []byte) ([sha256.Size]byte, error) {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return [sha256.Size]byte{}, newValidationError(field, ValidationCodeInvalidID, "must be a hexadecimal string", err)
+	}
+	return decodeLowerHex(field, ValidationCodeInvalidID, text)
 }
 
 func NewArtifactID(observationID ObservationID, artifactKey string) (ArtifactID, error) {
