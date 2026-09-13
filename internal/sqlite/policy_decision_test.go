@@ -259,7 +259,7 @@ func TestPolicyDecisionMigrationExactSchemaBackupAndUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 8 || migrations[6].version != 7 || migrations[6].name != "policy_decisions" {
+	if len(migrations) != 9 || migrations[6].version != 7 || migrations[6].name != "policy_decisions" {
 		t.Fatalf("migration 7 = %#v", migrations)
 	}
 	// Frozen like migrations 3-6: any later edit to v7 bytes is a new migration, not a repair.
