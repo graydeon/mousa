@@ -33,11 +33,80 @@ func (store *Store) SearchVerifiedLexical(ctx context.Context, expression string
 	return candidates, nil
 }
 
+// SearchEnforcedLexical verifies the exact stored decision for request and returns the verified
+// lexical candidates of the decision Source. A stored deny decision authorizes no candidate, and an
+// allow decision authorizes only candidates that derive from the decision Source. Enforcement never
+// writes and never re-evaluates policy, so a read-only store can enforce.
+func (store *Store) SearchEnforcedLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int) (mousa.EnforcedLexicalResult, error) {
+	if err := request.Validate(); err != nil {
+		return mousa.EnforcedLexicalResult{}, wrap(CodeInvalidRecord, "search enforced lexical", err)
+	}
+	if err := validateLexicalQuery(expression, limit); err != nil {
+		return mousa.EnforcedLexicalResult{}, err
+	}
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return mousa.EnforcedLexicalResult{}, ctxErr
+		}
+		return mousa.EnforcedLexicalResult{}, classify("begin enforced lexical search", err)
+	}
+	defer tx.Rollback()
+	result, err := searchEnforcedLexical(ctx, tx, request, expression, limit)
+	if err != nil {
+		return mousa.EnforcedLexicalResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return mousa.EnforcedLexicalResult{}, ctxErr
+		}
+		return mousa.EnforcedLexicalResult{}, classify("finish enforced lexical search", err)
+	}
+	return result, nil
+}
+
+// searchEnforcedLexical reads one decision snapshot and enforces its outcome against the scoped
+// candidate search. Decision lookup and candidate retrieval must stay in one read transaction.
+func searchEnforcedLexical(ctx context.Context, q queryer, request mousa.PolicyEvaluationRequest, expression string, limit int) (mousa.EnforcedLexicalResult, error) {
+	decision, err := getPolicyDecisionByRequest(ctx, q, request.ID)
+	if IsCode(err, CodeNotFound) {
+		return mousa.EnforcedLexicalResult{}, wrap(CodeNotFound, "search enforced lexical", errors.New("no stored decision for request"))
+	}
+	if err != nil {
+		return mousa.EnforcedLexicalResult{}, err
+	}
+	if decision.Request != request {
+		return mousa.EnforcedLexicalResult{}, integrity("search enforced lexical", "stored request disagrees with request identity")
+	}
+	result := mousa.EnforcedLexicalResult{Decision: decision, Candidates: []mousa.VerifiedLexicalCandidate{}}
+	if decision.Outcome != mousa.PolicyOutcomeAllow {
+		return result, nil
+	}
+	candidates, err := searchVerifiedLexicalForSource(ctx, q, expression, limit, decision.Request.SourceID)
+	if err != nil {
+		return mousa.EnforcedLexicalResult{}, err
+	}
+	result.Candidates = candidates
+	return result, nil
+}
+
 func searchVerifiedLexical(ctx context.Context, q queryer, expression string, limit int) ([]mousa.VerifiedLexicalCandidate, error) {
 	raw, err := searchLexical(ctx, q, expression, limit)
 	if err != nil {
 		return nil, err
 	}
+	return verifyLexicalEvidence(ctx, q, raw)
+}
+
+func searchVerifiedLexicalForSource(ctx context.Context, q queryer, expression string, limit int, sourceID mousa.SourceID) ([]mousa.VerifiedLexicalCandidate, error) {
+	raw, err := searchLexicalForSource(ctx, q, expression, limit, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	return verifyLexicalEvidence(ctx, q, raw)
+}
+
+func verifyLexicalEvidence(ctx context.Context, q queryer, raw []LexicalCandidate) ([]mousa.VerifiedLexicalCandidate, error) {
 	evidence := make([]mousa.LexicalCandidateEvidence, 0, len(raw))
 	for _, candidate := range raw {
 		paths, err := lexicalEvidencePaths(ctx, q, candidate.Segment)
