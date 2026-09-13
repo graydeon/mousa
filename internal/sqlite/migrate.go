@@ -103,6 +103,11 @@ var requiredObjectsV8 = append(append([]string(nil), requiredObjectsV7...),
 	"table:purposes",
 )
 
+var requiredObjectsV9 = append(append([]string(nil), requiredObjectsV8...),
+	"table:source_trail_candidates",
+	"table:source_trails",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -289,6 +294,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV7
 	} else if wantVersion == 8 {
 		requiredObjects = requiredObjectsV8
+	} else if wantVersion == 9 {
+		requiredObjects = requiredObjectsV9
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -350,6 +357,11 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	}
 	if wantVersion >= 8 {
 		if err := verifyCallerIdentityRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 9 {
+		if err := verifySourceTrailRecords(ctx, db); err != nil {
 			return err
 		}
 	}
