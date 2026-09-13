@@ -59,21 +59,69 @@ func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.Repres
 	})
 }
 
+// lexicalCandidateQuery returns corpus-wide FTS5 candidates.
+const lexicalCandidateQuery = `
+	SELECT r.segment_id, f.text, f.content_sha256, bm25(segment_lexical_fts)
+	FROM segment_lexical_fts AS f
+	JOIN segment_lexical_rows AS r ON r.rowid = f.rowid
+	WHERE segment_lexical_fts MATCH ?
+	ORDER BY bm25(segment_lexical_fts) ASC, r.segment_id ASC
+	LIMIT ?`
+
+// sourceLexicalCandidateQuery returns FTS5 candidates whose Representation derives from one Source.
+// The recursive CTE mirrors the canonical Go ancestry walk: a Representation belongs to the Source
+// when some derivation path reaches an Artifact of one of its Observations. The restriction is
+// applied before LIMIT so the limit bounds this Source's candidates instead of the corpus.
+const sourceLexicalCandidateQuery = `
+	WITH RECURSIVE source_representations(id) AS (
+		SELECT ri.representation_id
+		FROM representation_inputs AS ri
+		JOIN artifacts AS a ON a.id = ri.artifact_id
+		JOIN observations AS o ON o.id = a.observation_id
+		WHERE o.source_id = ?
+		UNION
+		SELECT ri.representation_id
+		FROM representation_inputs AS ri
+		JOIN source_representations AS sr ON sr.id = ri.input_representation_id
+	)
+	SELECT r.segment_id, f.text, f.content_sha256, bm25(segment_lexical_fts)
+	FROM segment_lexical_fts AS f
+	JOIN segment_lexical_rows AS r ON r.rowid = f.rowid
+	JOIN segments AS s ON s.id = r.segment_id
+	WHERE segment_lexical_fts MATCH ?
+		AND s.representation_id IN (SELECT id FROM source_representations)
+	ORDER BY bm25(segment_lexical_fts) ASC, r.segment_id ASC
+	LIMIT ?`
+
 // searchLexical returns verified FTS5 candidates in raw BM25 order through q.
 func searchLexical(ctx context.Context, q queryer, expression string, limit int) ([]LexicalCandidate, error) {
-	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 || containsNUL(expression) || limit < 1 || limit > 100 {
-		return nil, wrap(CodeInvalidQuery, "search lexical", errors.New("query expression or limit is out of bounds"))
+	if err := validateLexicalQuery(expression, limit); err != nil {
+		return nil, err
 	}
+	return queryLexicalCandidates(ctx, q, lexicalCandidateQuery, expression, limit)
+}
+
+// searchLexicalForSource returns verified FTS5 candidates that derive from one Source, in raw BM25
+// order through q.
+func searchLexicalForSource(ctx context.Context, q queryer, expression string, limit int, sourceID mousa.SourceID) ([]LexicalCandidate, error) {
+	if err := validateLexicalQuery(expression, limit); err != nil {
+		return nil, err
+	}
+	return queryLexicalCandidates(ctx, q, sourceLexicalCandidateQuery, sourceID[:], expression, limit)
+}
+
+func validateLexicalQuery(expression string, limit int) error {
+	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 || containsNUL(expression) || limit < 1 || limit > 100 {
+		return wrap(CodeInvalidQuery, "search lexical", errors.New("query expression or limit is out of bounds"))
+	}
+	return nil
+}
+
+func queryLexicalCandidates(ctx context.Context, q queryer, query string, args ...any) ([]LexicalCandidate, error) {
 	if err := verifyLexicalRecords(ctx, q); err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `
-		SELECT r.segment_id, f.text, f.content_sha256, bm25(segment_lexical_fts)
-		FROM segment_lexical_fts AS f
-		JOIN segment_lexical_rows AS r ON r.rowid = f.rowid
-		WHERE segment_lexical_fts MATCH ?
-		ORDER BY bm25(segment_lexical_fts) ASC, r.segment_id ASC
-		LIMIT ?`, expression, limit)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, lexicalQueryError(ctx, err)
 	}

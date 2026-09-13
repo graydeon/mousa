@@ -68,6 +68,13 @@ type VerifiedLexicalCandidate struct {
 	Reasons     []LifecycleReason
 }
 
+// EnforcedLexicalResult is one decision-gated lexical retrieval. Candidates stay empty when the
+// decision outcome is deny, so callers read the outcome instead of expecting a denial error.
+type EnforcedLexicalResult struct {
+	Decision   PolicyDecision
+	Candidates []VerifiedLexicalCandidate
+}
+
 // RankAndVerifyLexicalCandidates validates, ranks, and applies restrictive source lifecycle policy.
 func RankAndVerifyLexicalCandidates(candidates []LexicalCandidateEvidence) ([]VerifiedLexicalCandidate, error) {
 	if len(candidates) > maxLexicalCandidates {
