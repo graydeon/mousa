@@ -131,7 +131,7 @@ func preflightWritable(ctx context.Context, path string, migrations []migration)
 		if version > len(migrations) {
 			return wrap(CodeIncompatibleSchema, "preflight database", errors.New("database schema is newer than this binary"))
 		}
-		if err := verifyVersion(ctx, db, migrations, version, false); err != nil {
+		if err := verifyVersion(ctx, db, migrations, version, false, true); err != nil {
 			return err
 		}
 		if version > 0 && version < len(migrations) {
@@ -161,7 +161,7 @@ func verifyReadOnly(ctx context.Context, db *sql.DB, migrations []migration) err
 	if version > len(migrations) {
 		return wrap(CodeIncompatibleSchema, "verify read-only database", errors.New("database schema is newer than this binary"))
 	}
-	if err := verifyVersion(ctx, db, migrations, version, false); err != nil {
+	if err := verifyVersion(ctx, db, migrations, version, false, true); err != nil {
 		return err
 	}
 	if version < len(migrations) {
@@ -190,7 +190,7 @@ func createVerifiedMigrationBackup(ctx context.Context, path string, migrations 
 		return wrap(CodeIntegrity, "verify pre-migration backup", err)
 	}
 	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, version, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, version, false, true); err != nil {
 		return wrap(CodeIntegrity, "verify pre-migration backup", err)
 	}
 	return nil
