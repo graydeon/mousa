@@ -104,34 +104,41 @@ verification is 0.6%. This motivates the next engineering decision: bounded expr
 construction (deduplicate terms, rank or cap terms) measured for quality impact before
 adoption.
 
-### Pack byte-budget curve (retrieval-mode evaluation)
+### Pack byte-budget curve (retrieval-mode evaluation, reproduced by the harness in packet-coverage evaluation)
 
 SciFact test split, 300 queries, limit 100, traced mode on a reused store, per-run
 request namespaces (`run-<digest>` recorded in every report). Tracing is ranking-neutral
-at every budget: nDCG@10 0.6681, Recall@100 0.8859, MRR@10 0.6345 for budgets 512 B,
-2 KiB, 8 KiB, and 32 KiB — byte-identical to the verified baseline. The budget only
-changes what the context packet carries.
+at every budget: nDCG@10 0.6681, Recall@100 0.8859, MRR@10 0.6345 for all nine budgets
+below — ranked document lists are byte-identical across budgets and to the verified
+baseline. The budget only changes what the context packet carries.
 
-Gold-document coverage within budget (fraction of each query's gold docs present in the
-packed selection, packing greedy-fit in verified order; corpus mean document 1402 B,
-p50 1331 B):
+Gold-document coverage within budget: the fraction of each query's gold documents that
+the engine's own packed selection carries, |relevant ∩ selected| / |relevant|, macro-averaged
+over judged queries; a document counts as covered when at least one of its candidates was
+selected. Coverage is computed by the harness from the Source Trail's ordered candidate
+rows (`-report coverage` joins per-budget reports into the curve); the earlier
+retrieval-mode evaluation table was computed by an standalone Python simulation over document
+granularity and is superseded by these harness measurements. Agreement is within 0.06
+absolute at every budget (largest gap at 1 KiB, where the simulation over-estimated
+small budgets by packing whole documents that the engine's per-candidate greedy pass
+skips):
 
-| budget | gold coverage |
-|---|---|
-| 512 B | 0.010 |
-| 1024 B | 0.117 |
-| 2 KiB | 0.423 |
-| 8 KiB | 0.732 |
-| 16 KiB | 0.787 |
-| 32 KiB | 0.833 |
-| 64 KiB | 0.869 |
-| 128 KiB | 0.883 |
-| 256 KiB | 0.886 (= Recall@100 ceiling) |
+| budget | gold coverage | selected docs | used bytes | utilisation |
+|---|---|---|---|---|
+| 512 B | 0.007 | 0.0 | 130 | 25.4% |
+| 1 KiB | 0.061 | 1.0 | 830 | 81.1% |
+| 2 KiB | 0.410 | 1.0 | 1826 | 89.2% |
+| 8 KiB | 0.735 | 5.0 | 7976 | 97.4% |
+| 16 KiB | 0.784 | 10.0 | 16160 | 98.6% |
+| 32 KiB | 0.830 | 21.0 | 32528 | 99.3% |
+| 64 KiB | 0.869 | 42.0 | 65293 | 99.6% |
+| 128 KiB | 0.879 | 84.0 | 130614 | 99.7% |
+| 256 KiB | 0.886 (= Recall@100) | 99.0 | 156836 | 59.8% |
 
-Readings: coverage saturates at Recall@100 by ~256 KiB; half the achievable coverage
-needs ~4 KiB; the 64–128 KiB region reaches 87–88% of documents for 87–88% coverage.
-This gives 11D's pack stage its first measured cost/benefit anchor (H3), with the
-dev-subset caveats above.
+Readings: coverage saturates at Recall@100 exactly at 256 KiB (the harness and the
+ceiling agree to four decimals); half the achievable coverage needs ~4 KiB; the
+64–128 KiB region reaches 84–88% of documents for 87–88% coverage. This gives 11D's
+pack stage its first measured cost/benefit anchor (H3), with the dev-subset caveats above.
 
 ### Expression term deduplication (retrieval-mode evaluation, H4 verdict)
 
@@ -194,6 +201,9 @@ remains the published baseline. Both policies stay available in the harness
 eval/beir/fetch.sh <data-dir>
 go build -o /tmp/beir ./cmd/beir
 /tmp/beir -data <data-dir>/scifact -dataset scifact -mode verified -out out.json
+/tmp/beir -data <data-dir>/scifact -dataset scifact -mode traced -budget 2048 -reuse -out out-t-2048.json
+# pack byte-budget curve: run the traced command above per budget, then
+/tmp/beir -report coverage -reports out-t-512.json,out-t-1024.json,... -out curve.json
 /tmp/beir -data <data-dir>/scifact -dataset scifact -mode enforced -reuse -out out-e.json
 go test ./eval/beir/ ./internal/...   # scoring self-test + engine gates
 ```
