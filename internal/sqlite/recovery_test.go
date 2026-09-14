@@ -180,7 +180,7 @@ func TestFailedMigrationRollsBackAllState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open failed-migration source: %v", err)
 	}
-	if err := verifyVersion(ctx, verify, migrations, 1, false); err != nil {
+	if err := verifyVersion(ctx, verify, migrations, 1, false, true); err != nil {
 		t.Fatalf("source is not valid v1: %v", err)
 	}
 	assertRecordGraph(t, &Store{db: verify, readOnly: true, path: path}, source, observation, artifact, base, mixed, segment)
@@ -199,7 +199,7 @@ func TestFailedMigrationRollsBackAllState(t *testing.T) {
 		t.Fatalf("open verified backup: %v", err)
 	}
 	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, 1, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, 1, false, true); err != nil {
 		t.Fatalf("backup is not valid v1: %v", err)
 	}
 	assertRecordGraph(t, &Store{db: backup, readOnly: true, path: backupPath}, source, observation, artifact, base, mixed, segment)
@@ -337,7 +337,7 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open interrupted migration: %v", err)
 		}
-		if err := verifyVersion(ctx, beforeRecovery, migrationSet, 1, false); err != nil {
+		if err := verifyVersion(ctx, beforeRecovery, migrationSet, 1, false, true); err != nil {
 			t.Fatalf("interrupted migration did not leave valid v1: %v", err)
 		}
 		if err := beforeRecovery.Close(); err != nil {
@@ -364,7 +364,7 @@ func TestInterruptedMigrationAndRecordWriteRecoverOnReopen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyVersion(ctx, backup, loaded, 1, false); err != nil {
+		if err := verifyVersion(ctx, backup, loaded, 1, false, true); err != nil {
 			t.Fatalf("verify migration backup: %v", err)
 		}
 	})
@@ -562,7 +562,7 @@ func TestFailedClassificationMigrationRollsBackAllState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, verify, migrations, 3, false); err != nil {
+	if err := verifyVersion(ctx, verify, migrations, 3, false, true); err != nil {
 		t.Fatalf("source is not valid v3: %v", err)
 	}
 	var objects int
@@ -600,7 +600,7 @@ func TestInterruptedAndCommittedClassificationMigrationRecoverOnReopen(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyVersion(ctx, backup, migrations, 3, false); err != nil {
+		if err := verifyVersion(ctx, backup, migrations, 3, false, true); err != nil {
 			t.Fatalf("classification backup is not valid v3: %v", err)
 		}
 		backup.Close()
@@ -661,7 +661,7 @@ func TestFailedPolicyDefinitionMigrationRollsBackAllState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, verify, migrations, 4, false); err != nil {
+	if err := verifyVersion(ctx, verify, migrations, 4, false, true); err != nil {
 		t.Fatalf("source is not valid v4: %v", err)
 	}
 	var objects int
@@ -770,7 +770,7 @@ func TestInterruptedAndCommittedPolicyDefinitionMigrationRecoverOnReopen(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyVersion(ctx, backup, migrations, 4, false); err != nil {
+		if err := verifyVersion(ctx, backup, migrations, 4, false, true); err != nil {
 			t.Fatalf("policy definition backup is not valid v4: %v", err)
 		}
 		backup.Close()
@@ -831,7 +831,7 @@ func TestFailedPolicyBindingMigrationRollsBackAllState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, verify, migrations, 5, false); err != nil {
+	if err := verifyVersion(ctx, verify, migrations, 5, false, true); err != nil {
 		t.Fatalf("source is not valid v5: %v", err)
 	}
 	var objects int
@@ -865,7 +865,7 @@ func TestInterruptedAndCommittedPolicyBindingMigrationRecoverOnReopen(t *testing
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyVersion(ctx, backup, mustMigrations(t), 5, false); err != nil {
+		if err := verifyVersion(ctx, backup, mustMigrations(t), 5, false, true); err != nil {
 			t.Fatalf("policy binding backup is not valid v5: %v", err)
 		}
 		backup.Close()

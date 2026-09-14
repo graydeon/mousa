@@ -155,7 +155,7 @@ func TestPolicyDefinitionStoreDetectsEveryTamperClass(t *testing.T) {
 			if _, err := store.GetPolicyDefinition(ctx, record.ID); !IsCode(err, CodeIntegrity) && test.name != "stored ID" {
 				t.Fatalf("GetPolicyDefinition tamper = %v", err)
 			}
-			if err := verifyVersion(ctx, store.db, mustMigrations(t), 5, true); !IsCode(err, CodeIntegrity) {
+			if err := verifyVersion(ctx, store.db, mustMigrations(t), 5, true, false); !IsCode(err, CodeIntegrity) {
 				t.Fatalf("startup verification tamper = %v", err)
 			}
 		})

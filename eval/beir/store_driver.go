@@ -180,6 +180,32 @@ const (
 	ModeTraced SearchMode = "traced"
 )
 
+// RunConfig identifies one harness experiment. Enforced and traced modes
+// evaluate one policy request per query, and the request identity is a pure
+// function of its fields, so a run must own a request namespace: two runs with
+// different mode, limit, or budget on a reused store would otherwise collide on
+// stored request/decision identities, while retries inside one run must keep
+// the same identity and stay idempotent. The namespace is derived
+// deterministically from the configuration, so re-running the same experiment
+// reuses the same namespace.
+type RunConfig struct {
+	Mode    SearchMode
+	Limit   int
+	Budget  uint64           // traced-mode pack budget in bytes; ignored by other modes
+	Policy  ExpressionPolicy // term folding policy; PolicyOriginal by default
+	Dataset string
+	Corpus  int
+	Judged  int
+}
+
+// Namespace returns the request-identity prefix for this run configuration.
+func (config RunConfig) Namespace() string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d",
+		config.Dataset, string(config.Mode), config.Limit, config.Budget, string(config.Policy),
+		config.Corpus, config.Judged)))
+	return fmt.Sprintf("run-%x", digest[:6])
+}
+
 // SearchProgress receives per-query progress: queries done, total, and the last
 // query ID. It may be nil.
 var SearchProgress func(done, total int, lastQueryID string)
@@ -187,18 +213,29 @@ var SearchProgress func(done, total int, lastQueryID string)
 // QueryTimeout bounds each query's wall time. Zero disables the bound.
 var QueryTimeout time.Duration
 
-// SearchAll runs every judged query through the selected mode and returns ranked
-// document results in query file order. Results are deterministic for a fixed
-// store and query order. Each query runs under QueryTimeout when set.
-func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, mode SearchMode, limit int) ([]SearchResult, error) {
-	requests, err := evaluateRequests(ctx, ingested, dataset, mode)
+// SearchAll runs every judged query through the configured run and returns
+// ranked document results in query file order. Results are deterministic for a
+// fixed store and query order. Each query runs under QueryTimeout when set.
+// Queries whose IDs appear in skip are not re-run; their recorded results are
+// appended in file order so resume preserves the original ordering. Journal,
+// when non-nil, receives each result as it completes so an interrupted run can
+// resume from the completed prefix.
+func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, config RunConfig, skip map[string]SearchResult, journal func(SearchResult)) ([]SearchResult, error) {
+	if config.Limit < 1 || config.Limit > 100 {
+		return nil, fmt.Errorf("run limit %d is out of bounds", config.Limit)
+	}
+	requests, err := evaluateRequests(ctx, ingested, dataset, config)
 	if err != nil {
 		return nil, err
 	}
 	judged := dataset.JudgedQueries()
 	results := make([]SearchResult, 0, len(judged))
 	for done, queryID := range judged {
-		expression, err := BuildExpression(dataset.Queries[queryID])
+		if skipped, resumable := skip[queryID]; resumable {
+			results = append(results, skipped)
+			continue
+		}
+		expression, err := BuildExpressionWithPolicy(dataset.Queries[queryID], config.Policy)
 		if err != nil {
 			return nil, fmt.Errorf("query %s: %w", queryID, err)
 		}
@@ -209,20 +246,20 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		}
 		started := time.Now()
 		var candidates []mousa.VerifiedLexicalCandidate
-		switch mode {
+		switch config.Mode {
 		case ModeVerified:
-			candidates, err = ingested.Store.SearchVerifiedLexical(queryCtx, expression, limit)
+			candidates, err = ingested.Store.SearchVerifiedLexical(queryCtx, expression, config.Limit)
 		case ModeEnforced:
 			var enforced mousa.EnforcedLexicalResult
-			enforced, err = ingested.Store.SearchEnforcedLexical(queryCtx, requests[queryID], expression, limit)
+			enforced, err = ingested.Store.SearchEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit)
 			candidates = enforced.Candidates
 		case ModeTraced:
 			var traced sqlite.TracedLexicalResult
-			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, limit, packBudgetBytes)
+			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit, config.Budget)
 			candidates = traced.Candidates
 		default:
 			cancel()
-			return nil, fmt.Errorf("unknown mode %q", mode)
+			return nil, fmt.Errorf("unknown mode %q", config.Mode)
 		}
 		latency := time.Since(started)
 		cancel()
@@ -248,6 +285,9 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			seen[docID] = struct{}{}
 			result.RankedDocIDs = append(result.RankedDocIDs, docID)
 		}
+		if journal != nil {
+			journal(result)
+		}
 		result.AcceptedSegments = len(result.RankedDocIDs)
 		result.ConsideredSegments = len(candidates)
 		results = append(results, result)
@@ -258,13 +298,14 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 	return results, nil
 }
 
-func evaluateRequests(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, mode SearchMode) (map[string]mousa.PolicyEvaluationRequest, error) {
+func evaluateRequests(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, config RunConfig) (map[string]mousa.PolicyEvaluationRequest, error) {
 	requests := map[string]mousa.PolicyEvaluationRequest{}
-	if mode == ModeVerified {
+	if config.Mode == ModeVerified {
 		return requests, nil
 	}
+	namespace := config.Namespace()
 	for index, queryID := range dataset.JudgedQueries() {
-		request, err := newEvaluationRequest(ingested.Source.ID, fmt.Sprintf("query-%s-%d", queryID, index))
+		request, err := newEvaluationRequest(ingested.Source.ID, fmt.Sprintf("%s-query-%s-%d", namespace, queryID, index))
 		if err != nil {
 			return nil, err
 		}
@@ -300,23 +341,52 @@ func newEvaluationRequest(sourceID mousa.SourceID, externalRequestID string) (mo
 // rejects expressions over 4096 bytes.
 const maxExpressionBytes = 4096
 
+// ExpressionPolicy controls term folding in BuildExpression.
+//
+// PolicyOriginal keeps every query term, duplicating repeated terms. BM25
+// scores sum per matched term, so repetition multiplies a duplicated term's
+// contribution: on ArguAna 38.5% of query terms are duplicates and nearly all
+// of them are stopwords, which skews scores and dominates FTS5 cost (60.6% of
+// search CPU in BM25 instance counting).
+//
+// PolicyDedup folds each repeated term to one instance. This is a retrieval-
+// policy change, not a semantics-preserving optimization: on 50 real ArguAna
+// queries the deduplicated top-10 differed for every query, while average query
+// latency fell ~5x (1.15 s -> 0.23 s). Adoption is a measured quality/latency
+// tradeoff, recorded in docs/RESEARCH.md, not a correctness fix.
+type ExpressionPolicy string
+
+const (
+	// PolicyOriginal is the published baseline evaluation protocol.
+	PolicyOriginal ExpressionPolicy = "original"
+	// PolicyDedup folds repeated terms to one instance each.
+	PolicyDedup ExpressionPolicy = "dedup"
+)
+
 // BuildExpression converts one natural-language query into the FTS5 MATCH
 // expression the store accepts: every alphanumeric term is lowercased, quoted,
-// and OR-joined so that BM25 ranking orders documents by term evidence. When the
-// joined expression exceeds the store's expression bound, trailing terms are
-// dropped (earliest terms first, which preserves leading query wording) until it
-// fits.
-func BuildExpression(query string) (string, error) {
+// and OR-joined so that BM25 ranking orders documents by term evidence. When
+// the joined expression exceeds the store's expression bound, trailing terms
+// are dropped (earliest terms first, which preserves leading query wording)
+// until it fits. The policy decides whether repeated terms are folded.
+func BuildExpressionWithPolicy(query string, policy ExpressionPolicy) (string, error) {
 	fields := strings.FieldsFunc(query, func(r rune) bool {
 		isLetter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
 		isLetter = isLetter || r >= 0x80
 		return !isLetter
 	})
 	terms := make([]string, 0, len(fields))
+	seen := map[string]struct{}{}
 	for _, field := range fields {
 		term := strings.ToLower(strings.TrimSpace(field))
 		if term == "" {
 			continue
+		}
+		if policy == PolicyDedup {
+			if _, duplicate := seen[term]; duplicate {
+				continue
+			}
+			seen[term] = struct{}{}
 		}
 		terms = append(terms, `"`+strings.ReplaceAll(term, `"`, `""`)+`"`)
 	}
@@ -329,6 +399,11 @@ func BuildExpression(query string) (string, error) {
 		expr = strings.Join(terms, " OR ")
 	}
 	return expr, nil
+}
+
+// BuildExpression applies the published PolicyOriginal protocol.
+func BuildExpression(query string) (string, error) {
+	return BuildExpressionWithPolicy(query, PolicyOriginal)
 }
 
 // packBudgetBytes is the explicit byte budget the traced mode packs candidates

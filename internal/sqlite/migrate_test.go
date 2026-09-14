@@ -104,7 +104,7 @@ func TestVersionOneMigrationCreatesVerifiedBackupAndFailsClosedOnExistingDestina
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyVersion(ctx, backup, migrations, 1, false); err != nil {
+		if err := verifyVersion(ctx, backup, migrations, 1, false, true); err != nil {
 			t.Fatalf("verify backup: %v", err)
 		}
 		if err := backup.Close(); err != nil {
@@ -316,7 +316,7 @@ func TestClassificationMigrationExactSchemaBackupAndRetrievalEquivalence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, backup, migrations, 3, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, 3, false, true); err != nil {
 		t.Fatalf("verify v3 backup: %v", err)
 	}
 	backup.Close()
@@ -424,7 +424,7 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, backup, migrations, 4, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, 4, false, true); err != nil {
 		t.Fatalf("verify v4 backup: %v", err)
 	}
 	backup.Close()
@@ -625,7 +625,7 @@ func TestPolicyBindingMigrationExactSchemaBackupAndRetrievalEquivalence(t *testi
 		t.Fatal(err)
 	}
 	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, 5, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, 5, false, true); err != nil {
 		t.Fatalf("v5 backup: %v", err)
 	}
 }
@@ -674,7 +674,7 @@ func TestVersionTwoMigrationCreatesVerifiedBackupAndRestores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyVersion(ctx, backupDB, migrations, 2, false); err != nil {
+	if err := verifyVersion(ctx, backupDB, migrations, 2, false, true); err != nil {
 		t.Fatalf("verify v2 backup: %v", err)
 	}
 	backupStore.Close()

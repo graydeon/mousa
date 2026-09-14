@@ -131,7 +131,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if version > len(migrations) {
 			return wrap(CodeIncompatibleSchema, "verify migrations", fmt.Errorf("schema version %d is newer than %d", version, len(migrations)))
 		}
-		if err := verifyVersion(ctx, db, migrations, version, true); err != nil {
+		if err := verifyVersion(ctx, db, migrations, version, true, false); err != nil {
 			return err
 		}
 		if version == len(migrations) {
@@ -157,7 +157,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if err := conn.Close(); err != nil {
 		return wrap(CodeInternal, "release migration connection", err)
 	}
-	return verifyVersion(ctx, db, migrations, len(migrations), true)
+	return verifyVersion(ctx, db, migrations, len(migrations), true, false)
 }
 
 func loadMigrations(fsys fs.FS) ([]migration, error) {
@@ -227,7 +227,7 @@ func applyMigration(ctx context.Context, conn *sql.Conn, migration migration) er
 	return nil
 }
 
-func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVersion int, requireWAL bool) error {
+func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVersion int, requireWAL bool, readOnly bool) error {
 	applicationIDValue, objects, err := inspectDatabase(ctx, db)
 	if err != nil {
 		return startupError("verify database", err)
@@ -333,6 +333,13 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	if wantVersion >= 3 {
 		if err := verifyLexicalRecords(ctx, db); err != nil {
 			return err
+		}
+		// The FTS5 integrity-check command is an INSERT, so it needs a writable
+		// connection; read-only verification keeps the content-level checks above.
+		if !readOnly {
+			if err := checkLexicalIndexIntegrity(ctx, db); err != nil {
+				return err
+			}
 		}
 	}
 	if wantVersion >= 4 {
