@@ -323,7 +323,7 @@ func TestPolicyDecisionMigrationExactSchemaBackupAndUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, 6, false); err != nil {
+	if err := verifyVersion(ctx, backup, migrations, 6, false, true); err != nil {
 		t.Fatalf("v6 backup: %v", err)
 	}
 }

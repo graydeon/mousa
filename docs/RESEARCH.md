@@ -78,16 +78,21 @@ once and searched via the reuse path; no second full-run replicate yet.
 
 Before the fix (sandbox): throughput collapsed 74 → 18.7 docs/s from 50 → 400 synthetic
 docs (doubling ratios 2.93 → 3.10 → 3.52, trending to 4). Profile: 89.6% of CPU inside
-`IndexTextRepresentation` — 56.2% full `verifyLexicalRecords` per document, 23.3% FTS5
-`integrity-check` per document.
+`IndexTextRepresentation` — 56.2% full `verifyLexicalRecords` per document, 23.3% the FTS5
+structural `integrity-check` per document. The Phase 14 review (below) found the removed
+structural check had not been restored anywhere; it now runs once per writable open.
 
 After the fix (same probe): 172 → 185 docs/s flat across 50/100/200/400. Full-corpus
 indexing: SciFact 798 s (6.5 docs/s), ArguAna 1263 s (6.9 docs/s) — dominated by
 per-document transaction commits with `synchronous=FULL` and per-row verification, not by
 corpus-wide work. Integrity guarantees preserved: per-row `verifyLexicalRow` on write,
-corpus-wide verification at startup, tamper tests unchanged and passing
-(`TestSearchLexicalIntegrityAndReadOnlyParity`, migration verification, all 100+ store
-tests, `-race` clean).
+per-candidate verification on read, corpus-wide content verification at every open, the
+FTS5 structural `integrity-check` once per writable open (it is the only layer that
+catches same-length docsize drift, which `quick_check` and content verification both
+miss and which silently skews BM25 scores; cost ~78 ms at 2000 docs, once per open),
+tamper tests unchanged and passing (`TestSearchLexicalIntegrityAndReadOnlyParity`,
+`TestLexicalFTSStructuralTamperDetectedOnOpenStore`, migration verification, all 100+
+store tests, `-race` clean).
 
 ### Long-query cost (H4)
 
@@ -98,6 +103,60 @@ with expression size (10.9 s @ 4090-byte expression vs 0.75 s @ 791 bytes). Prof
 verification is 0.6%. This motivates the next engineering decision: bounded expression
 construction (deduplicate terms, rank or cap terms) measured for quality impact before
 adoption.
+
+### Pack byte-budget curve (Phase 14)
+
+SciFact test split, 300 queries, limit 100, traced mode on a reused store, per-run
+request namespaces (`run-<digest>` recorded in every report). Tracing is ranking-neutral
+at every budget: nDCG@10 0.6681, Recall@100 0.8859, MRR@10 0.6345 for budgets 512 B,
+2 KiB, 8 KiB, and 32 KiB — byte-identical to the verified baseline. The budget only
+changes what the context packet carries.
+
+Gold-document coverage within budget (fraction of each query's gold docs present in the
+packed selection, packing greedy-fit in verified order; corpus mean document 1402 B,
+p50 1331 B):
+
+| budget | gold coverage |
+|---|---|
+| 512 B | 0.010 |
+| 1024 B | 0.117 |
+| 2 KiB | 0.423 |
+| 8 KiB | 0.732 |
+| 16 KiB | 0.787 |
+| 32 KiB | 0.833 |
+| 64 KiB | 0.869 |
+| 128 KiB | 0.883 |
+| 256 KiB | 0.886 (= Recall@100 ceiling) |
+
+Readings: coverage saturates at Recall@100 by ~256 KiB; half the achievable coverage
+needs ~4 KiB; the 64–128 KiB region reaches 87–88% of documents for 87–88% coverage.
+This gives 11D's pack stage its first measured cost/benefit anchor (H3), with the
+dev-subset caveats above.
+
+### Expression term deduplication (Phase 14, H4 verdict)
+
+ArguAna queries duplicate 38.5% of their terms (median 177 terms/query; duplicates are
+almost exclusively stopwords). BM25 sums per matched term, so duplication multiplies a
+term's contribution and dominates FTS5's instance-counting cost. A `dedup` expression
+policy was prototyped in the harness (`BuildExpressionWithPolicy`) and measured on full
+test splits, identical hardware and stores, limit 100:
+
+| dataset | nDCG@10 | Recall@100 | MRR@10 | p50 latency |
+|---|---|---|---|---|
+| SciFact | 0.6681 → 0.6683 (+0.0002) | 0.8859 → 0.8859 | 0.6345 → 0.6348 | 205 ms → 205 ms |
+| NFCorpus | 0.3063 → 0.3069 (+0.0006) | 0.2334 → 0.2344 | 0.5124 → 0.5128 | 144 ms → 148 ms |
+| ArguAna | **0.3534 → 0.3233 (−0.0301)** | 0.9615 → 0.9336 (−0.0279) | 0.2319 → 0.2091 (−0.0228) | **2982 ms → 723 ms (−76%)** |
+| ArguAna p99 | 12.3 s → 1.5 s (−87.5%) | | | |
+
+Deduplication is a retrieval-policy change, not a semantics-preserving optimization:
+on 50 real ArguAna queries the deduplicated top-10 differed for every query. The
+measured verdict: a large latency win on long queries, but a material ArguAna quality
+regression (nDCG@10 −0.0301, beyond the ±0.001 noise band observed on SciFact/NFCorpus),
+while short-query datasets are unaffected in both dimensions. Decision rule applied
+(quality non-regression beyond noise AND material latency win) **rejects dedup as the
+default production policy**; the negative result is recorded and the original protocol
+remains the published baseline. Both policies stay available in the harness
+(`-policy original|dedup`) for future policy experiments; no engine change was made.
 
 ## Failed approaches and incomplete runs (recorded honestly)
 
@@ -110,10 +169,12 @@ adoption.
   Source matches the derived identity and failing closed (`reuse validation failed`).
   Worker-verified: reuse vs fresh rankings byte-identical on the small fixture; mismatched
   name rejected nonzero.
-- Traced-mode ablation: not completed — request-identity conflict when reusing a store
-  already exercised by an enforced run. Engine behavior is correct; the harness needs
-  per-run request namespaces. Pending bounded increment.
-- Pack byte-budget curves: not yet measured (traced runs pending). No claim exists.
+- Traced-mode ablation: was blocked by request-identity conflicts when reusing a store
+  already exercised by an enforced run. Resolved in Phase 14 with per-run request
+  namespaces (`RunConfig.Namespace`): enforced-then-traced on one store completes, retries
+  keep identity, and distinct configurations never collide (fixture-verified, plus the
+  four full SciFact traced runs above).
+- Pack byte-budget curves: measured in Phase 14 (curve above).
 
 ## Limitations
 
