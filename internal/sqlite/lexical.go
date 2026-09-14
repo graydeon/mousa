@@ -20,6 +20,11 @@ type LexicalCandidate struct {
 }
 
 // IndexTextRepresentation indexes every canonical Segment of one text Representation.
+// Per-row verification (verifyLexicalRow) covers each written row inside this
+// transaction; corpus-wide FTS integrity checking and full lexical verification
+// remain startup verification's job (verifyLexicalRecords via verifyCanonicalRecords),
+// so indexing stays linear in the documents it touches instead of re-verifying the
+// whole index per call.
 func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.RepresentationID, content []byte) error {
 	if err := store.requireWritable("index text representation"); err != nil {
 		return err
@@ -52,10 +57,7 @@ func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.Repres
 				return err
 			}
 		}
-		if _, err := conn.ExecContext(ctx, `INSERT INTO segment_lexical_fts(segment_lexical_fts) VALUES('integrity-check')`); err != nil {
-			return classify("check lexical index", err)
-		}
-		return verifyLexicalRecords(ctx, conn)
+		return nil
 	})
 }
 
@@ -117,10 +119,12 @@ func validateLexicalQuery(expression string, limit int) error {
 	return nil
 }
 
+// queryLexicalCandidates verifies each returned candidate against its canonical
+// Segment (existence, projection, payload digest) instead of re-verifying every
+// lexical row before each query. A tampered FTS row is still caught fail-closed:
+// either the candidate's own digest/projection check fails or the candidate is
+// simply not returned. Startup verification retains the corpus-wide check.
 func queryLexicalCandidates(ctx context.Context, q queryer, query string, args ...any) ([]LexicalCandidate, error) {
-	if err := verifyLexicalRecords(ctx, q); err != nil {
-		return nil, err
-	}
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, lexicalQueryError(ctx, err)
