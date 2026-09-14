@@ -165,6 +165,47 @@ default production policy**; the negative result is recorded and the original pr
 remains the published baseline. Both policies stay available in the harness
 (`-policy original|dedup`) for future policy experiments; no engine change was made.
 
+### Semantics-preserving expression reduction (Phase 16, H4 closed)
+
+The one remaining expression-level candidate that could be latency-neutral in ranking was
+dropping phrases with zero postings: a phrase that matches no document contributes nothing
+to BM25 and nothing to the OR candidate set under FTS5. Measured on the first 50 ArguAna
+test queries against the Phase 14 store, median of two post-warmup repeats, same hardware.
+
+Ranking identity and both arms of the latency comparison come from one probe run
+(`probes/arguana-prune-match-oracle.json`), so they share warm-up state:
+
+| variant (one probe run) | p50 latency | ranking identity |
+|---|---|---|
+| engine shape (`bm25` + segment_id tiebreaker, LIMIT 100) | 1.832 s | reference |
+| zero-posting phrases removed (1–4 per query, 16/50 queries affected) | 1.818 s | **byte-identical top-100 on all 50 queries** |
+
+An independent probe series (`runs/arguana-diagnosis.json`) measured the same shape at
+1.841 s and the pruned expression at 1.717 s (−6.7%), plus two shape variants that were not
+adopted: `ORDER BY rank` without the tiebreaker 2.065 s and LIMIT 1000 1.928 s. Both series
+put the win well below the ≥10% bar, and the LIMIT result shows cost scales with matched
+rows rather than with the limit, so no top-N early termination is active for this query
+shape.
+
+Zero-posting phrases are rare once document frequency is checked against the index instead
+of against vocabulary strings: 25 removable phrase instances out of 7,860 (0.3%), spread
+over 16 queries. The cost is the high-document-frequency stopword phrases both policies
+must keep, and the per-query effect is not systematic: over the 16 affected queries the
+delta ranges from −8.7% to +20.9%, with 6 of 16 slower or equal after pruning.
+
+Decision rule applied (byte-identical rankings AND ≥10% p50 win on ArguAna) **rejects
+zero-posting elimination**: no engine or harness change. This closes the
+semantics-preserving expression space at H4 — duplicate folding changes rankings (Phase
+14), zero-posting dropping does not pay (Phase 16) — leaving only ranking-semantics levers
+(stopword dropping, df cutoffs, weighting) or deferred engine-level rewrites (e.g.
+`detail=`).
+
+Two measurement lessons are recorded for the next harness change: raw term strings are an
+unsound document-frequency oracle under `unicode61 remove_diacritics 2` — the vocabulary
+check read 2.2% of phrase instances as absent and reported spurious ranking differences for
+40 of 50 queries, while a MATCH-existence check found 0.3% absent and no ranking difference
+— and LIMIT does not bound scan cost for this query shape.
+
 ## Failed approaches and incomplete runs (recorded honestly)
 
 - Ingest O(N²): first SciFact run killed at 30m12s (~2.8k/5.2k docs). Superseded by the
