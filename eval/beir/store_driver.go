@@ -159,10 +159,16 @@ func (ingested *IngestedCorpus) Close() error {
 	return ingested.Store.Close()
 }
 
-// SearchResult is one ranked query result with its measured latency.
+// SearchResult is one ranked query result with its measured latency. Traced
+// runs additionally record the packet selection the engine packed: the
+// documents with at least one selected candidate (in rank order) and the
+// selection's used byte total. Non-traced runs leave both empty because no
+// packet exists to account for.
 type SearchResult struct {
 	QueryID            string
 	RankedDocIDs       []string
+	SelectedDocIDs     []string
+	UsedBytes          uint64
 	LatencyMicros      int64
 	AcceptedSegments   int
 	ConsideredSegments int
@@ -246,6 +252,7 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		}
 		started := time.Now()
 		var candidates []mousa.VerifiedLexicalCandidate
+		var trail mousa.SourceTrail
 		switch config.Mode {
 		case ModeVerified:
 			candidates, err = ingested.Store.SearchVerifiedLexical(queryCtx, expression, config.Limit)
@@ -257,6 +264,7 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			var traced sqlite.TracedLexicalResult
 			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit, config.Budget)
 			candidates = traced.Candidates
+			trail = traced.Trail
 		default:
 			cancel()
 			return nil, fmt.Errorf("unknown mode %q", config.Mode)
@@ -285,6 +293,24 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			seen[docID] = struct{}{}
 			result.RankedDocIDs = append(result.RankedDocIDs, docID)
 		}
+		// The trail's ordered candidate rows are the engine's own selection; the
+		// harness reads it instead of re-deriving packing from byte counts.
+		selectedSeen := map[string]struct{}{}
+		for _, candidate := range trail.Candidates {
+			if !candidate.Selected {
+				continue
+			}
+			docID, ok := ingested.SegmentToDoc[candidate.SegmentID]
+			if !ok {
+				return nil, fmt.Errorf("segment %x has no document mapping", candidate.SegmentID)
+			}
+			if _, duplicate := selectedSeen[docID]; duplicate {
+				continue
+			}
+			selectedSeen[docID] = struct{}{}
+			result.SelectedDocIDs = append(result.SelectedDocIDs, docID)
+		}
+		result.UsedBytes = trail.UsedBytes
 		if journal != nil {
 			journal(result)
 		}

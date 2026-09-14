@@ -19,44 +19,8 @@ import (
 	"github.com/graydeon/mousa/eval/beir"
 )
 
-type aggregate struct {
-	Queries           int     `json:"queries"`
-	NDCGAt10          float64 `json:"ndcg_at_10"`
-	RecallAt100       float64 `json:"recall_at_100"`
-	MRRAt10           float64 `json:"mrr_at_10"`
-	LatencyP50Micros  int64   `json:"latency_p50_micros"`
-	LatencyP90Micros  int64   `json:"latency_p90_micros"`
-	LatencyP99Micros  int64   `json:"latency_p99_micros"`
-	LatencyMeanMicros int64   `json:"latency_mean_micros"`
-}
-
-type runReport struct {
-	Dataset          string        `json:"dataset"`
-	Mode             string        `json:"mode"`
-	Budget           uint64        `json:"budget_bytes"`
-	RequestNamespace string        `json:"request_namespace"`
-	Limit            int           `json:"limit"`
-	CorpusDocuments  int           `json:"corpus_documents"`
-	JudgedQueries    int           `json:"judged_queries"`
-	IndexBytes       int64         `json:"index_bytes"`
-	IndexingSeconds  float64       `json:"indexing_seconds"`
-	PeakRSSKB        int64         `json:"peak_rss_kib"`
-	StartedAt        time.Time     `json:"started_at"`
-	FinishedAt       time.Time     `json:"finished_at"`
-	Aggregate        aggregate     `json:"aggregate"`
-	Queries          []queryReport `json:"queries"`
-}
-
-type queryReport struct {
-	QueryID            string   `json:"query_id"`
-	RankedDocIDs       []string `json:"ranked_doc_ids"`
-	LatencyMicros      int64    `json:"latency_micros"`
-	AcceptedSegments   int      `json:"accepted_segments"`
-	ConsideredSegments int      `json:"considered_segments"`
-}
-
 func main() {
-	dataDir := flag.String("data", "", "directory containing corpus.jsonl, queries.jsonl, and qrels/test.tsv (required)")
+	dataDir := flag.String("data", "", "directory containing corpus.jsonl, queries.jsonl, and qrels/test.tsv (required for a run)")
 	dataset := flag.String("dataset", "subset", "dataset name recorded in the report")
 	out := flag.String("out", "", "output JSON path (required)")
 	reuse := flag.Bool("reuse", false, "reuse an existing indexed store instead of reindexing")
@@ -66,22 +30,39 @@ func main() {
 	budget := flag.Uint64("budget", 1<<20, "traced-mode pack budget in bytes (e.g. 512, 2048, 8192)")
 	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats) or dedup (fold repeats; changes rankings)")
 	resume := flag.Bool("resume", false, "resume an interrupted run from its journal (manifest must match)")
+	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve instead of running queries`)
+	reports := flag.String("reports", "", "comma-separated traced report paths (with -report coverage)")
 	flag.Parse()
 
-	if *dataDir == "" || *out == "" {
-		flag.Usage()
+	switch *report {
+	case "":
+		if *dataDir == "" || *out == "" {
+			flag.Usage()
+			os.Exit(2)
+		}
+		config := beir.RunConfig{
+			Mode:    beir.SearchMode(*mode),
+			Limit:   *limit,
+			Budget:  *budget,
+			Policy:  beir.ExpressionPolicy(*policy),
+			Dataset: *dataset,
+		}
+		if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout); err != nil {
+			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
+			os.Exit(1)
+		}
+	case "coverage":
+		if *reports == "" || *out == "" {
+			fmt.Fprintln(os.Stderr, `beir: -report coverage requires -reports <comma-separated traced reports> and -out`)
+			os.Exit(2)
+		}
+		if err := coverageReportTo(*out, strings.Split(*reports, ",")); err != nil {
+			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "beir: unknown -report mode %q (supported: coverage)\n", *report)
 		os.Exit(2)
-	}
-	config := beir.RunConfig{
-		Mode:    beir.SearchMode(*mode),
-		Limit:   *limit,
-		Budget:  *budget,
-		Policy:  beir.ExpressionPolicy(*policy),
-		Dataset: *dataset,
-	}
-	if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout); err != nil {
-		fmt.Fprintf(os.Stderr, "beir: %v\n", err)
-		os.Exit(1)
 	}
 }
 
@@ -95,6 +76,7 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	config.Corpus = len(dataset.Corpus)
 	config.Judged = len(dataset.JudgedQueries())
 	storePath := filepath.Join(filepath.Dir(out), config.Dataset+".sqlite")
+	var ingested *beir.IngestedCorpus
 	if reuse {
 		if _, err := os.Stat(storePath); err != nil {
 			return fmt.Errorf("reuse requires an existing store at %s: %w", storePath, err)
@@ -110,14 +92,14 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		if err != nil {
 			return fmt.Errorf("resume: %w", err)
 		}
-		if err := checkManifest(manifestPath, config, dataset); err != nil {
+		if err := checkManifest(manifestPath, config, queryTimeout); err != nil {
 			return fmt.Errorf("resume: %w", err)
 		}
 		skip = completed
 		fmt.Fprintf(os.Stderr, "%s: resuming with %d completed queries\n", config.Dataset, len(skip))
 	}
 	if !resume {
-		if err := writeManifest(manifestPath, config, dataset, storePath); err != nil {
+		if err := writeManifest(manifestPath, config, storePath, queryTimeout); err != nil {
 			return err
 		}
 		// A fresh run replaces any stale journal so completed queries from a
@@ -129,7 +111,6 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	beir.IngestProgress = func(done, total int, elapsed float64) {
 		fmt.Fprintf(os.Stderr, "\r%s: ingest %d/%d docs (%.1fs)", config.Dataset, done, total, elapsed)
 	}
-	var ingested *beir.IngestedCorpus
 	if reuse {
 		startedOpen := time.Now()
 		ingested, err = beir.OpenExisting(ctx, dataset, storePath)
@@ -175,39 +156,86 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	recall := make([]float64, 0, len(results))
 	mrr := make([]float64, 0, len(results))
 	latencies := make([]int64, 0, len(results))
-	reports := make([]queryReport, 0, len(results))
+	reports := make([]beir.QueryReport, 0, len(results))
+	var coverageValues []float64
+	var usedBytes []uint64
 	for _, result := range results {
 		relevant := dataset.Qrels[result.QueryID]
 		ndcg = append(ndcg, beir.NDCGAt10(result.RankedDocIDs, relevant))
 		recall = append(recall, beir.RecallAt100(result.RankedDocIDs, relevant))
 		mrr = append(mrr, beir.MRRAt10(result.RankedDocIDs, relevant))
 		latencies = append(latencies, result.LatencyMicros)
-		reports = append(reports, queryReport{
+		entry := beir.QueryReport{
 			QueryID: result.QueryID, RankedDocIDs: result.RankedDocIDs,
 			LatencyMicros: result.LatencyMicros, AcceptedSegments: result.AcceptedSegments,
 			ConsideredSegments: result.ConsideredSegments,
-		})
+		}
+		if config.Mode == beir.ModeTraced {
+			coverage := beir.GoldCoverage(relevant, result.SelectedDocIDs)
+			coverageValues = append(coverageValues, coverage)
+			usedBytes = append(usedBytes, result.UsedBytes)
+			entry.PackCoverage = &beir.QueryCoverage{
+				GoldCoverage: coverage,
+				SelectedDocs: len(result.SelectedDocIDs),
+				UsedBytes:    result.UsedBytes,
+			}
+		}
+		reports = append(reports, entry)
 	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	peak := peakRSSKB()
 
-	report := runReport{
-		Dataset: config.Dataset, Mode: string(config.Mode), Limit: config.Limit,
-		Budget: config.Budget, RequestNamespace: config.Namespace(),
+	aggregate := beir.AggregateMetrics{
+		Queries:           len(results),
+		NDCGAt10:          beir.Aggregate(ndcg),
+		RecallAt100:       beir.Aggregate(recall),
+		MRRAt10:           beir.Aggregate(mrr),
+		LatencyP50Micros:  percentile(latencies, 0.50),
+		LatencyP90Micros:  percentile(latencies, 0.90),
+		LatencyP99Micros:  percentile(latencies, 0.99),
+		LatencyMeanMicros: mean(latencies),
+	}
+	var coverage *beir.PackCoverage
+	if config.Mode == beir.ModeTraced {
+		meanUsed := uint64(0)
+		if len(usedBytes) > 0 {
+			var total uint64
+			for _, value := range usedBytes {
+				total += value
+			}
+			meanUsed = total / uint64(len(usedBytes))
+		}
+		utilisation := 0.0
+		if config.Budget > 0 {
+			utilisation = float64(meanUsed) / float64(config.Budget)
+		}
+		coverage = &beir.PackCoverage{
+			Queries:      len(coverageValues),
+			GoldCoverage: beir.Aggregate(coverageValues),
+			SelectedDocs: 0,
+			UsedBytes:    meanUsed,
+			Utilisation:  utilisation,
+		}
+		aggregate.PackCoverage = coverage
+	}
+	report := beir.RunReport{
+		Dataset: config.Dataset, Mode: string(config.Mode), ExpressionPolicy: string(config.Policy),
+		Limit: config.Limit, Budget: config.Budget, RequestNamespace: config.Namespace(),
 		CorpusDocuments: len(dataset.Corpus), JudgedQueries: len(judged),
 		IndexBytes: ingested.IndexBytes, IndexingSeconds: ingested.IndexingSeconds,
 		PeakRSSKB: peak, StartedAt: started, FinishedAt: time.Now(),
-		Aggregate: aggregate{
-			Queries:           len(results),
-			NDCGAt10:          beir.Aggregate(ndcg),
-			RecallAt100:       beir.Aggregate(recall),
-			MRRAt10:           beir.Aggregate(mrr),
-			LatencyP50Micros:  percentile(latencies, 0.50),
-			LatencyP90Micros:  percentile(latencies, 0.90),
-			LatencyP99Micros:  percentile(latencies, 0.99),
-			LatencyMeanMicros: mean(latencies),
-		},
-		Queries: reports,
+		Aggregate: aggregate,
+		Queries:   reports,
+	}
+	if coverage != nil {
+		var selectedDocs []int
+		for _, entry := range reports {
+			if entry.PackCoverage != nil {
+				selectedDocs = append(selectedDocs, entry.PackCoverage.SelectedDocs)
+			}
+		}
+		sort.Ints(selectedDocs)
+		coverage.SelectedDocs = int(meanInts(selectedDocs))
 	}
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -216,9 +244,14 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	if err := os.WriteFile(out, append(encoded, '\n'), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("%s: mode=%s budget=%d docs=%d queries=%d ndcg@10=%.4f recall@100=%.4f mrr@10=%.4f\n",
+	summary := fmt.Sprintf("%s: mode=%s budget=%d docs=%d queries=%d ndcg@10=%.4f recall@100=%.4f mrr@10=%.4f",
 		config.Dataset, config.Mode, config.Budget, len(dataset.Corpus), len(results),
 		report.Aggregate.NDCGAt10, report.Aggregate.RecallAt100, report.Aggregate.MRRAt10)
+	if coverage != nil {
+		summary += fmt.Sprintf(" gold-coverage=%.4f used-bytes=%d utilisation=%.1f%%",
+			coverage.GoldCoverage, coverage.UsedBytes, 100*coverage.Utilisation)
+	}
+	fmt.Println(summary)
 	return nil
 }
 
@@ -250,6 +283,13 @@ func loadJournal(path string) (map[string]beir.SearchResult, error) {
 	return completed, nil
 }
 
+// journalFormat is the SearchResult line format this harness writes and can
+// resume from. It is part of the resume manifest identity because an older
+// journal can be missing fields a newer one records (for example the traced
+// pack selection), and resuming across formats would silently mix unmeasured
+// queries into the report.
+const journalFormat = 2
+
 // manifestIdentity is the resume-time binding between a report and the run that
 // produced its journal: dataset identity, corpus size, judged-query count, and
 // every run parameter. A mismatch means the journal belongs to a different
@@ -265,20 +305,22 @@ type manifestIdentity struct {
 	QueryTimeout     time.Duration `json:"query_timeout"`
 	StorePath        string        `json:"store_path"`
 	RequestNamespace string        `json:"request_namespace"`
+	JournalFormat    int           `json:"journal_format"`
 }
 
-func manifestIdentityFor(config beir.RunConfig, dataset *beir.Dataset, storePath string, queryTimeout time.Duration) manifestIdentity {
+func manifestIdentityFor(config beir.RunConfig, storePath string, queryTimeout time.Duration) manifestIdentity {
 	return manifestIdentity{
 		Dataset: config.Dataset, Corpus: config.Corpus, Judged: config.Judged,
 		Mode: string(config.Mode), Limit: config.Limit, Budget: config.Budget,
 		Policy:       string(config.Policy),
 		QueryTimeout: queryTimeout, StorePath: storePath,
 		RequestNamespace: config.Namespace(),
+		JournalFormat:    journalFormat,
 	}
 }
 
-func writeManifest(path string, config beir.RunConfig, dataset *beir.Dataset, storePath string) error {
-	identity := manifestIdentityFor(config, dataset, storePath, 0)
+func writeManifest(path string, config beir.RunConfig, storePath string, queryTimeout time.Duration) error {
+	identity := manifestIdentityFor(config, storePath, queryTimeout)
 	encoded, err := json.MarshalIndent(identity, "", "  ")
 	if err != nil {
 		return err
@@ -286,7 +328,7 @@ func writeManifest(path string, config beir.RunConfig, dataset *beir.Dataset, st
 	return os.WriteFile(path, append(encoded, '\n'), 0o644)
 }
 
-func checkManifest(path string, config beir.RunConfig, dataset *beir.Dataset) error {
+func checkManifest(path string, config beir.RunConfig, queryTimeout time.Duration) error {
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return fmt.Errorf("no manifest at %s: resume requires the manifest written by the interrupted run", path)
@@ -298,11 +340,15 @@ func checkManifest(path string, config beir.RunConfig, dataset *beir.Dataset) er
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return fmt.Errorf("manifest %s is unreadable: %w", path, err)
 	}
-	current := manifestIdentityFor(config, dataset, stored.StorePath, stored.QueryTimeout)
+	// The store path is the manifest's own record: the journal next to this
+	// manifest belongs to that store. The query timeout, however, is this
+	// invocation's parameter, so resuming with a different bound must refuse.
+	current := manifestIdentityFor(config, stored.StorePath, queryTimeout)
 	if stored != current {
-		return fmt.Errorf("manifest %s describes %s run for dataset %q (corpus %d, judged %d, mode %s, limit %d, budget %d); this run is dataset %q (corpus %d, judged %d, mode %s, limit %d, budget %d)",
-			path, stored.Mode, stored.Dataset, stored.Corpus, stored.Judged, stored.Mode, stored.Limit, stored.Budget,
-			current.Dataset, current.Corpus, current.Judged, current.Mode, current.Limit, current.Budget)
+		return fmt.Errorf("manifest %s describes dataset %q mode %s limit %d budget %d policy %s corpus %d judged %d query-timeout %s journal-format %d; this run is dataset %q mode %s limit %d budget %d policy %s corpus %d judged %d query-timeout %s journal-format %d",
+			path,
+			stored.Dataset, stored.Mode, stored.Limit, stored.Budget, stored.Policy, stored.Corpus, stored.Judged, stored.QueryTimeout, stored.JournalFormat,
+			current.Dataset, current.Mode, current.Limit, current.Budget, current.Policy, current.Corpus, current.Judged, current.QueryTimeout, current.JournalFormat)
 	}
 	return nil
 }
@@ -349,4 +395,57 @@ func maxSeconds(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+// meanInts is mean() for plain counters such as per-query selected-document
+// counts.
+func meanInts(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	var total int
+	for _, value := range values {
+		total += value
+	}
+	return total / len(values)
+}
+
+// coverageReport is the pack byte-budget curve artifact: one dataset, one
+// protocol, one measurement per budget, joined from the named traced reports.
+type coverageReport struct {
+	Dataset          string               `json:"dataset"`
+	Mode             string               `json:"mode"`
+	ExpressionPolicy string               `json:"expression_policy"`
+	Limit            int                  `json:"limit"`
+	Reports          []string             `json:"reports"`
+	Points           []beir.CoveragePoint `json:"points"`
+}
+
+func coverageReportTo(out string, paths []string) error {
+	reports := make([]beir.RunReport, 0, len(paths))
+	for _, path := range paths {
+		report, err := beir.LoadRunReport(path)
+		if err != nil {
+			return err
+		}
+		reports = append(reports, report)
+	}
+	points, err := beir.CoverageCurve(reports)
+	if err != nil {
+		return err
+	}
+	head := reports[0]
+	curve := coverageReport{
+		Dataset: head.Dataset, Mode: head.Mode, ExpressionPolicy: head.ExpressionPolicy,
+		Limit: head.Limit, Reports: paths, Points: points,
+	}
+	encoded, err := json.MarshalIndent(curve, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(out, append(encoded, '\n'), 0o644); err != nil {
+		return err
+	}
+	fmt.Print(beir.CoverageTable(points))
+	return nil
 }
