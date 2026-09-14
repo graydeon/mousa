@@ -21,10 +21,10 @@ type LexicalCandidate struct {
 
 // IndexTextRepresentation indexes every canonical Segment of one text Representation.
 // Per-row verification (verifyLexicalRow) covers each written row inside this
-// transaction; corpus-wide FTS integrity checking and full lexical verification
-// remain startup verification's job (verifyLexicalRecords via verifyCanonicalRecords),
-// so indexing stays linear in the documents it touches instead of re-verifying the
-// whole index per call.
+// transaction; corpus-wide lexical verification runs once per open (verifyLexicalRecords
+// via verifyVersion) and the FTS5 structural check runs once per writable open
+// (checkLexicalIndexIntegrity), so indexing stays linear in the documents it touches
+// instead of re-verifying the whole index per call.
 func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.RepresentationID, content []byte) error {
 	if err := store.requireWritable("index text representation"); err != nil {
 		return err
@@ -122,8 +122,10 @@ func validateLexicalQuery(expression string, limit int) error {
 // queryLexicalCandidates verifies each returned candidate against its canonical
 // Segment (existence, projection, payload digest) instead of re-verifying every
 // lexical row before each query. A tampered FTS row is still caught fail-closed:
-// either the candidate's own digest/projection check fails or the candidate is
-// simply not returned. Startup verification retains the corpus-wide check.
+// the candidate's own digest/projection check fails, or the FTS5 structure was
+// damaged in a way that also breaks the query (malformed-index error). The one
+// residual silent case (same-length docsize drift) is detected by
+// checkLexicalIndexIntegrity at each writable open.
 func queryLexicalCandidates(ctx context.Context, q queryer, query string, args ...any) ([]LexicalCandidate, error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -359,6 +361,22 @@ func lexicalIntegrityError(ctx context.Context, op string, err error) error {
 		return classified
 	}
 	return wrap(CodeIntegrity, op, err)
+}
+
+// checkLexicalIndexIntegrity runs the FTS5 integrity-check command, which validates
+// the inverted index (segment_lexical_fts_data, _docsize) against the content table.
+// It is the only layer that catches same-length docsize drift, which quick_check and
+// verifyLexicalRecords both miss and which silently skews BM25 scores on search. The
+// special command is an INSERT, so it requires a writable connection and runs once
+// per writable open from verifyVersion, not per document or per query.
+func checkLexicalIndexIntegrity(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `INSERT INTO segment_lexical_fts(segment_lexical_fts) VALUES('integrity-check')`); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return lexicalIntegrityError(ctx, "check lexical index integrity", err)
+	}
+	return nil
 }
 
 func containsNUL(value string) bool {

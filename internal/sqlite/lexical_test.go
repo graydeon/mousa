@@ -3,6 +3,7 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -330,6 +331,35 @@ func TestLexicalBackupRestorePreservesCandidates(t *testing.T) {
 	got, err := backup.SearchLexical(ctx, "alpha", 10)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("backup candidates = %#v, %v; want %#v", got, err, want)
+	}
+}
+
+// TestLexicalFTSStructuralTamperDetectedOnOpenStore pins the FTS5 structural
+// guarantee for an already-open store: a same-length docsize flip is missed by
+// verifyLexicalRecords and search silently returns a skewed BM25 score, so the
+// integrity-check command run once per writable open is the layer that must
+// detect it. Reopen-time detection is quick_check's job and is covered by
+// startup verification.
+func TestLexicalFTSStructuralTamperDetectedOnOpenStore(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	representation, content, _ := addLexicalDocument(t, store, "structure", "alpha beta gamma delta epsilon zeta")
+	if err := store.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	out, err := sql.Open("sqlite", store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := out.Exec(`UPDATE segment_lexical_fts_docsize SET sz = x'0500' WHERE id = 1`); err != nil {
+		t.Fatalf("tamper failed: %v", err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkLexicalIndexIntegrity(ctx, store.db); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("checkLexicalIndexIntegrity = %v, want integrity", err)
 	}
 }
 
