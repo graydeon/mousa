@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -133,9 +134,13 @@ func (probe *IndexProbe) TermEvidence(ctx context.Context, term string) (TermEvi
 // the rows carry at most floorMagnitudeLimit of evidence and terms below that
 // boundary carry more. The boundary sample is the risk surface: the largest-df
 // floor term, the floor term nearest the boundary, the non-floor term nearest
-// the boundary, and the weakest non-floor term. A contradiction means this
-// SQLite build does not clamp BM25 the way the policy requires, and the caller
-// must refuse the policy instead of silently changing rankings.
+// the boundary, and the weakest non-floor term — the term with the smallest
+// measured magnitude among non-floor terms, which is the one most likely to
+// expose an unclamped build. The sample is drawn from the query terms the
+// caller supplies; it is a targeted check, not an exhaustive index proof. A
+// contradiction means this SQLite build does not clamp BM25 the way the policy
+// requires, and the caller must refuse the policy instead of silently changing
+// rankings.
 
 // PremiseSource is what the premise verifier measures: term evidence plus the
 // row count that defines the floor boundary. IndexProbe implements it; tests
@@ -153,7 +158,10 @@ func VerifyFloorPremise(ctx context.Context, source PremiseSource, terms []strin
 	var outsideBoundaryGap, outsideMinDF int
 	seenInside, seenOutside := 0, 0
 	var weakestOutside *string
-	weakestOutsideMagnitude := -1.0
+	// Weakest = smallest measured magnitude among non-floor terms. Selecting
+	// the largest here would miss below-floor outside terms. The minimum
+	// magnitude must clear the floor.
+	weakestOutsideMagnitude := math.Inf(1)
 	for index, term := range terms {
 		evidence, err := source.TermEvidence(ctx, term)
 		if err != nil {
@@ -180,7 +188,7 @@ func VerifyFloorPremise(ctx context.Context, source PremiseSource, terms []strin
 			if outsideMinDF == 0 || evidence.DocumentFrequency < outsideMinDF {
 				outsideMinDF = evidence.DocumentFrequency
 			}
-			if evidence.MaxMagnitude > weakestOutsideMagnitude {
+			if evidence.MaxMagnitude < weakestOutsideMagnitude {
 				weakestOutsideMagnitude = evidence.MaxMagnitude
 				weakestOutside = &terms[index]
 			}

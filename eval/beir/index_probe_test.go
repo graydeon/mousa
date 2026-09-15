@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,49 @@ func TestVerifyFloorPremiseDetectsUnclamped(t *testing.T) {
 	}}
 	if err := VerifyFloorPremise(ctx, oneSided, []string{"rare"}); err == nil {
 		t.Fatal("one-sided sample accepted")
+	}
+}
+
+// TestGuardRejectsBelowFloorOutsideTerm checks the lower magnitude bound
+// into the correct-behavior requirement: an outside-boundary term whose
+// magnitude sits at or below the floor must fail the premise, so the run is
+// refused instead of silently changing rankings.
+func TestGuardRejectsBelowFloorOutsideTerm(t *testing.T) {
+	source := fakePremiseSource{rows: 1000, evidence: map[string]TermEvidence{
+		"inside":   {DocumentFrequency: 900, MaxMagnitude: 1e-6},
+		"boundary": {DocumentFrequency: 499, MaxMagnitude: 0.1},
+		"weak":     {DocumentFrequency: 20, MaxMagnitude: 1e-7},
+		"strong":   {DocumentFrequency: 5, MaxMagnitude: 10},
+	}}
+	err := VerifyFloorPremise(context.Background(), source, []string{"inside", "boundary", "weak", "strong"})
+	if err == nil {
+		t.Fatal("guard accepted a below-floor outside term; the premise must fail closed")
+	}
+	if !strings.Contains(err.Error(), "weak") {
+		t.Fatalf("guard error should name the violating term, got %v", err)
+	}
+}
+
+// TestGuardAcceptsSeparatingBoundary pins the positive case: the strongest
+// floor term at the limit and the weakest non-floor term just above it pass.
+func TestGuardAcceptsSeparatingBoundary(t *testing.T) {
+	source := fakePremiseSource{rows: 1000, evidence: map[string]TermEvidence{
+		"floorTerm": {DocumentFrequency: 900, MaxMagnitude: 2e-6},
+		"realTerm":  {DocumentFrequency: 5, MaxMagnitude: 1e-3},
+	}}
+	if err := VerifyFloorPremise(context.Background(), source, []string{"floorTerm", "realTerm"}); err != nil {
+		t.Fatalf("separating boundary refused: %v", err)
+	}
+}
+
+// TestGuardRefusesUnclampedBuild pins the failure the premise exists to catch:
+// a build without the IDF clamp lets a floor term carry real evidence.
+func TestGuardRefusesUnclampedBuild(t *testing.T) {
+	source := fakePremiseSource{rows: 1000, evidence: map[string]TermEvidence{
+		"floorTerm": {DocumentFrequency: 900, MaxMagnitude: 0.5},
+		"realTerm":  {DocumentFrequency: 5, MaxMagnitude: 10},
+	}}
+	if err := VerifyFloorPremise(context.Background(), source, []string{"floorTerm", "realTerm"}); err == nil {
+		t.Fatal("unclamped floor term accepted; premise must refuse the policy")
 	}
 }
