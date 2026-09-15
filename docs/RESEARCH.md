@@ -47,14 +47,26 @@ Source per dataset, one Observation/Artifact/Representation per document, canoni
 segments, FTS5 index), then runs each judged query through a selected retrieval mode:
 verified (`SearchVerifiedLexical`), enforced (`SearchEnforcedLexical`, one stored allow
 decision per query), or traced (`TraceEnforcedLexical`). Document ranking is best-segment
-per document. Metrics: binary-gain nDCG@10, Recall@100, MRR@10, computed in
-`eval/beir` with hand-computed unit tests (`go test ./eval/beir/`). Query expressions
-tokenize to quoted OR terms, capped at the store's 4096-byte expression bound by dropping
-trailing terms; the cap is part of the protocol, not engine behavior.
+Metrics (corrected 2026-09-15): `ndcg_at_10` follows the reference BEIR protocol —
+graded linear gains, `gain/log2(rank+1)` discounting, ideal from positive judgments
+only, and BEIR's `ignore_identical_ids` default (retrieved documents whose ID equals the
+query ID are removed first) — pinned to BEIR
+`af4a85e7f601a697039c88ab83c1dc88dc975b3f` and trec_eval `m_ndcg_cut.c`
+`dc0c991c80bae2087de774ed76278e11d9d9f4c6`. `recall_at_100` divides by positive
+judgments only. The earlier binary-gain nDCG survives as the explicitly named custom
+metric `binary_ndcg_at_10`, and MRR@10 is project-defined (not part of BEIR's
+`evaluate()`). Differential fixtures cover graded vs zero judgments, empty results,
+duplicate IDs, missing results, and both settings of the self-ID rule
+(`eval/beir/metrics_reference_test.go`). Reports written before 2026-09-15 are binary
+and protocol-legacy; saved rankings can be re-scored with `beir -report rescore`.
 
-Development vs evaluation data: no parameter tuning was performed against any test split
-during this increment; the tokenizer, k1/b, and limit are engine defaults. If tuning is
-introduced later, SciFact's dev split becomes tuning data and test splits stay held out.
+Development vs evaluation data: the inspected test splits (SciFact, NFCorpus, ArguAna)
+have informed repeated development decisions (phases 14–17 chose query policies after
+inspecting test-split outcomes); they are **development evidence**, not untouched
+held-out evaluation, and cannot serve as confirmatory evidence for a future adoption
+decision. The ±0.001 figures below are an engineering tolerance, not an established
+statistical noise band. If tuning is introduced later, SciFact's dev split becomes
+tuning data and new data must be reserved before the next confirmatory evaluation.
 
 ## Results — sandbox environment
 
@@ -158,9 +170,9 @@ test splits, identical hardware and stores, limit 100:
 Deduplication is a retrieval-policy change, not a semantics-preserving optimization:
 on 50 real ArguAna queries the deduplicated top-10 differed for every query. The
 measured verdict: a large latency win on long queries, but a material ArguAna quality
-regression (nDCG@10 −0.0301, beyond the ±0.001 noise band observed on SciFact/NFCorpus),
+regression (nDCG@10 −0.0301, far beyond the ±0.001 engineering tolerance observed on SciFact/NFCorpus),
 while short-query datasets are unaffected in both dimensions. Decision rule applied
-(quality non-regression beyond noise AND material latency win) **rejects dedup as the
+(quality non-regression beyond the engineering tolerance AND material latency win) **rejects dedup as the
 default production policy**; the negative result is recorded and the original protocol
 remains the published baseline. Both policies stay available in the harness
 (`-policy original|dedup`) for future policy experiments; no engine change was made.
@@ -248,19 +260,26 @@ band). NFCorpus had 25 of 323 queries where every term was at the floor (e.g. tw
 queries like "airport scanners"); those queries fall back to the baseline expression and
 are counted in the report's `fallback_queries`.
 
-Decision rule applied (byte-identical rankings AND ≥10% p50 win): **adopted as the
-recommended long-query expression policy in the harness**. The published baseline
-protocol (`-policy original`) is unchanged — Phase 13's numbers are bound to it — and the
-candidate is a measured, guarded option (`-policy drop-floor`), not an engine change. The
-floor property it relies on is measured per index at run start, never assumed from the
-IDF formula. Engine-side reduction (the store pruning the expression it evaluates, with
-the same guard) is the natural follow-up and requires its own contract plus re-measurement
-of the published baseline.
+**Correction (2026-09-15, adversarial review): the pre-registered decision rule FAILED.**
+The rule required every ordered ranking to match; 1398 of 1401 matched, so the strict
+identity criterion was not met and the policy was **not adopted under the registered
+rule**. The paragraph above preserves the original record; the correct reading is that
+drop-floor is a **promising experimental approximate policy** (`-policy drop-floor`
+remains available in the harness), not an optimization adopted under the rule. The
+published baseline protocol stays `-policy original`, no engine change was made, and any
+future quality-preserving acceptance rule must be specified before new confirmatory
+evaluation. The same review corrected the metric protocol: the `ndcg@10` figures above
+were the harness's binary-gain form. Under the corrected reference protocol (graded
+gains, positive-only denominators; see Evaluation protocol) the saved drop-floor
+rankings re-score to NFCorpus nDCG@10 0.306698 (binary form: 0.306322); SciFact and
+ArguAna are unchanged within floating-point rounding.
 
 Limitations: one corpus family (BEIR subsets), verified mode only, harness-side policy.
 The three tail swaps show the reduction is bounded-score-changing rather than exactly
 score-preserving; they are recorded, not rounded away. Premise guard evidence and
-per-query accounting are in every drop-floor report (`reduction` block).
+per-query accounting are in every drop-floor report (`reduction` block). Reported query
+latency in this phase measured the store call only (search-only); the harness now also
+measures the full request path including expression probing and reduction.
 
 ## Failed approaches and incomplete runs (recorded honestly)
 

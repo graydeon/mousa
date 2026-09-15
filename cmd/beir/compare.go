@@ -3,10 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"sort"
-
 	"github.com/graydeon/mousa/eval/beir"
+	"os"
+	"reflect"
+	"sort"
 )
 
 // compareReport is the decision-rule artifact for one pair of harness runs:
@@ -14,23 +14,24 @@ import (
 // their metrics and latency distributions differ. It is how a
 // ranking-identity claim is checked rather than eyeballed.
 type compareReport struct {
-	Dataset    string         `json:"dataset"`
-	Mode       string         `json:"mode"`
-	Limit      int            `json:"limit"`
-	QueryLimit int            `json:"query_limit"`
-	Judged     int            `json:"judged_queries"`
-	Baseline   string         `json:"baseline_report"`
-	Candidate  string         `json:"candidate_report"`
-	Identical  bool           `json:"rankings_identical"`
-	Differing  []string       `json:"differing_queries,omitempty"`
-	FirstDiff  string         `json:"first_differing_query,omitempty"`
-	Comparison metricCompare  `json:"metrics"`
-	Latency    latencyCompare `json:"latency"`
-	PerQuery   []queryCompare `json:"per_query,omitempty"`
+	Dataset    string               `json:"dataset"`
+	Mode       string               `json:"mode"`
+	Limit      int                  `json:"limit"`
+	QueryLimit int                  `json:"query_limit"`
+	Judged     int                  `json:"judged_queries"`
+	Baseline   string               `json:"baseline_report"`
+	Candidate  string               `json:"candidate_report"`
+	Identical  bool                 `json:"rankings_identical"`
+	Differing  []string             `json:"differing_queries,omitempty"`
+	FirstDiff  string               `json:"first_differing_query,omitempty"`
+	Content    beir.ContentIdentity `json:"content"`
+	Comparison metricCompare        `json:"metrics"`
+	Latency    latencyCompare       `json:"latency"`
+	PerQuery   []queryCompare       `json:"per_query,omitempty"`
+	Criteria   criterionOutcomes    `json:"criteria"`
 }
 
 // metricCompare carries both arms' aggregate metrics and their deltas
-// (candidate minus baseline).
 type metricCompare struct {
 	Baseline         beir.AggregateMetrics `json:"baseline"`
 	Candidate        beir.AggregateMetrics `json:"candidate"`
@@ -61,34 +62,60 @@ type queryCompare struct {
 	LatencyRatio   float64 `json:"latency_ratio"`
 }
 
-func compareReportTo(out string, paths []string) error {
+// criterionOutcome is one pre-registered criterion's explicit result. A
+// comparison report records outcomes; it never renders an adoption verdict by
+// having been written.
+type criterionOutcome struct {
+	Criterion string  `json:"criterion"`
+	Passed    bool    `json:"passed"`
+	Value     float64 `json:"value,omitempty"`
+}
+
+// criterionOutcomes carries the pre-registered criteria the comparison can
+// evaluate: ranking identity and the p50 latency bound.
+type criterionOutcomes struct {
+	Identity criterionOutcome `json:"identity"`
+	Latency  criterionOutcome `json:"latency"`
+}
+
+// compareReportTo compares two saved reports under a declared comparison axis.
+//
+// Validation is structural before it is comparative: empty or malformed
+// reports, incomplete or non-unique query sets, self-inconsistent aggregates,
+// and legacy reports without content identity are invalid evidence, not a
+// comparison result (the 2026-09-15 review showed empty reports comparing as
+// "identical"). A comparison axis declares the one dimension the two arms
+// intentionally differ on; every other experiment-defining field must match.
+// The written report records criterion outcomes explicitly — a valid
+// experiment that fails its criterion is reported as that failure, and the
+// command's success at writing the report is never an adoption verdict.
+func compareReportTo(out string, paths []string, axis string) error {
 	if len(paths) != 2 {
 		return fmt.Errorf("compare requires exactly two reports, got %d", len(paths))
 	}
 	baseline, err := beir.LoadRunReport(paths[0])
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid evidence %s: %w", paths[0], err)
 	}
 	candidate, err := beir.LoadRunReport(paths[1])
 	if err != nil {
+		return fmt.Errorf("invalid evidence %s: %w", paths[1], err)
+	}
+	if err := validateComparable(&baseline); err != nil {
+		return fmt.Errorf("invalid evidence %s: %w", paths[0], err)
+	}
+	if err := validateComparable(&candidate); err != nil {
+		return fmt.Errorf("invalid evidence %s: %w", paths[1], err)
+	}
+	if err := requireMatchingFields(baseline, candidate, axis); err != nil {
 		return err
-	}
-	if baseline.Dataset != candidate.Dataset || baseline.Mode != candidate.Mode ||
-		baseline.Limit != candidate.Limit || baseline.CorpusDocuments != candidate.CorpusDocuments ||
-		baseline.QueryLimit != candidate.QueryLimit {
-		return fmt.Errorf("reports are not comparable: dataset %q/%q mode %q/%q limit %d/%d corpus %d/%d slice %d/%d",
-			baseline.Dataset, candidate.Dataset, baseline.Mode, candidate.Mode,
-			baseline.Limit, candidate.Limit, baseline.CorpusDocuments, candidate.CorpusDocuments,
-			baseline.QueryLimit, candidate.QueryLimit)
-	}
-	if len(baseline.Queries) != len(candidate.Queries) {
-		return fmt.Errorf("reports are not comparable: %d vs %d queries", len(baseline.Queries), len(candidate.Queries))
 	}
 
 	compare := compareReport{
 		Dataset: baseline.Dataset, Mode: baseline.Mode, Limit: baseline.Limit,
 		QueryLimit: baseline.QueryLimit, Judged: len(baseline.Queries),
 		Baseline: paths[0], Candidate: paths[1],
+		Content:   baseline.Content,
 		Identical: true,
 	}
 	perQuery := make([]queryCompare, 0, len(baseline.Queries))
@@ -143,6 +170,20 @@ func compareReportTo(out string, paths []string) error {
 		CandidateP99Micros: candidate.Aggregate.LatencyP99Micros,
 		P50Ratio:           p50Ratio,
 	}
+	// Explicit criterion outcomes: the reporter records whether each
+	// pre-registered criterion held, so a written report is never mistaken for
+	// an adoption verdict. Identity failure is a valid experimental result.
+	compare.Criteria = criterionOutcomes{
+		Identity: criterionOutcome{
+			Criterion: "every ordered ranking identical",
+			Passed:    compare.Identical,
+		},
+		Latency: criterionOutcome{
+			Criterion: "p50 latency ratio <= 0.90",
+			Passed:    p50Ratio > 0 && p50Ratio <= 0.90,
+			Value:     p50Ratio,
+		},
+	}
 	if compare.Differing == nil {
 		compare.Differing = []string{}
 	}
@@ -154,9 +195,86 @@ func compareReportTo(out string, paths []string) error {
 		return err
 	}
 	sort.Strings(compare.Differing)
-	fmt.Printf("compare: dataset=%s mode=%s queries=%d rankings_identical=%t differing=%d p50 %d->%d us (ratio %.3f) ndcg@10 delta %+.4f\n",
+	fmt.Printf("compare: dataset=%s mode=%s queries=%d rankings_identical=%t differing=%d p50 %d->%d us (ratio %.3f) ndcg@10 delta %+.4f identity-criterion=%t latency-criterion=%t\n",
 		compare.Dataset, compare.Mode, compare.Judged, compare.Identical, len(compare.Differing),
 		compare.Latency.BaselineP50Micros, compare.Latency.CandidateP50Micros, compare.Latency.P50Ratio,
-		compare.Comparison.NDCGAt10Delta)
+		compare.Comparison.NDCGAt10Delta,
+		compare.Criteria.Identity.Passed, compare.Criteria.Latency.Passed)
+	return nil
+}
+
+// validateComparable rejects reports that are not valid evidence for any
+// comparison: no queries, duplicate query IDs, an aggregate inconsistent with
+// its own per-query rows, an invalid ranking, or a report written before
+// content identity existed.
+func validateComparable(report *beir.RunReport) error {
+	if len(report.Queries) == 0 {
+		return fmt.Errorf("report has no query results")
+	}
+	seen := map[string]struct{}{}
+	for _, query := range report.Queries {
+		if _, duplicate := seen[query.QueryID]; duplicate {
+			return fmt.Errorf("query %s appears twice", query.QueryID)
+		}
+		seen[query.QueryID] = struct{}{}
+		if err := beir.ValidateRanking(query.RankedDocIDs); err != nil {
+			return err
+		}
+	}
+	if report.Aggregate.Queries != len(report.Queries) {
+		return fmt.Errorf("aggregate claims %d queries but the report carries %d", report.Aggregate.Queries, len(report.Queries))
+	}
+	if report.Protocol.Name == "" {
+		return fmt.Errorf("report carries no evaluation protocol identity (legacy report)")
+	}
+	return nil
+}
+
+// requireMatchingFields enforces the declared comparison axis. The axis is the
+// one dimension the arms intentionally differ on (expression policy, mode, or
+// pack budget); dataset content identity, limit, query slice, corpus size, and
+// evaluation protocol must match regardless of axis. An unrecognized axis is
+// refused: comparing "whatever happens to match" is how the empty-report
+// defect slipped through.
+func requireMatchingFields(baseline, candidate beir.RunReport, axis string) error {
+	switch axis {
+	case "policy", "mode", "budget":
+	case "":
+		return fmt.Errorf("compare requires an explicitly declared axis (-axis policy|mode|budget); the axis is the one dimension the two arms intentionally differ on")
+	default:
+		return fmt.Errorf("unknown comparison axis %q (supported: policy, mode, budget)", axis)
+	}
+	if !reflect.DeepEqual(baseline.Protocol, candidate.Protocol) {
+		return fmt.Errorf("reports are not comparable: evaluation protocols differ (baseline %+v / candidate %+v)", baseline.Protocol, candidate.Protocol)
+	}
+	if baseline.Dataset != candidate.Dataset ||
+		baseline.Content != candidate.Content ||
+		baseline.CorpusDocuments != candidate.CorpusDocuments ||
+		baseline.QueryLimit != candidate.QueryLimit {
+		return fmt.Errorf("reports are not comparable on axis %s: dataset, content identity, corpus size, or query slice differs (baseline %+v / candidate %+v)", axis, baseline.Content, candidate.Content)
+	}
+	switch axis {
+	case "policy":
+		if baseline.ExpressionPolicy == candidate.ExpressionPolicy {
+			return fmt.Errorf("comparison axis is policy but both arms ran %q", baseline.ExpressionPolicy)
+		}
+		if baseline.Mode != candidate.Mode || baseline.Budget != candidate.Budget {
+			return fmt.Errorf("arms differ beyond the declared axis: mode %q/%q budget %d/%d", baseline.Mode, candidate.Mode, baseline.Budget, candidate.Budget)
+		}
+	case "mode":
+		if baseline.Mode == candidate.Mode {
+			return fmt.Errorf("comparison axis is mode but both arms ran %q", baseline.Mode)
+		}
+		if baseline.ExpressionPolicy != candidate.ExpressionPolicy || baseline.Budget != candidate.Budget {
+			return fmt.Errorf("arms differ beyond the declared axis: policy %q/%q budget %d/%d", baseline.ExpressionPolicy, candidate.ExpressionPolicy, baseline.Budget, candidate.Budget)
+		}
+	case "budget":
+		if baseline.Budget == candidate.Budget {
+			return fmt.Errorf("comparison axis is budget but both arms ran %d", baseline.Budget)
+		}
+		if baseline.Mode != candidate.Mode || baseline.ExpressionPolicy != candidate.ExpressionPolicy {
+			return fmt.Errorf("arms differ beyond the declared axis: mode %q/%q policy %q/%q", baseline.Mode, candidate.Mode, baseline.ExpressionPolicy, candidate.ExpressionPolicy)
+		}
+	}
 	return nil
 }

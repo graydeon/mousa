@@ -38,8 +38,8 @@ and must not be filled with claims until the cited measurement exists.
 | lexical retrieval quality | BEIR subsets | nDCG@10/Recall@100/MRR@10 | published BM25 + in-protocol competitor | implemented |
 | integrity costs latency not quality | mode ablation | ranking identity + latency | verified path | implemented |
 | ingest scales linearly | scaling probe | docs/s vs corpus size | pre-fix baseline | implemented (fixed) |
-| pack budget ↔ selection quality | traced curves over budgets | nDCG@10 vs budget | full-budget pack | traced mode runnable per-run |
-| long-query handling | expression floor-weight reduction + size sweep | latency vs terms, ranking identity | uncapped expression | harness `-policy drop-floor` measured (phase 17); engine-side reduction **pending** |
+| pack budget ↔ selection quality | traced curves over budgets | gold-document coverage vs budget (a coverage measure, **not** nDCG, answer quality, or token cost) | full-budget pack | traced mode runnable per-run |
+| long-query handling | expression floor-weight reduction + size sweep | latency vs terms, ranking identity | uncapped expression | harness `-policy drop-floor` measured, **experimental: strict identity criterion failed (1398/1401), not adopted** (phase 17); engine-side reduction **pending** |
 | memory across sessions | LongMemEval / MemoryAgentBench | session metrics | adapter baseline | session memory features (**pending capability**) |
 | documentation/code retrieval | FreshStack | official protocol metrics | official baseline | documentation retrieval features (**pending capability**) |
 | end-to-end grounded answering | TREC RAG | answer quality | constant answering config | answering pipeline (**pending capability**) |
