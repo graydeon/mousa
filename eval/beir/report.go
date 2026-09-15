@@ -51,6 +51,8 @@ type QueryReport struct {
 	LatencyMicros      int64          `json:"latency_micros"`
 	AcceptedSegments   int            `json:"accepted_segments"`
 	ConsideredSegments int            `json:"considered_segments"`
+	DroppedTerms       int            `json:"dropped_terms"`
+	ExpressionBytes    int            `json:"expression_bytes"`
 	PackCoverage       *QueryCoverage `json:"pack_coverage,omitempty"`
 }
 
@@ -64,12 +66,14 @@ type RunReport struct {
 	RequestNamespace string           `json:"request_namespace"`
 	Limit            int              `json:"limit"`
 	CorpusDocuments  int              `json:"corpus_documents"`
+	QueryLimit       int              `json:"query_limit"`
 	JudgedQueries    int              `json:"judged_queries"`
 	IndexBytes       int64            `json:"index_bytes"`
 	IndexingSeconds  float64          `json:"indexing_seconds"`
 	PeakRSSKB        int64            `json:"peak_rss_kib"`
 	StartedAt        time.Time        `json:"started_at"`
 	FinishedAt       time.Time        `json:"finished_at"`
+	Reduction        *ReductionReport `json:"reduction,omitempty"`
 	Aggregate        AggregateMetrics `json:"aggregate"`
 	Queries          []QueryReport    `json:"queries"`
 }
