@@ -244,6 +244,26 @@ func (store *Store) GetIngestState(ctx context.Context, sourceID mousa.SourceID)
 	return getIngestState(ctx, store.db, sourceID)
 }
 
+// GetIngestReceipt returns the accepted delivery receipt for one observation.
+// An unknown observation is CodeNotFound. A caller that re-delivers a
+// content-addressed observation reads this to reproduce the accepted delivery
+// evidence instead of contradicting it with a fresh capture time.
+func (store *Store) GetIngestReceipt(ctx context.Context, observationID mousa.ObservationID) (mousa.IngestReceipt, error) {
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return mousa.IngestReceipt{}, classify("begin ingest receipt read", err)
+	}
+	defer tx.Rollback()
+	receipt, err := getIngestReceipt(ctx, tx, observationID)
+	if err != nil {
+		return mousa.IngestReceipt{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return mousa.IngestReceipt{}, classify("finish ingest receipt read", err)
+	}
+	return receipt, nil
+}
+
 func getIngestState(ctx context.Context, q queryer, sourceID mousa.SourceID) (mousa.IngestState, error) {
 	var collection string
 	var checkpoint, high, observation, withdrawal []byte

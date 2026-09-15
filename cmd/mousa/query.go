@@ -19,6 +19,13 @@ import (
 // decision ID so provenance is explicit, and rejected candidates (which carry
 // text and dispositions) are never serialized.
 func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query string, budgetBytes uint64) (*evidenceResult, error) {
+	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
+	if err != nil {
+		return nil, err
+	}
+	if needsRecovery {
+		return nil, fmt.Errorf("source requires a complete directory sync after migration before querying")
+	}
 	expression, err := buildQueryExpression(query)
 	if err != nil {
 		return nil, err
@@ -153,12 +160,14 @@ func itemPathForSegment(ctx context.Context, store *sqlite.Store, source mousa.S
 	if observation.SourceID != source.ID {
 		return "", fmt.Errorf("segment does not belong to the queried source")
 	}
-	external := observation.ExternalObservationID
-	relative := strings.TrimPrefix(external, itemPrefix)
-	// Drop the revision suffix: the provenance reports the item path, and the
-	// content digest is recoverable from the artifact record when needed.
-	if index := strings.Index(relative, "@"); index >= 0 {
-		relative = relative[:index]
+	external, ok := strings.CutPrefix(observation.ExternalObservationID, itemPrefix)
+	if !ok {
+		return "", fmt.Errorf("observation is not a local item")
+	}
+	suffix := fmt.Sprintf("@%x", artifact.ContentSHA256)
+	relative := strings.TrimSuffix(external, suffix)
+	if relative == external || relative == "" {
+		return "", fmt.Errorf("item revision identity disagrees with artifact digest")
 	}
 	return relative, nil
 }
