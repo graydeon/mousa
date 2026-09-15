@@ -6,17 +6,24 @@ import (
 	"strings"
 )
 
-// floorMagnitudeLimit bounds the per-document BM25 magnitude a query term may
-// have for the floor-reduction policy to drop it. FTS5 clamps a term's inverse
-// document frequency at a small positive constant (measured ~1e-6; the floor
-// probe reads up to 1.9e-6 after the length/tf factor, bounded by k1+1 = 2.2),
-// so a term whose strongest evidence is below this limit contributes at most
-// the floor to any document while still costing a full postings scan per
-// instance. The nearest measured non-floor terms score 1e-3 and up, four
-// orders above the limit, so the exact value is not delicate. The limit is a
-// guard on a measured property, not a formula: TermEvidence reports the
-// engine's own strongest magnitude per term, so a build without the clamp
-// simply stops classifying terms as floor.
+// CONTRACT (experimental policy, not an adopted optimization): the predicate
+// that drops a term is the MEASURED MAGNITUDE predicate — MaxMagnitude <=
+// floorMagnitudeLimit, where MaxMagnitude is read from the index through a
+// MATCH probe. It is not a document-frequency rule. On a clamping SQLite build
+// the two coincide for present terms (df*2 >= rows implies magnitude at the
+// floor), but the magnitude predicate is authoritative and it also classifies
+// ABSENT terms (zero postings, zero magnitude) as floor terms. The premise
+// verifier checks the df boundary as a proxy for the risk surface; a premise
+// failure refuses the run fail-closed — there is no keep-terms fallback on a
+// changed build. A query whose every term is dropped is refused here
+// (errNoEvidenceTerms) and the caller falls back to the baseline expression
+// with explicit FallbackQueries accounting.
+//
+// Phase 17 measured this policy against the strict pre-registered rule that
+// required every ordered ranking to match; 1398/1401 matched, so the strict
+// identity criterion FAILED. The measured speed is promising evidence for an
+// approximate policy, not an adopted optimization; docs/RESEARCH.md records
+// the dated correction.
 const floorMagnitudeLimit = 3e-6
 
 // TermEvidence is one query term's measured evidence in an indexed corpus: the
