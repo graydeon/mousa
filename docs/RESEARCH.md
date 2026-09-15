@@ -206,6 +206,62 @@ check read 2.2% of phrase instances as absent and reported spurious ranking diff
 40 of 50 queries, while a MATCH-existence check found 0.3% absent and no ranking difference
 — and LIMIT does not bound scan cost for this query shape.
 
+### Floor-weight expression reduction (Phase 17, H4 lever measured)
+
+The remaining expression lever from Phase 16 was the class of query terms whose postings
+cover at least half the indexed rows. On this corpus FTS5 assigns such terms an inverse
+document frequency clamped to a small floor (~1e-6 before the length/tf factor, so at most
+2.2e-6 per matched row), meaning they contribute essentially no evidence while owning most
+of the scanned postings: on the 50-query ArguAna slice, 2222 of 7860 term instances
+(28.2%) are in this class yet the class dominates the 407k-postings scan. The policy drops
+exactly those terms (`-policy drop-floor`, `eval/beir/reduce.go`): a cached read-only probe
+measures per distinct term how many rows contain it (MATCH-existence, the sound oracle
+from Phase 16), the term is dropped when `df * 2 >= indexed rows`, and the classification
+is guarded at run start by `VerifyFloorPremise`, which probes terms on both sides of the
+boundary and refuses the run if the boundary does not separate evidence — so a future
+SQLite build without the clamp degrades to keeping terms, not to silently changing
+rankings. Probe cost is instrumentation, reported separately: 26.2 s of probes for the
+full 1401-query run, outside every measured latency.
+
+Full ArguAna test split, 1401 queries, verified mode, limit 100, identical store and
+hardware, both arms in one session (sandbox, phase17/runs/):
+
+| arm | p50 | p90 | p99 | nDCG@10 | Recall@100 | MRR@10 |
+|---|---|---|---|---|---|---|
+| original (published protocol) | 2.895 s | 7.937 s | 12.481 s | 0.3534 | 0.9615 | 0.2319 |
+| drop-floor | 0.506 s | 0.825 s | 1.117 s | 0.3534 | 0.9615 | 0.2319 |
+
+p50 −82.5%, p99 −91.0%. Aggregate metrics are identical because the rankings are: the
+ordered top-100 document lists are byte-identical on 1398 of 1401 queries. The 3
+exceptions swap two adjacent non-relevant documents in the tail (ranks 41–49; the single
+relevant document sits at the same rank in both arms for all three, so no metric moves).
+The per-document score perturbation is bounded by the removed terms' floor contribution
+(≤ 2.2e-6 per matched instance) against score gaps orders of magnitude larger; the three
+swaps are adjacent-equal pairs whose gap is within that bound. Per-query latency ratio:
+min 0.050, max 0.682, mean 0.189.
+
+Short-query controls on the same run session (drop-floor vs published baseline): SciFact
+300 queries nDCG@10 0.6681 == baseline, Recall@100 0.8859 == baseline; NFCorpus 323
+queries nDCG@10 0.3063 == baseline, Recall@100 0.2333 vs 0.2334 (−0.0001, one document
+moved across the Recall@100 boundary by the floor perturbation; within the ±0.001 noise
+band). NFCorpus had 25 of 323 queries where every term was at the floor (e.g. two-word
+queries like "airport scanners"); those queries fall back to the baseline expression and
+are counted in the report's `fallback_queries`.
+
+Decision rule applied (byte-identical rankings AND ≥10% p50 win): **adopted as the
+recommended long-query expression policy in the harness**. The published baseline
+protocol (`-policy original`) is unchanged — Phase 13's numbers are bound to it — and the
+candidate is a measured, guarded option (`-policy drop-floor`), not an engine change. The
+floor property it relies on is measured per index at run start, never assumed from the
+IDF formula. Engine-side reduction (the store pruning the expression it evaluates, with
+the same guard) is the natural follow-up and requires its own contract plus re-measurement
+of the published baseline.
+
+Limitations: one corpus family (BEIR subsets), verified mode only, harness-side policy.
+The three tail swaps show the reduction is bounded-score-changing rather than exactly
+score-preserving; they are recorded, not rounded away. Premise guard evidence and
+per-query accounting are in every drop-floor report (`reduction` block).
+
 ## Failed approaches and incomplete runs (recorded honestly)
 
 - Ingest O(N²): first SciFact run killed at 30m12s (~2.8k/5.2k docs). Superseded by the
