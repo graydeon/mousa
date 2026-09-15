@@ -166,11 +166,22 @@ func (ingested *IngestedCorpus) Close() error {
 // selection's used byte total. Non-traced runs leave both empty because no
 // packet exists to account for.
 type SearchResult struct {
-	QueryID            string
-	RankedDocIDs       []string
-	SelectedDocIDs     []string
-	UsedBytes          uint64
-	LatencyMicros      int64
+	QueryID        string
+	RankedDocIDs   []string
+	SelectedDocIDs []string
+	UsedBytes      uint64
+	// LatencyMicros is the full request path: preprocessing (expression
+	// build, term probes, reduction) plus the store call. SearchMicros and
+	// PreprocessMicros carry the component split. Historical search-only
+	// measurements correspond to SearchMicros, never to LatencyMicros.
+	LatencyMicros    int64
+	SearchMicros     int64
+	PreprocessMicros int64
+	// AcceptedSegments and ConsideredSegments are per-attempt segment counts for
+	// the query that produced this result. AcceptedSegments currently counts the
+	// accepted ranked documents' best segments (one per document), not every
+	// accepted segment; the name predates that unit and is kept for report
+	// compatibility.
 	AcceptedSegments   int
 	ConsideredSegments int
 	// DroppedTerms and ExpressionBytes account for the expression the engine
@@ -211,13 +222,35 @@ type RunConfig struct {
 	Corpus     int
 	Judged     int
 	QueryLimit int // first N judged queries in file order; 0 = all
+	// Content binds the experiment to the bytes it measured. Names and counts
+	// are not identities: two corpora with the same name and document count can
+	// differ in every document. CorpusSHA256, QueriesSHA256, and QrelsSHA256
+	// are digests over the loaded corpus.jsonl, queries.jsonl, and qrels bytes;
+	// a resume or reuse whose digests differ is a different experiment and must
+	// be refused, not resumed.
+	Content ContentIdentity
+}
+
+// ContentIdentity digests the actual dataset bytes one run measured. It is
+// part of the run namespace and of every report and manifest.
+type ContentIdentity struct {
+	CorpusSHA256  string `json:"corpus_sha256"`
+	QueriesSHA256 string `json:"queries_sha256"`
+	QrelsSHA256   string `json:"qrels_sha256"`
+}
+
+func (identity ContentIdentity) empty() bool {
+	return identity.CorpusSHA256 == "" && identity.QueriesSHA256 == "" && identity.QrelsSHA256 == ""
 }
 
 // Namespace returns the request-identity prefix for this run configuration.
+// The content digests are part of the identity: a namespace names what was
+// measured, and equal names with different bytes must never share one.
 func (config RunConfig) Namespace() string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d",
+	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s",
 		config.Dataset, string(config.Mode), config.Limit, config.Budget, string(config.Policy),
-		config.Corpus, config.Judged, config.QueryLimit)))
+		config.Corpus, config.Judged, config.QueryLimit,
+		config.Content.CorpusSHA256, config.Content.QueriesSHA256, config.Content.QrelsSHA256)))
 	return fmt.Sprintf("run-%x", digest[:6])
 }
 
@@ -298,18 +331,34 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		}
 	}
 	results := make([]SearchResult, 0, len(judged))
+	if QueryTimeout < 0 {
+		return nil, fmt.Errorf("query timeout %s is negative", QueryTimeout)
+	}
 	for done, queryID := range judged {
 		if skipped, resumable := skip[queryID]; resumable {
 			results = append(results, skipped)
 			continue
 		}
+		// Full-request timing and deadline: the measured latency and the
+		// timeout cover everything the query needs before it can be served —
+		// expression building, term-evidence probing, and reduction — not
+		// only the store call. Component costs are also recorded separately
+		// (PreprocessMicros vs the store's own share) so the breakdown stays
+		// inspectable and older search-only numbers keep their label.
+		queryCtx := ctx
+		cancel := func() {}
+		if QueryTimeout > 0 {
+			queryCtx, cancel = context.WithTimeout(ctx, QueryTimeout)
+		}
+		requestStarted := time.Now()
 		expression, err := BuildExpressionWithPolicy(dataset.Queries[queryID], config.Policy)
 		if err != nil {
+			cancel()
 			return nil, fmt.Errorf("query %s: %w", queryID, err)
 		}
 		droppedTerms, expressionBytes := 0, len(expression)
 		if probe != nil {
-			reduction, err := ReduceFloorTerms(dataset.Queries[queryID], NewReductionOracle(ctx, probe))
+			reduction, err := ReduceFloorTerms(dataset.Queries[queryID], NewReductionOracle(queryCtx, probe))
 			if errors.Is(err, errNoEvidenceTerms) {
 				// A query whose every term is at the floor has no
 				// evidence-bearing term to rank by (e.g. a two-word
@@ -321,6 +370,7 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 				instrument.FallbackQueries++
 				instrument.TermsEvaluated += len(TermList(dataset.Queries[queryID]))
 			} else if err != nil {
+				cancel()
 				return nil, fmt.Errorf("query %s: %w", queryID, err)
 			} else {
 				expression = reduction.Expression
@@ -334,12 +384,8 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 				}
 			}
 		}
-		queryCtx := ctx
-		cancel := func() {}
-		if QueryTimeout > 0 {
-			queryCtx, cancel = context.WithTimeout(ctx, QueryTimeout)
-		}
-		started := time.Now()
+		preprocessMicros := time.Since(requestStarted).Microseconds()
+		searchStarted := time.Now()
 		var candidates []mousa.VerifiedLexicalCandidate
 		var trail mousa.SourceTrail
 		switch config.Mode {
@@ -358,14 +404,23 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			cancel()
 			return nil, fmt.Errorf("unknown mode %q", config.Mode)
 		}
-		latency := time.Since(started)
+		searchMicros := time.Since(searchStarted)
+		latency := time.Since(requestStarted)
 		cancel()
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return nil, fmt.Errorf("query %s exceeded its request deadline: %w", queryID, err)
+			}
 			return nil, fmt.Errorf("search %s (%s): %w", queryID, expression, err)
 		}
 		result := SearchResult{
-			QueryID:       queryID,
-			LatencyMicros: latency.Microseconds(),
+			QueryID: queryID,
+			// LatencyMicros is the full request path: preprocessing
+			// (expression build + probes + reduction) plus the store call.
+			// SearchMicros and PreprocessMicros carry the component split.
+			LatencyMicros:    latency.Microseconds(),
+			SearchMicros:     searchMicros.Microseconds(),
+			PreprocessMicros: preprocessMicros,
 		}
 		result.DroppedTerms = droppedTerms
 		result.ExpressionBytes = expressionBytes
@@ -402,11 +457,13 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			result.SelectedDocIDs = append(result.SelectedDocIDs, docID)
 		}
 		result.UsedBytes = trail.UsedBytes
+		// Accounting is assigned before the journal callback so a resumed run's
+		// journaled rows match an uninterrupted run's rows exactly.
+		result.AcceptedSegments = len(result.RankedDocIDs)
+		result.ConsideredSegments = len(candidates)
 		if journal != nil {
 			journal(result)
 		}
-		result.AcceptedSegments = len(result.RankedDocIDs)
-		result.ConsideredSegments = len(candidates)
 		results = append(results, result)
 		if SearchProgress != nil {
 			SearchProgress(done+1, len(judged), queryID)
@@ -604,6 +661,15 @@ func deployHarnessPolicy(ctx context.Context, store *sqlite.Store) error {
 
 // OpenExisting opens an already-indexed store and rebuilds the segment→document
 // mapping from the dataset, so search-only reruns skip reindexing.
+//
+// Reuse is validated against the store's actual indexed content, not against
+// names and counts: for every corpus document the deterministic representation
+// identity is recomputed from the text and the stored representation must exist
+// with the same content digest and length. A dataset whose text changed under
+// the same name and document count is a different experiment and is refused
+// here instead of failing later (or mis-ranking silently) at search time. The
+// mapping being nonempty and the Source record existing are necessary checks,
+// not proof of correspondence; this validation is.
 func OpenExisting(ctx context.Context, dataset *Dataset, storePath string) (*IngestedCorpus, error) {
 	// Opened writable: enforced and traced modes must evaluate one policy request
 	// per query, which writes decision records. Verified mode performs no writes.
@@ -646,7 +712,46 @@ func OpenExisting(ctx context.Context, dataset *Dataset, storePath string) (*Ing
 		store.Close()
 		return nil, fmt.Errorf("reuse validation failed: store %s was not indexed as dataset %q: %w", storePath, dataset.Name, err)
 	}
+	if err := verifyIndexedCorrespondence(ctx, ingested, corpusIDs, dataset); err != nil {
+		store.Close()
+		return nil, fmt.Errorf("reuse validation failed: store %s does not match dataset %q content: %w", storePath, dataset.Name, err)
+	}
 	return ingested, nil
+}
+
+// verifyIndexedCorrespondence checks, for every corpus document, that the store
+// holds the representation the dataset text derives to, with the same content
+// digest and byte length. This is what "reusing an indexed store" means: the
+// indexed content corresponds to the measured inputs, document by document.
+func verifyIndexedCorrespondence(ctx context.Context, ingested *IngestedCorpus, corpusIDs []string, dataset *Dataset) error {
+	for index, corpusID := range corpusIDs {
+		content := []byte(dataset.Corpus[corpusID])
+		externalObservationID := fmt.Sprintf("doc-%d", index)
+		observationID, err := mousa.NewObservationID(ingested.Source.ID, externalObservationID)
+		if err != nil {
+			return err
+		}
+		artifactID, err := mousa.NewArtifactID(observationID, "body")
+		if err != nil {
+			return err
+		}
+		artifact := mousa.Artifact{
+			Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: "body",
+			MediaType: mousa.UTF8TextMediaType, ContentSHA256: mousa.SHA256(sha256.Sum256(content)), ByteLength: uint64(len(content)),
+		}
+		representation, _, err := mousa.NormalizeUTF8Text(artifact, content)
+		if err != nil {
+			return err
+		}
+		stored, err := ingested.Store.GetRepresentation(ctx, representation.ID)
+		if err != nil {
+			return fmt.Errorf("document %d (%s): %w", index, corpusID, err)
+		}
+		if stored.ContentSHA256 != representation.ContentSHA256 || stored.ByteLength != representation.ByteLength {
+			return fmt.Errorf("document %d (%s): stored content digest does not match the dataset text", index, corpusID)
+		}
+	}
+	return nil
 }
 
 // rebuildSegmentMapping reconstructs the segment→document mapping for an

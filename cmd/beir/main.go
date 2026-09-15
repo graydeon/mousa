@@ -29,10 +29,12 @@ func main() {
 	limit := flag.Int("limit", 100, "candidate limit per query (1-100)")
 	budget := flag.Uint64("budget", 1<<20, "traced-mode pack budget in bytes (e.g. 512, 2048, 8192)")
 	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats), dedup (fold repeats; changes rankings), or drop-floor (drop terms at the BM25 evidence floor; measured floor-weight evaluation)")
+	ignoreIdentical := flag.Bool("ignore-identical-ids", true, "remove retrieved documents whose ID equals the query ID before scoring (BEIR default)")
 	resume := flag.Bool("resume", false, "resume an interrupted run from its journal (manifest must match)")
 	queryLimit := flag.Int("queries", 0, "limit the run to the first N judged queries in file order (0 = all; part of the run identity)")
-	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve, or "compare" checks two reports' rankings against each other, instead of running queries`)
-	reports := flag.String("reports", "", "comma-separated report paths (with -report coverage or compare)")
+	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve, "compare" checks two reports' rankings against each other, or "rescore" recomputes the metrics of saved reports under the reference protocol, instead of running queries`)
+	reports := flag.String("reports", "", "comma-separated report paths (with -report coverage, compare, or rescore)")
+	axis := flag.String("axis", "", "comparison axis for -report compare: policy, mode, or budget; the one dimension the arms intentionally differ on")
 	flag.Parse()
 	switch *report {
 	case "":
@@ -47,16 +49,16 @@ func main() {
 			Dataset:    *dataset,
 			QueryLimit: *queryLimit,
 		}
-		if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout); err != nil {
+		if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout, *ignoreIdentical); err != nil {
 			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
 			os.Exit(1)
 		}
 	case "compare":
 		if *reports == "" || *out == "" {
-			fmt.Fprintln(os.Stderr, `beir: -report compare requires -reports <two comma-separated report paths> and -out`)
+			fmt.Fprintln(os.Stderr, `beir: -report compare requires -reports <two comma-separated report paths>, -axis <policy|mode|budget>, and -out`)
 			os.Exit(2)
 		}
-		if err := compareReportTo(*out, strings.Split(*reports, ",")); err != nil {
+		if err := compareReportTo(*out, strings.Split(*reports, ","), *axis); err != nil {
 			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
 			os.Exit(1)
 		}
@@ -69,13 +71,22 @@ func main() {
 			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
 			os.Exit(1)
 		}
+	case "rescore":
+		if *reports == "" || *out == "" || *dataDir == "" {
+			fmt.Fprintln(os.Stderr, `beir: -report rescore requires -data <directory containing the datasets' qrels>, -reports <comma-separated saved reports>, and -out`)
+			os.Exit(2)
+		}
+		if err := rescoreReportTo(*dataDir, *out, strings.Split(*reports, ","), *ignoreIdentical); err != nil {
+			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "beir: unknown -report mode %q (supported: coverage)\n", *report)
+		fmt.Fprintf(os.Stderr, "beir: unknown -report mode %q (supported: coverage, compare, rescore)\n", *report)
 		os.Exit(2)
 	}
 }
 
-func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTimeout time.Duration) error {
+func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTimeout time.Duration, ignoreIdenticalIDs bool) error {
 	started := time.Now()
 	ctx := context.Background()
 	dataset, err := beir.LoadDataset(config.Dataset, dataDir)
@@ -84,6 +95,7 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	}
 	config.Corpus = len(dataset.Corpus)
 	config.Judged = len(dataset.JudgedQueries())
+	config.Content = dataset.Content
 	storePath := filepath.Join(filepath.Dir(out), config.Dataset+".sqlite")
 	var ingested *beir.IngestedCorpus
 	if reuse {
@@ -170,19 +182,31 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	ndcg := make([]float64, 0, len(results))
 	recall := make([]float64, 0, len(results))
 	mrr := make([]float64, 0, len(results))
+	binaryNDCG := make([]float64, 0, len(results))
 	latencies := make([]int64, 0, len(results))
 	reports := make([]beir.QueryReport, 0, len(results))
 	var coverageValues []float64
 	var usedBytes []uint64
 	for _, result := range results {
 		relevant := dataset.Qrels[result.QueryID]
-		ndcg = append(ndcg, beir.NDCGAt10(result.RankedDocIDs, relevant))
-		recall = append(recall, beir.RecallAt100(result.RankedDocIDs, relevant))
-		mrr = append(mrr, beir.MRRAt10(result.RankedDocIDs, relevant))
+		if err := beir.ValidateRanking(result.RankedDocIDs); err != nil {
+			return fmt.Errorf("query %s: %w", result.QueryID, err)
+		}
+		score := beir.ScoreQuery(result.QueryID, result.RankedDocIDs, relevant, ignoreIdenticalIDs)
+		ndcg = append(ndcg, score.NDCGAt10)
+		recall = append(recall, score.RecallAt100)
+		mrr = append(mrr, score.MRRAt10)
+		binaryNDCG = append(binaryNDCG, score.BinaryNDCGAt10)
 		latencies = append(latencies, result.LatencyMicros)
+		ranked := result.RankedDocIDs
+		if ranked == nil {
+			ranked = []string{}
+		}
 		entry := beir.QueryReport{
-			QueryID: result.QueryID, RankedDocIDs: result.RankedDocIDs,
-			LatencyMicros: result.LatencyMicros, AcceptedSegments: result.AcceptedSegments,
+			QueryID: result.QueryID, RankedDocIDs: ranked,
+			LatencyMicros: result.LatencyMicros,
+			SearchMicros:  result.SearchMicros, PreprocessMicros: result.PreprocessMicros,
+			AcceptedSegments:   result.AcceptedSegments,
 			ConsideredSegments: result.ConsideredSegments,
 			DroppedTerms:       result.DroppedTerms, ExpressionBytes: result.ExpressionBytes,
 		}
@@ -206,6 +230,7 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		NDCGAt10:          beir.Aggregate(ndcg),
 		RecallAt100:       beir.Aggregate(recall),
 		MRRAt10:           beir.Aggregate(mrr),
+		BinaryNDCGAt10:    beir.Aggregate(binaryNDCG),
 		LatencyP50Micros:  percentile(latencies, 0.50),
 		LatencyP90Micros:  percentile(latencies, 0.90),
 		LatencyP99Micros:  percentile(latencies, 0.99),
@@ -232,7 +257,6 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 			UsedBytes:    meanUsed,
 			Utilisation:  utilisation,
 		}
-		aggregate.PackCoverage = coverage
 	}
 	report := beir.RunReport{
 		Dataset: config.Dataset, Mode: string(config.Mode), ExpressionPolicy: string(config.Policy),
@@ -240,7 +264,14 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		CorpusDocuments: len(dataset.Corpus), JudgedQueries: len(judged), QueryLimit: config.QueryLimit,
 		IndexBytes: ingested.IndexBytes, IndexingSeconds: ingested.IndexingSeconds,
 		PeakRSSKB: peak, StartedAt: started, FinishedAt: time.Now(),
+		Content:   config.Content,
 		Reduction: instrument,
+		Protocol: beir.EvaluationProtocol{
+			Name:               beir.ReferenceProtocol,
+			BEIRRevision:       beir.BEIRRevision,
+			TrecEvalRevision:   beir.TrecEvalRevision,
+			IgnoreIdenticalIDs: ignoreIdenticalIDs,
+		},
 		Aggregate: aggregate,
 		Queries:   reports,
 	}
@@ -264,6 +295,9 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	summary := fmt.Sprintf("%s: mode=%s budget=%d docs=%d queries=%d ndcg@10=%.4f recall@100=%.4f mrr@10=%.4f",
 		config.Dataset, config.Mode, config.Budget, len(dataset.Corpus), len(results),
 		report.Aggregate.NDCGAt10, report.Aggregate.RecallAt100, report.Aggregate.MRRAt10)
+	if report.Aggregate.BinaryNDCGAt10 != report.Aggregate.NDCGAt10 {
+		summary += fmt.Sprintf(" binary-ndcg@10=%.4f", report.Aggregate.BinaryNDCGAt10)
+	}
 	if coverage != nil {
 		summary += fmt.Sprintf(" gold-coverage=%.4f used-bytes=%d utilisation=%.1f%%",
 			coverage.GoldCoverage, coverage.UsedBytes, 100*coverage.Utilisation)
@@ -305,32 +339,37 @@ func loadJournal(path string) (map[string]beir.SearchResult, error) {
 // journal can be missing fields a newer one records (for example the traced
 // pack selection), and resuming across formats would silently mix unmeasured
 // queries into the report.
-const journalFormat = 3
+const journalFormat = 4
 
 // manifestIdentity is the resume-time binding between a report and the run that
-// produced its journal: dataset identity, corpus size, judged-query count, and
-// every run parameter. A mismatch means the journal belongs to a different
-// experiment and resume is refused instead of mixing results.
+// produced its journal: dataset identity, content digests, corpus size,
+// judged-query count, and every run parameter. A mismatch means the journal
+// belongs to a different experiment and resume is refused instead of mixing
+// results. The content digests are what make dataset names and counts
+// insufficient: changed query text or judgments with the same name and count
+// must refuse resume.
 type manifestIdentity struct {
-	Dataset          string        `json:"dataset"`
-	Corpus           int           `json:"corpus_documents"`
-	Judged           int           `json:"judged_queries"`
-	Mode             string        `json:"mode"`
-	Limit            int           `json:"limit"`
-	Budget           uint64        `json:"budget_bytes"`
-	Policy           string        `json:"expression_policy"`
-	QueryTimeout     time.Duration `json:"query_timeout"`
-	StorePath        string        `json:"store_path"`
-	RequestNamespace string        `json:"request_namespace"`
-	JournalFormat    int           `json:"journal_format"`
+	Dataset          string               `json:"dataset"`
+	Content          beir.ContentIdentity `json:"content"`
+	Corpus           int                  `json:"corpus_documents"`
+	Judged           int                  `json:"judged_queries"`
+	Mode             string               `json:"mode"`
+	Limit            int                  `json:"limit"`
+	Budget           uint64               `json:"budget_bytes"`
+	Policy           string               `json:"expression_policy"`
+	QueryTimeout     time.Duration        `json:"query_timeout"`
+	StorePath        string               `json:"store_path"`
+	RequestNamespace string               `json:"request_namespace"`
+	JournalFormat    int                  `json:"journal_format"`
 }
 
 func manifestIdentityFor(config beir.RunConfig, storePath string, queryTimeout time.Duration) manifestIdentity {
 	return manifestIdentity{
-		Dataset: config.Dataset, Corpus: config.Corpus, Judged: config.Judged,
+		Dataset: config.Dataset, Content: config.Content, Corpus: config.Corpus, Judged: config.Judged,
 		Mode: string(config.Mode), Limit: config.Limit, Budget: config.Budget,
-		Policy:       string(config.Policy),
-		QueryTimeout: queryTimeout, StorePath: storePath,
+		Policy:           string(config.Policy),
+		QueryTimeout:     queryTimeout,
+		StorePath:        storePath,
 		RequestNamespace: config.Namespace(),
 		JournalFormat:    journalFormat,
 	}
@@ -362,10 +401,8 @@ func checkManifest(path string, config beir.RunConfig, queryTimeout time.Duratio
 	// invocation's parameter, so resuming with a different bound must refuse.
 	current := manifestIdentityFor(config, stored.StorePath, queryTimeout)
 	if stored != current {
-		return fmt.Errorf("manifest %s describes dataset %q mode %s limit %d budget %d policy %s corpus %d judged %d query-timeout %s journal-format %d; this run is dataset %q mode %s limit %d budget %d policy %s corpus %d judged %d query-timeout %s journal-format %d",
-			path,
-			stored.Dataset, stored.Mode, stored.Limit, stored.Budget, stored.Policy, stored.Corpus, stored.Judged, stored.QueryTimeout, stored.JournalFormat,
-			current.Dataset, current.Mode, current.Limit, current.Budget, current.Policy, current.Corpus, current.Judged, current.QueryTimeout, current.JournalFormat)
+		return fmt.Errorf("manifest %s does not match this run:\n  manifest: %+v\n  run:      %+v",
+			path, stored, current)
 	}
 	return nil
 }
@@ -464,5 +501,91 @@ func coverageReportTo(out string, paths []string) error {
 		return err
 	}
 	fmt.Print(beir.CoverageTable(points))
+	return nil
+}
+
+// rescoreReport recomputes one saved report's metrics from its stored per-query
+// rankings and the dataset's qrels, under the reference protocol. It re-scores
+// saved evidence without repeating retrieval, so a protocol correction can be
+// applied to historical results; it reports both the reference graded nDCG@10
+// and the project-defined binary form, plus the with/without-rule variants of
+// the self-ID treatment, so a protocol deviation is visible instead of silent.
+type rescoreEntry struct {
+	Report           string  `json:"report"`
+	Dataset          string  `json:"dataset"`
+	Queries          int     `json:"queries"`
+	NDCGAt10         float64 `json:"ndcg_at_10"`
+	RecallAt100      float64 `json:"recall_at_100"`
+	MRRAt10          float64 `json:"mrr_at_10"`
+	BinaryNDCGAt10   float64 `json:"binary_ndcg_at_10"`
+	SelfIDRemoved    int     `json:"self_id_removed"`
+	NDCGAt10WithSelf float64 `json:"ndcg_at_10_with_self_id"`
+}
+
+type rescoreReport struct {
+	Protocol beir.EvaluationProtocol `json:"evaluation_protocol"`
+	Entries  []rescoreEntry          `json:"entries"`
+}
+
+func rescoreReportTo(dataDir, out string, paths []string, ignoreIdenticalIDs bool) error {
+	qrels := map[string]map[string]map[string]int{}
+	entries := make([]rescoreEntry, 0, len(paths))
+	for _, path := range paths {
+		report, err := beir.LoadRunReport(path)
+		if err != nil {
+			return err
+		}
+		judgments, ok := qrels[report.Dataset]
+		if !ok {
+			judgments, err = beir.LoadQrels(filepath.Join(dataDir, report.Dataset+"-qrels.tsv"))
+			if err != nil {
+				return fmt.Errorf("rescore %s: %w", path, err)
+			}
+			qrels[report.Dataset] = judgments
+		}
+		ndcg, recall, mrr, binary := make([]float64, 0, len(report.Queries)), make([]float64, 0, len(report.Queries)),
+			make([]float64, 0, len(report.Queries)), make([]float64, 0, len(report.Queries))
+		withSelf := make([]float64, 0, len(report.Queries))
+		removed := 0
+		for _, query := range report.Queries {
+			if err := beir.ValidateRanking(query.RankedDocIDs); err != nil {
+				return fmt.Errorf("rescore %s query %s: %w", path, query.QueryID, err)
+			}
+			relevant := judgments[query.QueryID]
+			score := beir.ScoreQuery(query.QueryID, query.RankedDocIDs, relevant, ignoreIdenticalIDs)
+			ndcg = append(ndcg, score.NDCGAt10)
+			recall = append(recall, score.RecallAt100)
+			mrr = append(mrr, score.MRRAt10)
+			binary = append(binary, score.BinaryNDCGAt10)
+			removed += score.IdenticalIDsRemoved
+			withSelf = append(withSelf, beir.ScoreQuery(query.QueryID, query.RankedDocIDs, relevant, false).NDCGAt10)
+		}
+		entries = append(entries, rescoreEntry{
+			Report: path, Dataset: report.Dataset, Queries: len(report.Queries),
+			NDCGAt10: beir.Aggregate(ndcg), RecallAt100: beir.Aggregate(recall),
+			MRRAt10: beir.Aggregate(mrr), BinaryNDCGAt10: beir.Aggregate(binary),
+			SelfIDRemoved: removed, NDCGAt10WithSelf: beir.Aggregate(withSelf),
+		})
+	}
+	result := rescoreReport{
+		Protocol: beir.EvaluationProtocol{
+			Name:               beir.ReferenceProtocol,
+			BEIRRevision:       beir.BEIRRevision,
+			TrecEvalRevision:   beir.TrecEvalRevision,
+			IgnoreIdenticalIDs: ignoreIdenticalIDs,
+		},
+		Entries: entries,
+	}
+	encoded, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(out, append(encoded, '\n'), 0o644); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		fmt.Printf("rescore: %s queries=%d ndcg@10=%.6f recall@100=%.6f binary=%.6f self-id-removed=%d\n",
+			entry.Report, entry.Queries, entry.NDCGAt10, entry.RecallAt100, entry.BinaryNDCGAt10, entry.SelfIDRemoved)
+	}
 	return nil
 }

@@ -2,6 +2,7 @@ package beir
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,9 @@ type Dataset struct {
 	QueryIDs []string                  // file order, deterministic
 	Queries  map[string]string         // query id -> query text
 	Qrels    map[string]map[string]int // query id -> corpus id -> relevance
+	// Content digests the exact bytes this load read, so a run can bind its
+	// identity to the measured inputs rather than to dataset names and counts.
+	Content ContentIdentity
 }
 
 type corpusLine struct {
@@ -39,11 +43,28 @@ type qrelLine struct {
 // directory. Only queries that carry at least one relevant judgment are kept,
 // because unjudged queries cannot contribute to the metrics.
 func LoadDataset(name, dir string) (*Dataset, error) {
+	digest := func(path string, into *string) error {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		*into = fmt.Sprintf("%x", sha256.Sum256(raw))
+		return nil
+	}
 	dataset := &Dataset{
 		Name:    name,
 		Corpus:  map[string]string{},
 		Queries: map[string]string{},
 		Qrels:   map[string]map[string]int{},
+	}
+	if err := digest(dir+"/corpus.jsonl", &dataset.Content.CorpusSHA256); err != nil {
+		return nil, err
+	}
+	if err := digest(dir+"/queries.jsonl", &dataset.Content.QueriesSHA256); err != nil {
+		return nil, err
+	}
+	if err := digest(dir+"/qrels/test.tsv", &dataset.Content.QrelsSHA256); err != nil {
+		return nil, err
 	}
 	if err := readJSONL(dir+"/corpus.jsonl", 0, func(raw []byte) error {
 		var line corpusLine
@@ -128,11 +149,17 @@ func readQrels(path string, dataset *Dataset) error {
 			return fmt.Errorf("qrels score %q: %w", fields[2], err)
 		}
 		queryID, corpusID := fields[0], fields[1]
-		if _, ok := dataset.Queries[queryID]; !ok {
-			continue
+		// Standalone qrels loading (re-scoring saved rankings) has no corpus or
+		// query files, so only skip filters whose maps were actually loaded.
+		if dataset.Queries != nil {
+			if _, ok := dataset.Queries[queryID]; !ok {
+				continue
+			}
 		}
-		if _, ok := dataset.Corpus[corpusID]; !ok {
-			continue
+		if dataset.Corpus != nil {
+			if _, ok := dataset.Corpus[corpusID]; !ok {
+				continue
+			}
 		}
 		if dataset.Qrels[queryID] == nil {
 			dataset.Qrels[queryID] = map[string]int{}
@@ -140,6 +167,19 @@ func readQrels(path string, dataset *Dataset) error {
 		dataset.Qrels[queryID][corpusID] = score
 	}
 	return scanner.Err()
+}
+
+// LoadQrels reads a BEIR qrels.tsv without a corpus: it is what re-scoring
+// saved rankings needs, since saved reports carry the rankings and the qrels
+// alone determine the scores.
+func LoadQrels(path string) (map[string]map[string]int, error) {
+	// Queries and Corpus stay nil so readQrels applies no membership filters:
+	// saved rankings are scored against the qrels file alone.
+	dataset := &Dataset{Qrels: map[string]map[string]int{}}
+	if err := readQrels(path, dataset); err != nil {
+		return nil, err
+	}
+	return dataset.Qrels, nil
 }
 
 // JudgedQueries returns the query IDs that carry at least one relevant judgment,
