@@ -3,6 +3,7 @@ package beir
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -172,6 +173,13 @@ type SearchResult struct {
 	LatencyMicros      int64
 	AcceptedSegments   int
 	ConsideredSegments int
+	// DroppedTerms and ExpressionBytes account for the expression the engine
+	// evaluated: how many terms the drop-floor policy removed from the
+	// published protocol's expression and its final byte size. Other policies
+	// leave DroppedTerms at 0 and ExpressionBytes at the built expression's
+	// length.
+	DroppedTerms    int
+	ExpressionBytes int
 }
 
 // SearchMode selects which verified retrieval path the harness exercises.
@@ -195,21 +203,41 @@ const (
 // deterministically from the configuration, so re-running the same experiment
 // reuses the same namespace.
 type RunConfig struct {
-	Mode    SearchMode
-	Limit   int
-	Budget  uint64           // traced-mode pack budget in bytes; ignored by other modes
-	Policy  ExpressionPolicy // term folding policy; PolicyOriginal by default
-	Dataset string
-	Corpus  int
-	Judged  int
+	Mode       SearchMode
+	Limit      int
+	Budget     uint64           // traced-mode pack budget in bytes; ignored by other modes
+	Policy     ExpressionPolicy // term folding policy; PolicyOriginal by default
+	Dataset    string
+	Corpus     int
+	Judged     int
+	QueryLimit int // first N judged queries in file order; 0 = all
 }
 
 // Namespace returns the request-identity prefix for this run configuration.
 func (config RunConfig) Namespace() string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d",
+	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d",
 		config.Dataset, string(config.Mode), config.Limit, config.Budget, string(config.Policy),
-		config.Corpus, config.Judged)))
+		config.Corpus, config.Judged, config.QueryLimit)))
 	return fmt.Sprintf("run-%x", digest[:6])
+}
+
+// ReductionReport is a drop-floor run's instrument accounting: how many
+// queries had their expression reduced, how many term instances the probes
+// classified, and how many the policy dropped. It is recorded outside the
+// latency measurements because the probes are setup cost, not query cost.
+type ReductionReport struct {
+	Queries         int     `json:"queries"`
+	QueriesReduced  int     `json:"queries_reduced"`
+	TermsEvaluated  int     `json:"terms_evaluated"`
+	TermsDropped    int     `json:"terms_dropped"`
+	ProbeCount      int     `json:"probe_count"`
+	ProbeSeconds    float64 `json:"probe_seconds"`
+	IndexedRows     int     `json:"indexed_rows"`
+	FloorThreshold  float64 `json:"floor_threshold"`
+	PremiseVerified bool    `json:"premise_verified"`
+	// FallbackQueries counts queries the policy could not reduce because
+	// every term was at the floor; those queries ran the baseline expression.
+	FallbackQueries int `json:"fallback_queries"`
 }
 
 // SearchProgress receives per-query progress: queries done, total, and the last
@@ -219,22 +247,56 @@ var SearchProgress func(done, total int, lastQueryID string)
 // QueryTimeout bounds each query's wall time. Zero disables the bound.
 var QueryTimeout time.Duration
 
-// SearchAll runs every judged query through the configured run and returns
-// ranked document results in query file order. Results are deterministic for a
-// fixed store and query order. Each query runs under QueryTimeout when set.
-// Queries whose IDs appear in skip are not re-run; their recorded results are
-// appended in file order so resume preserves the original ordering. Journal,
-// when non-nil, receives each result as it completes so an interrupted run can
+// SearchAll runs the configured run's judged queries — every judged query, or
+// the first config.QueryLimit of them in file order — and returns ranked
+// document results in query file order. Results are deterministic for a fixed
+// store and query order. Each query runs under QueryTimeout when set. Queries
+// whose IDs appear in skip are not re-run; their recorded results are appended
+// in file order so resume preserves the original ordering. Journal, when
+// non-nil, receives each result as it completes so an interrupted run can
 // resume from the completed prefix.
+//
+// Under PolicyDropFloor every query's expression is reduced before its timed
+// search: an IndexProbe measures each distinct term once (cached), and the
+// floor terms are dropped from the expression the engine evaluates. Probe time
+// is instrumentation cost and is reported through SearchInstrumentation, never
+// inside a query's measured latency.
+var SearchInstrumentation func(report ReductionReport)
+
 func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, config RunConfig, skip map[string]SearchResult, journal func(SearchResult)) ([]SearchResult, error) {
 	if config.Limit < 1 || config.Limit > 100 {
 		return nil, fmt.Errorf("run limit %d is out of bounds", config.Limit)
+	}
+	if config.QueryLimit < 0 {
+		return nil, fmt.Errorf("run query limit %d is negative", config.QueryLimit)
 	}
 	requests, err := evaluateRequests(ctx, ingested, dataset, config)
 	if err != nil {
 		return nil, err
 	}
-	judged := dataset.JudgedQueries()
+	judged := judgedQueriesFor(config, dataset)
+	var probe *IndexProbe
+	var instrument ReductionReport
+	if config.Policy == PolicyDropFloor {
+		probe, err = OpenIndexProbe(ctx, ingested.Path)
+		if err != nil {
+			return nil, err
+		}
+		defer probe.Close()
+		// The floor boundary must separate evidence on this index before the
+		// first query runs; a contradiction refuses the run instead of
+		// silently changing rankings.
+		sample := make([]string, 0, 64)
+		for _, queryID := range judged {
+			sample = append(sample, TermList(dataset.Queries[queryID])...)
+			if len(sample) >= 64 {
+				break
+			}
+		}
+		if err := VerifyFloorPremise(ctx, probe, sample); err != nil {
+			return nil, fmt.Errorf("drop-floor policy refused: %w", err)
+		}
+	}
 	results := make([]SearchResult, 0, len(judged))
 	for done, queryID := range judged {
 		if skipped, resumable := skip[queryID]; resumable {
@@ -244,6 +306,33 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		expression, err := BuildExpressionWithPolicy(dataset.Queries[queryID], config.Policy)
 		if err != nil {
 			return nil, fmt.Errorf("query %s: %w", queryID, err)
+		}
+		droppedTerms, expressionBytes := 0, len(expression)
+		if probe != nil {
+			reduction, err := ReduceFloorTerms(dataset.Queries[queryID], NewReductionOracle(ctx, probe))
+			if errors.Is(err, errNoEvidenceTerms) {
+				// A query whose every term is at the floor has no
+				// evidence-bearing term to rank by (e.g. a two-word
+				// query whose words are both df-majority). The
+				// baseline expression is the only sound evaluation,
+				// so the policy degrades to it for that query and
+				// the report accounts the fallback explicitly.
+				instrument.Queries++
+				instrument.FallbackQueries++
+				instrument.TermsEvaluated += len(TermList(dataset.Queries[queryID]))
+			} else if err != nil {
+				return nil, fmt.Errorf("query %s: %w", queryID, err)
+			} else {
+				expression = reduction.Expression
+				droppedTerms = len(reduction.Dropped)
+				expressionBytes = len(expression)
+				instrument.Queries++
+				instrument.TermsEvaluated += len(reduction.Kept) + len(reduction.Dropped)
+				instrument.TermsDropped += len(reduction.Dropped)
+				if len(reduction.Dropped) > 0 {
+					instrument.QueriesReduced++
+				}
+			}
 		}
 		queryCtx := ctx
 		cancel := func() {}
@@ -278,6 +367,8 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			QueryID:       queryID,
 			LatencyMicros: latency.Microseconds(),
 		}
+		result.DroppedTerms = droppedTerms
+		result.ExpressionBytes = expressionBytes
 		seen := map[string]struct{}{}
 		for _, candidate := range candidates {
 			if candidate.Disposition != mousa.CandidateAccepted {
@@ -321,6 +412,15 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			SearchProgress(done+1, len(judged), queryID)
 		}
 	}
+	if instrument.Queries > 0 {
+		instrument.ProbeCount, instrument.ProbeSeconds = probe.Probes()
+		instrument.IndexedRows = probe.Rows()
+		instrument.FloorThreshold = floorMagnitudeLimit
+		instrument.PremiseVerified = true
+		if SearchInstrumentation != nil {
+			SearchInstrumentation(instrument)
+		}
+	}
 	return results, nil
 }
 
@@ -330,7 +430,7 @@ func evaluateRequests(ctx context.Context, ingested *IngestedCorpus, dataset *Da
 		return requests, nil
 	}
 	namespace := config.Namespace()
-	for index, queryID := range dataset.JudgedQueries() {
+	for index, queryID := range judgedQueriesFor(config, dataset) {
 		request, err := newEvaluationRequest(ingested.Source.ID, fmt.Sprintf("%s-query-%s-%d", namespace, queryID, index))
 		if err != nil {
 			return nil, err
@@ -341,6 +441,18 @@ func evaluateRequests(ctx context.Context, ingested *IngestedCorpus, dataset *Da
 		requests[queryID] = request
 	}
 	return requests, nil
+}
+
+// judgedQueriesFor returns the judged query IDs a run covers: every judged
+// query, or the first config.QueryLimit in file order. SearchAll and request
+// evaluation must agree on the slice, or a resumed run would evaluate
+// requests for queries it never searches.
+func judgedQueriesFor(config RunConfig, dataset *Dataset) []string {
+	judged := dataset.JudgedQueries()
+	if config.QueryLimit > 0 && config.QueryLimit < len(judged) {
+		return judged[:config.QueryLimit]
+	}
+	return judged
 }
 
 func newEvaluationRequest(sourceID mousa.SourceID, externalRequestID string) (mousa.PolicyEvaluationRequest, error) {
@@ -387,6 +499,15 @@ const (
 	PolicyOriginal ExpressionPolicy = "original"
 	// PolicyDedup folds repeated terms to one instance each.
 	PolicyDedup ExpressionPolicy = "dedup"
+
+	// PolicyDropFloor drops query terms whose measured BM25 evidence is at the
+	// FTS5 inverse-document-frequency floor (ReduceFloorTerms). Terms whose
+	// postings cover at least half the indexed rows score <= 2.2e-6 per
+	// matched row there, so they cost a full postings scan per instance while
+	// contributing almost no evidence. Dropping them is bounded-score-changing:
+	// the kept terms are a subset of the baseline expression in the same
+	// order. Ranked results can differ. The published baseline stays PolicyOriginal.
+	PolicyDropFloor ExpressionPolicy = "drop-floor"
 )
 
 // BuildExpression converts one natural-language query into the FTS5 MATCH
@@ -396,35 +517,24 @@ const (
 // are dropped (earliest terms first, which preserves leading query wording)
 // until it fits. The policy decides whether repeated terms are folded.
 func BuildExpressionWithPolicy(query string, policy ExpressionPolicy) (string, error) {
-	fields := strings.FieldsFunc(query, func(r rune) bool {
-		isLetter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-		isLetter = isLetter || r >= 0x80
-		return !isLetter
-	})
-	terms := make([]string, 0, len(fields))
+	terms := make([]string, 0, len(queryTerms(query)))
 	seen := map[string]struct{}{}
-	for _, field := range fields {
-		term := strings.ToLower(strings.TrimSpace(field))
-		if term == "" {
-			continue
-		}
+	for _, term := range queryTerms(query) {
 		if policy == PolicyDedup {
 			if _, duplicate := seen[term]; duplicate {
 				continue
 			}
 			seen[term] = struct{}{}
 		}
-		terms = append(terms, `"`+strings.ReplaceAll(term, `"`, `""`)+`"`)
+		terms = append(terms, quoteTerm(term))
 	}
 	if len(terms) == 0 {
 		return "", fmt.Errorf("query produced no searchable terms")
 	}
-	expr := strings.Join(terms, " OR ")
-	for len(expr) > maxExpressionBytes && len(terms) > 1 {
+	for len(strings.Join(terms, " OR ")) > maxExpressionBytes && len(terms) > 1 {
 		terms = terms[:len(terms)-1]
-		expr = strings.Join(terms, " OR ")
 	}
-	return expr, nil
+	return strings.Join(terms, " OR "), nil
 }
 
 // BuildExpression applies the published PolicyOriginal protocol.

@@ -28,26 +28,35 @@ func main() {
 	mode := flag.String("mode", string(beir.ModeVerified), "retrieval mode: verified, enforced, or traced")
 	limit := flag.Int("limit", 100, "candidate limit per query (1-100)")
 	budget := flag.Uint64("budget", 1<<20, "traced-mode pack budget in bytes (e.g. 512, 2048, 8192)")
-	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats) or dedup (fold repeats; changes rankings)")
+	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats), dedup (fold repeats; changes rankings), or drop-floor (drop terms at the BM25 evidence floor; measured floor-weight evaluation)")
 	resume := flag.Bool("resume", false, "resume an interrupted run from its journal (manifest must match)")
-	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve instead of running queries`)
-	reports := flag.String("reports", "", "comma-separated traced report paths (with -report coverage)")
+	queryLimit := flag.Int("queries", 0, "limit the run to the first N judged queries in file order (0 = all; part of the run identity)")
+	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve, or "compare" checks two reports' rankings against each other, instead of running queries`)
+	reports := flag.String("reports", "", "comma-separated report paths (with -report coverage or compare)")
 	flag.Parse()
-
 	switch *report {
 	case "":
 		if *dataDir == "" || *out == "" {
 			flag.Usage()
-			os.Exit(2)
 		}
 		config := beir.RunConfig{
-			Mode:    beir.SearchMode(*mode),
-			Limit:   *limit,
-			Budget:  *budget,
-			Policy:  beir.ExpressionPolicy(*policy),
-			Dataset: *dataset,
+			Mode:       beir.SearchMode(*mode),
+			Limit:      *limit,
+			Budget:     *budget,
+			Policy:     beir.ExpressionPolicy(*policy),
+			Dataset:    *dataset,
+			QueryLimit: *queryLimit,
 		}
 		if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout); err != nil {
+			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
+			os.Exit(1)
+		}
+	case "compare":
+		if *reports == "" || *out == "" {
+			fmt.Fprintln(os.Stderr, `beir: -report compare requires -reports <two comma-separated report paths> and -out`)
+			os.Exit(2)
+		}
+		if err := compareReportTo(*out, strings.Split(*reports, ",")); err != nil {
 			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
 			os.Exit(1)
 		}
@@ -127,6 +136,12 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 			len(dataset.Corpus), ingested.IndexingSeconds,
 			float64(len(dataset.Corpus))/maxSeconds(ingested.IndexingSeconds, 0.001))
 	}
+	var instrument *beir.ReductionReport
+	if config.Policy == beir.PolicyDropFloor {
+		beir.SearchInstrumentation = func(report beir.ReductionReport) {
+			instrument = &report
+		}
+	}
 	defer ingested.Close()
 	beir.SearchProgress = func(done, total int, lastQueryID string) {
 		fmt.Fprintf(os.Stderr, "%s: search %d/%d (last %s)\n", config.Dataset, done, total, lastQueryID)
@@ -169,6 +184,7 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 			QueryID: result.QueryID, RankedDocIDs: result.RankedDocIDs,
 			LatencyMicros: result.LatencyMicros, AcceptedSegments: result.AcceptedSegments,
 			ConsideredSegments: result.ConsideredSegments,
+			DroppedTerms:       result.DroppedTerms, ExpressionBytes: result.ExpressionBytes,
 		}
 		if config.Mode == beir.ModeTraced {
 			coverage := beir.GoldCoverage(relevant, result.SelectedDocIDs)
@@ -221,9 +237,10 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 	report := beir.RunReport{
 		Dataset: config.Dataset, Mode: string(config.Mode), ExpressionPolicy: string(config.Policy),
 		Limit: config.Limit, Budget: config.Budget, RequestNamespace: config.Namespace(),
-		CorpusDocuments: len(dataset.Corpus), JudgedQueries: len(judged),
+		CorpusDocuments: len(dataset.Corpus), JudgedQueries: len(judged), QueryLimit: config.QueryLimit,
 		IndexBytes: ingested.IndexBytes, IndexingSeconds: ingested.IndexingSeconds,
 		PeakRSSKB: peak, StartedAt: started, FinishedAt: time.Now(),
+		Reduction: instrument,
 		Aggregate: aggregate,
 		Queries:   reports,
 	}
@@ -288,7 +305,7 @@ func loadJournal(path string) (map[string]beir.SearchResult, error) {
 // journal can be missing fields a newer one records (for example the traced
 // pack selection), and resuming across formats would silently mix unmeasured
 // queries into the report.
-const journalFormat = 2
+const journalFormat = 3
 
 // manifestIdentity is the resume-time binding between a report and the run that
 // produced its journal: dataset identity, corpus size, judged-query count, and
