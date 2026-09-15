@@ -1,6 +1,6 @@
 ![Mousa — an experimental memory instrument](assets/mousa_readme_banner_v2_1600x480.png)
 
-> **Status:** Pre-alpha. A verified lexical retrieval core is implemented and tested in Go (ingest, normalization, segmentation, FTS5 indexing, ranked retrieval, lifecycle verification, policy decisions, Source Trails, and context packets). Mousa has no supported installation path, no command-line tool, and no stable public API: all packages are internal, and no retrieval-quality or performance measurement is published. Any measured claim will come from the evaluation record, not from this document.
+> **Status:** Pre-alpha. Build `cmd/mousa` from source for local UTF-8 directory sync, bounded JSONL input, and source-scoped lexical queries. The Go core also implements policy decisions, Source Trails, and context packets; not every core capability is exposed by the CLI. Packages remain internal, with no stable SDK. See the [capability matrix](docs/CAPABILITIES.md) for supported behavior and the [research record](docs/RESEARCH.md) for measured results and limitations.
 
 Mousa is a local-first retrieval and memory backbone for agents and other software that need useful context over long periods. It is intended to recover relevant source material, preserve what changed, and assemble compact context packets that can be inspected before use. The result is memory with a source trail rather than an opaque answer.
 
@@ -53,27 +53,42 @@ The first shipped interface is the local vertical slice, `cmd/mousa`.
 
 ## Local usage (cmd/mousa)
 
-Mousa ships one supported local workflow: a UTF-8/Markdown directory is imported and
-synced into a canonical store, and queries return authorized, source-linked evidence
-bounded by a byte budget.
+The local CLI synchronizes text items into a canonical store and returns
+source-linked evidence under a byte budget. Build with Go 1.25 or newer:
 
 ```sh
-go build -o mousa ./cmd/mousa
-mousa -store local.sqlite sync ./docs          # import or re-sync a directory
-mousa -store local.sqlite status ./docs        # report the source's ingest state
-mousa -store local.sqlite query ./docs 'zebra habitat'
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+./mousa -store local.sqlite sync ./documents
+./mousa -store local.sqlite status ./documents
+./mousa -store local.sqlite query ./documents 'zebra habitat'
 ```
 
-`sync` and `query` print one JSON result on stdout. Sync semantics: one item = one file,
-item identity = relative POSIX path; unchanged files are no-ops, changed files become a
-new retrievable revision (previous revisions stay as historical evidence but leave the
-index), deleted files stop being retrievable, and a rename is a delete + add. Each query
-evaluates its own immutable policy decision and reports its decision ID; output releases
-only selected segment text with item, segment ID, rank, score, and byte provenance.
-Storing classification assertions remains a record-keeping feature: it is not automatic
-categorization and not classification-based authorization.
+`sync`, `status`, and `query` print JSON on stdout. Directory item identity is the
+relative POSIX path. Updates and reverts atomically replace current search evidence;
+deletion removes current evidence without deleting canonical history. Identical
+content restored after deletion becomes searchable again. `status` reports active
+items separately from historical observations.
 
-These interfaces are planned, not shipped. A future human-facing application would provide observability, policy control, provenance inspection, correction, and export. It would not be the canonical store or a generic chat shell.
+For an explicit item stream:
+
+```sh
+printf '%s\n' '{"id":"note@draft","text":"The harbor inspection is on Friday."}' |
+  ./mousa -store local.sqlite sync --source inspection-notes
+./mousa -store local.sqlite query --source inspection-notes 'harbor inspection'
+```
+
+JSONL input is bounded to 1 MiB per line, 64 MiB per invocation, and 10,000 records.
+Deletion is explicit; omission does not delete. Failed input retains its committed
+prefix and emits no success result. See the [input and recovery contract](docs/CAPABILITIES.md)
+before upgrading an existing directory store or retaining sensitive material.
+
+The CLI currently uses a fixed 8,192-byte released-text budget and does not expose
+durable Source Trail inspection. A byte budget is not a token budget. Verified
+provenance does not establish factual truth, and classification records are not
+automatic categorization or classification-based authorization.
+
+SDK, MCP, HTTP, and human-facing application interfaces remain planned. They are not
+part of the supported CLI workflow.
 
 ## Design principles
 
@@ -100,7 +115,7 @@ Implemented and planned capabilities, marked per item:
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; freshness, supersession, and conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget-aware selection today, with deterministic truncation, deduplication, redundancy removal, and token-aware budgeting planned;
-- source-linked context packets with durable Source Trail identifiers (implemented);
+- source-linked context packets with durable Source Trail identifiers (implemented in the core; not yet exposed by `cmd/mousa`);
 - documented export formats that other tools can read without Mousa (planned).
 
 Items marked planned are design targets. They are not a release checklist or a statement of current functionality, and nothing in this document is a measured claim.

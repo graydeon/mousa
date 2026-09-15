@@ -1,50 +1,19 @@
-// Command mousa is the supported local vertical slice: a UTF-8/Markdown
-// directory is imported and synced into a canonical Mousa store, and queries
-// return authorized, source-linked evidence bounded by a byte budget.
-//
-// Design contract (recorded in the project DECISIONS and this file's
-// subcommands' docs):
-//
-//   - Source identity: one source per configured directory root; the Source
-//     identity is the existing deterministic tuple (namespace "mousa-local",
-//     external source ID = the root's absolute path). One Mousa item = one
-//     file. Item identity is the item's relative POSIX path within the root;
-//     the external observation ID is "item/<relpath>".
-//   - Sync semantics: an item's content digest decides. Unchanged digest →
-//     no-op (nothing stored). Changed digest → a new revision (a fresh
-//     Observation/Artifact/Representation/Segments set) that becomes the
-//     currently retrievable content for the item; the previous revision's
-//     records stay as historical evidence but its segments are removed from
-//     the lexical index, so only the current revision is retrievable. Deleted
-//     file → the item's segments are removed from the index (and the source
-//     row is left intact as evidence). Renamed file → the old item is
-//     deleted and the new item is imported; matching content digests make
-//     that a cheap no-content-change move.
-//   - Historical vs current: the store is append-only for records; the
-//     lexical index maps segment → current content. Queries return only
-//     currently indexed segments, never stale text.
-//   - Partial failure: ApplyIngest and PutSegment/IndexTextRepresentation are
-//     per-item transactions; a failing item aborts the sync with a typed
-//     error naming the item, already-committed items stay committed, and a
-//     retry re-syncs only the remaining differences (idempotent by digest).
-//   - Policy freshness: each query evaluates one stored retrieval decision
-//     for its own request identity; the response reports the decision ID so
-//     a historical decision can never pass as current authorization.
-//   - Output: the response contains only released text from selected
-//     candidates under the byte budget, plus provenance. Internal candidate
-//     objects (rejected text, dispositions) are never serialized.
+// Command mousa synchronizes local text items and returns source-linked evidence
+// under an explicit byte budget. Canonical revisions are immutable; current-item
+// activation and the lexical index change together in one transaction.
 package main
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -66,50 +35,153 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if *storePath == "" || len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
-
-commands:
-  sync <dir>            import or re-sync a UTF-8/Markdown directory (JSON result)
-  query <dir> <text>    query a synced directory, returns bounded evidence (JSON)
-  status <dir>          report the source's ingest state (JSON)`)
-		os.Exit(2)
+		usage()
 	}
 	command, rest := args[0], args[1:]
 	var err error
 	switch command {
 	case "sync":
-		if len(rest) != 1 {
-			fatalf("sync requires exactly one directory argument")
-		}
-		err = runSync(ctx, *storePath, rest[0])
+		err = syncCommand(ctx, *storePath, rest)
 	case "status":
-		if len(rest) != 1 {
-			fatalf("status requires exactly one directory argument")
-		}
-		err = runStatus(ctx, *storePath, rest[0])
+		err = statusCommand(ctx, *storePath, rest)
 	case "query":
-		if len(rest) != 2 {
-			fatalf("query requires <dir> <query text>")
-		}
-		err = runQuery(ctx, *storePath, rest[0], rest[1])
+		err = queryCommand(ctx, *storePath, rest)
 	default:
-		fatalf("unknown command %q", command)
+		fmt.Fprintf(os.Stderr, "mousa: unknown command %q\n", command)
+		usage()
 	}
 	if err != nil {
+		var invalid usageError
+		if errors.As(err, &invalid) {
+			fmt.Fprintf(os.Stderr, "mousa: %v\n", invalid)
+			usage()
+		}
 		fmt.Fprintf(os.Stderr, "mousa: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "mousa: "+format+"\n", args...)
+func usage() {
+	fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
+
+commands:
+  sync <dir>                  import or re-sync a UTF-8/Markdown directory (JSON result)
+  sync --source <id>          import or re-sync JSONL item records from stdin (JSON result)
+  query <dir> <text>          query a synced directory, returns bounded evidence (JSON)
+  query --source <id> <text>  query a JSONL-synced source, returns bounded evidence (JSON)
+  status <dir>                report the source's ingest state (JSON)
+  status --source <id>        report a JSONL-synced source's ingest state (JSON)`)
 	os.Exit(2)
 }
 
-// localSource derives the deterministic Source identity for one directory
+// usageError reports an invalid invocation: main exits 2 for it, as it did for
+// the earlier positional-argument checks.
+type usageError struct{ message string }
+
+func (e usageError) Error() string { return e.message }
+
+// newCommandFlags parses one command's flags. Flag output is discarded because
+// main prints the error and the command usage itself.
+func newCommandFlags(name string) *flag.FlagSet {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	return flags
+}
+
+// syncCommand selects the input form: a directory root, or an explicit
+// external source ID with JSONL item records on stdin.
+func syncCommand(ctx context.Context, storePath string, args []string) error {
+	flags := newCommandFlags("sync")
+	sourceID := flags.String("source", "", "external source ID; reads JSONL item records from stdin instead of a directory")
+	if err := flags.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	rest := flags.Args()
+	switch {
+	case *sourceID == "" && len(rest) == 1:
+		return runSyncDirectory(ctx, storePath, rest[0])
+	case *sourceID != "" && len(rest) == 0:
+		return runSyncJSONL(ctx, storePath, *sourceID, os.Stdin)
+	default:
+		return usageError{"sync takes one directory argument, or --source <external-id> with JSONL records on stdin"}
+	}
+}
+
+// statusCommand names its source with a directory argument or --source.
+func statusCommand(ctx context.Context, storePath string, args []string) error {
+	flags := newCommandFlags("status")
+	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	if err := flags.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	source, label, err := selectSource(*sourceID, flags.Args(), "status")
+	if err != nil {
+		return err
+	}
+	return runStatus(ctx, storePath, source, label)
+}
+
+// queryCommand names its source with a directory argument or --source, and
+// always takes the query text as the remaining argument.
+func queryCommand(ctx context.Context, storePath string, args []string) error {
+	flags := newCommandFlags("query")
+	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	if err := flags.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	source, label, query, err := selectQuerySource(*sourceID, flags.Args())
+	if err != nil {
+		return err
+	}
+	return runQuery(ctx, storePath, source, label, query)
+}
+
+// selectSource resolves the source a command acts on: either a directory root
+// (the external source ID is its absolute path) or an explicit external source
+// ID for a source that has no directory. Exactly one spelling is accepted.
+func selectSource(externalSourceID string, positional []string, command string) (mousa.Source, string, error) {
+	if externalSourceID != "" {
+		if len(positional) != 0 {
+			return mousa.Source{}, "", usageError{fmt.Sprintf("%s takes either a directory argument or --source <external-id>, not both", command)}
+		}
+		source, err := streamSource(externalSourceID)
+		if err != nil {
+			return mousa.Source{}, "", err
+		}
+		return source, externalSourceID, nil
+	}
+	if len(positional) != 1 {
+		return mousa.Source{}, "", usageError{fmt.Sprintf("%s takes one directory argument or --source <external-id>", command)}
+	}
+	return directorySource(positional[0])
+}
+
+// selectQuerySource is selectSource for query, which also takes the query text.
+func selectQuerySource(externalSourceID string, positional []string) (mousa.Source, string, string, error) {
+	if externalSourceID != "" {
+		if len(positional) != 1 {
+			return mousa.Source{}, "", "", usageError{"query --source <external-id> takes exactly one query-text argument"}
+		}
+		source, err := streamSource(externalSourceID)
+		if err != nil {
+			return mousa.Source{}, "", "", err
+		}
+		return source, externalSourceID, positional[0], nil
+	}
+	if len(positional) != 2 {
+		return mousa.Source{}, "", "", usageError{"query takes <dir> <query text> or --source <external-id> <query text>"}
+	}
+	source, label, err := directorySource(positional[0])
+	if err != nil {
+		return mousa.Source{}, "", "", err
+	}
+	return source, label, positional[1], nil
+}
+
+// directorySource derives the deterministic Source identity for one directory
 // root. The absolute path is the external identity, so moving the root
 // creates a new source rather than silently mixing content.
-func localSource(root string) (mousa.Source, string, error) {
+func directorySource(root string) (mousa.Source, string, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return mousa.Source{}, "", err
@@ -126,6 +198,16 @@ func localSource(root string) (mousa.Source, string, error) {
 		return mousa.Source{}, "", err
 	}
 	return mousa.Source{Schema: mousa.SourceSchema, ID: sourceID, Namespace: localNamespace, ExternalSourceID: absolute}, absolute, nil
+}
+
+// streamSource uses a separate namespace so a stream ID cannot collide with a
+// directory's absolute path.
+func streamSource(externalSourceID string) (mousa.Source, error) {
+	sourceID, err := mousa.NewSourceID("mousa-jsonl", externalSourceID)
+	if err != nil {
+		return mousa.Source{}, err
+	}
+	return mousa.Source{Schema: mousa.SourceSchema, ID: sourceID, Namespace: "mousa-jsonl", ExternalSourceID: externalSourceID}, nil
 }
 
 // localItems walks one root and returns the current item set: relative POSIX
@@ -169,10 +251,6 @@ func localItems(root string) (map[string]string, []string, error) {
 	return items, skipped, nil
 }
 
-func itemObservationID(source mousa.Source, relativePath string) (mousa.ObservationID, error) {
-	return mousa.NewObservationID(source.ID, itemPrefix+relativePath)
-}
-
 // itemRevisionObservationID derives the observation identity of a specific
 // revision: the item path plus its content digest. A changed file therefore
 // gets a fresh Observation (and fresh Artifact/Representation/Segments), while
@@ -181,189 +259,175 @@ func itemRevisionObservationID(source mousa.Source, relativePath string, digest 
 	return mousa.NewObservationID(source.ID, fmt.Sprintf("%s%s@%x", itemPrefix, relativePath, digest))
 }
 
-// itemRevision is one stored revision of one item.
-type itemRevision struct {
-	ObservationID    mousa.ObservationID
-	ArtifactID       mousa.ArtifactID
-	RepresentationID mousa.RepresentationID
-	ContentSHA256    mousa.SHA256
-	ByteLength       uint64
-	SegmentIDs       []mousa.SegmentID
+// itemInput is one item the local slice applies: its identifier within the
+// source, and either its current content or an explicit removal. Directory
+// sync builds inputs from files; the JSONL stream builds them from records.
+// Both go through applyItem so the two input paths share one lifecycle.
+type itemInput struct {
+	ID       string
+	Content  []byte
+	Deleted  bool
+	Captured int64
 }
 
-func ingestItem(ctx context.Context, store *sqlite.Store, source mousa.Source, relativePath, absolutePath string, sequence uint64) (itemRevision, error) {
-	info, err := os.Stat(absolutePath)
-	if err != nil {
-		return itemRevision{}, err
+// Item actions reported in a sync result.
+const (
+	actionAdded     = "added"
+	actionUpdated   = "updated"
+	actionRestored  = "restored"
+	actionUnchanged = "unchanged"
+	actionDeleted   = "deleted"
+	actionAbsent    = "absent"
+)
+
+// applyItem compares raw-content identity with the explicitly active revision.
+// Canonical history may be prepared independently; index activation is atomic.
+func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64) (string, error) {
+	if input.Deleted {
+		return store.DeleteLocalItem(ctx, source.ID, input.ID)
 	}
-	// Captured time is the file's modification time, so re-ingesting the same
-	// content is receipt-identical (an exact retry) and a changed file gets a
-	// fresh capture timestamp: the receipt binds captured time, so wall-clock
-	// now() would make every replay of one revision a conflict.
-	capturedAtUsec := info.ModTime().UnixMicro()
+	digest := mousa.SHA256(sha256.Sum256(input.Content))
+	current, err := store.GetLocalItem(ctx, source.ID, input.ID)
+	if err != nil && !sqlite.IsCode(err, sqlite.CodeNotFound) {
+		return "", err
+	}
+	if err == nil && current.Active && current.Artifact.ContentSHA256 == digest && current.Artifact.ByteLength == uint64(len(input.Content)) {
+		return actionUnchanged, nil
+	}
+	return ingestRevision(ctx, store, source, input, digest, sequence)
+}
+
+// ingestRevision reuses accepted delivery evidence when restoring old content.
+// Partial preparation is immutable and can be retried without changing activation.
+func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, digest mousa.SHA256, sequence *uint64) (string, error) {
+	observationID, err := itemRevisionObservationID(source, input.ID, digest)
+	if err != nil {
+		return "", err
+	}
+	artifactID, err := mousa.NewArtifactID(observationID, segmentKeyPrefix)
+	if err != nil {
+		return "", err
+	}
+	capturedAtUsec := input.Captured
 	if capturedAtUsec <= 0 {
 		capturedAtUsec = time.Now().UnixMicro()
 	}
-	content, err := os.ReadFile(absolutePath)
-	if err != nil {
-		return itemRevision{}, err
-	}
-	revisionDigest := mousa.SHA256(sha256.Sum256(content))
-	observationID, err := itemRevisionObservationID(source, relativePath, revisionDigest)
-	if err != nil {
-		return itemRevision{}, err
-	}
-	artifactID, err := mousa.NewArtifactID(observationID, segmentKeyPrefix)
-	if err != nil {
-		return itemRevision{}, err
+	if accepted, err := store.GetIngestReceipt(ctx, observationID); err == nil {
+		capturedAtUsec, sequence = accepted.CapturedAtUsec, accepted.Sequence
+	} else if !sqlite.IsCode(err, sqlite.CodeNotFound) {
+		return "", err
 	}
 	artifact := mousa.Artifact{
 		Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: segmentKeyPrefix,
-		MediaType: mousa.UTF8TextMediaType, ContentSHA256: revisionDigest, ByteLength: uint64(len(content)),
+		MediaType: mousa.UTF8TextMediaType, ContentSHA256: digest, ByteLength: uint64(len(input.Content)),
 	}
-	observation := mousa.Observation{Schema: mousa.ObservationSchema, ID: observationID, SourceID: source.ID, ExternalObservationID: fmt.Sprintf("%s%s@%x", itemPrefix, relativePath, revisionDigest)}
-	batch := mousa.IngestBatch{
-		AdapterID: adapterID, AdapterVersion: adapterVersion, Initiative: mousa.InitiativePush, Form: mousa.FormItem,
-		CapturedAtUsec: capturedAtUsec, Sequence: &sequence,
-		Source: source, Observation: observation, Artifacts: []mousa.Artifact{artifact},
-	}
-	if err := store.ApplyIngest(ctx, batch); err != nil {
-		return itemRevision{}, err
-	}
-	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, content)
+	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, input.Content)
 	if err != nil {
-		return itemRevision{}, err
+		return "", err
 	}
 	segments, err := mousa.SegmentUTF8Text(representation, normalized)
 	if err != nil {
-		return itemRevision{}, err
+		return "", err
+	}
+	observation := mousa.Observation{Schema: mousa.ObservationSchema, ID: observationID, SourceID: source.ID, ExternalObservationID: fmt.Sprintf("%s%s@%x", itemPrefix, input.ID, digest)}
+	batch := mousa.IngestBatch{
+		AdapterID: adapterID, AdapterVersion: adapterVersion, Initiative: mousa.InitiativePush, Form: mousa.FormItem,
+		CapturedAtUsec: capturedAtUsec, Sequence: sequence,
+		Source: source, Observation: observation, Artifacts: []mousa.Artifact{artifact},
+	}
+	if err := store.ApplyIngest(ctx, batch); err != nil {
+		return "", err
 	}
 	if err := store.PutRepresentation(ctx, representation); err != nil {
-		return itemRevision{}, err
-	}
-	revision := itemRevision{
-		ObservationID:    observationID,
-		ArtifactID:       artifactID,
-		RepresentationID: representation.ID,
-		ContentSHA256:    artifact.ContentSHA256,
-		ByteLength:       artifact.ByteLength,
+		return "", err
 	}
 	for _, segment := range segments {
 		if err := store.PutSegment(ctx, segment); err != nil {
-			return itemRevision{}, err
-		}
-		revision.SegmentIDs = append(revision.SegmentIDs, segment.ID)
-	}
-	if err := store.IndexTextRepresentation(ctx, representation.ID, normalized); err != nil {
-		return itemRevision{}, err
-	}
-	return revision, nil
-}
-
-// storedRevision rebuilds the stored revision descriptor for an item from the
-// store, or returns a nil revision when the item has never been ingested.
-func storedRevision(ctx context.Context, store *sqlite.Store, source mousa.Source, relativePath string) (*itemRevision, error) {
-	// The latest stored revision of this item: observations are ordered and
-	// the last one for the item prefix is the newest revision.
-	ids, err := store.SourceObservationIDs(ctx, source.ID)
-	if err != nil {
-		return nil, err
-	}
-	prefix := itemPrefix + relativePath + "@"
-	var latest *mousa.ObservationID
-	for _, id := range ids {
-		observation, err := store.GetObservation(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		external := observation.ExternalObservationID
-		if external == itemPrefix+relativePath || strings.HasPrefix(external, prefix) {
-			latest = &id
+			return "", err
 		}
 	}
-	if latest == nil {
-		return nil, nil
-	}
-	observationID := *latest
-	observation, err := store.GetObservation(ctx, observationID)
-	if err != nil {
-		if sqlite.IsCode(err, sqlite.CodeNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if observation.SourceID != source.ID {
-		return nil, fmt.Errorf("observation %x does not belong to source", observationID[:8])
-	}
-	artifactID, err := mousa.NewArtifactID(observationID, segmentKeyPrefix)
-	if err != nil {
-		return nil, err
-	}
-	artifact, err := store.GetArtifact(ctx, artifactID)
-	if err != nil {
-		return nil, err
-	}
-	representation, err := store.GetRepresentation(ctx, deriveRepresentationID(artifact))
-	if err != nil {
-		return nil, err
-	}
-	segments, err := store.RepresentationSegments(ctx, representation.ID)
-	if err != nil {
-		return nil, err
-	}
-	revision := &itemRevision{
-		ObservationID:    observationID,
-		ArtifactID:       artifactID,
-		RepresentationID: representation.ID,
-		ContentSHA256:    artifact.ContentSHA256,
-		ByteLength:       artifact.ByteLength,
-	}
-	for _, segment := range segments {
-		revision.SegmentIDs = append(revision.SegmentIDs, segment.ID)
-	}
-	return revision, nil
+	return store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized)
 }
 
-// deriveRepresentationID recomputes a representation identity from its stored
-// artifact the way NormalizeUTF8Text derives it, so a stored revision can be
-// located without a parallel index.
-func deriveRepresentationID(artifact mousa.Artifact) mousa.RepresentationID {
-	parameters := mousa.SHA256(sha256.Sum256(nil))
-	inputs := []mousa.DerivationInput{mousa.NewArtifactDerivationInput(artifact.ID)}
-	id, err := mousa.NewRepresentationID(inputs, mousa.UTF8TextProcessorID, mousa.UTF8TextProcessorVersion, parameters, mousa.UTF8TextMediaType, artifact.ContentSHA256)
+// fileCapturedAtUsec is the capture time of a first delivery from a file: its
+// modification time. A missing or non-positive timestamp yields 0, which
+// ingestRevision replaces with the local clock.
+func fileCapturedAtUsec(path string) (int64, error) {
+	info, err := os.Stat(path)
 	if err != nil {
-		return mousa.RepresentationID{}
+		return 0, err
 	}
-	return id
+	return info.ModTime().UnixMicro(), nil
 }
 
-func fileDigest(path string) (mousa.SHA256, uint64, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return mousa.SHA256{}, 0, err
-	}
-	return mousa.SHA256(sha256.Sum256(content)), uint64(len(content)), nil
-}
-
-// runSync imports or re-syncs one directory. The per-item decision is digest
-// driven: only changed or new files are ingested; deleted items are
-// de-indexed. The result is machine-readable and reports every action.
+// The result is machine-readable and reports every action. One struct serves
+// both input forms: a directory root and a JSONL record stream.
 type syncResult struct {
 	Source      string   `json:"source"`
-	Root        string   `json:"root"`
+	Input       string   `json:"input"`
+	Root        string   `json:"root,omitempty"`
 	Added       []string `json:"added,omitempty"`
 	Updated     []string `json:"updated,omitempty"`
+	Restored    []string `json:"restored,omitempty"`
 	Unchanged   []string `json:"unchanged,omitempty"`
 	Deleted     []string `json:"deleted,omitempty"`
+	Absent      []string `json:"absent,omitempty"`
 	Skipped     []string `json:"skipped,omitempty"`
 	TotalItems  int      `json:"total_items"`
 	StoreBytes  int64    `json:"store_bytes"`
 	ElapsedSecs float64  `json:"elapsed_seconds"`
 }
 
-func runSync(ctx context.Context, storePath, root string) error {
+// record files one applied item under the action that was taken.
+func (result *syncResult) record(action, item string) {
+	switch action {
+	case actionAdded:
+		result.Added = append(result.Added, item)
+	case actionUpdated:
+		result.Updated = append(result.Updated, item)
+	case actionRestored:
+		result.Restored = append(result.Restored, item)
+	case actionUnchanged:
+		result.Unchanged = append(result.Unchanged, item)
+	case actionDeleted:
+		result.Deleted = append(result.Deleted, item)
+	case actionAbsent:
+		result.Absent = append(result.Absent, item)
+	}
+}
+
+// runStatus reports the stored ingest state of one resolved source.
+func runStatus(ctx context.Context, storePath string, source mousa.Source, label string) error {
+	store, err := sqlite.Open(ctx, storePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	state, err := store.GetIngestState(ctx, source.ID)
+	if err != nil {
+		if sqlite.IsCode(err, sqlite.CodeNotFound) {
+			return emit(statusResult{Source: label, CollectionState: "absent"})
+		}
+		return err
+	}
+	active, observations, err := store.LocalSourceCounts(ctx, source.ID)
+	if err != nil {
+		return err
+	}
+	recovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
+	if err != nil {
+		return err
+	}
+	return emit(statusResult{Source: label, CollectionState: string(state.CollectionState), ActiveItems: active, Observations: observations, NeedsRecovery: recovery})
+}
+
+// runSyncDirectory imports or re-syncs one directory root. Items are the
+// root's UTF-8 regular files; an item's relative POSIX path is its identity.
+// Deletion is derived from absence: an item whose file no longer exists stops
+// being retrievable, because the directory scan is the complete item set.
+func runSyncDirectory(ctx context.Context, storePath, root string) error {
 	started := time.Now()
-	source, absolute, err := localSource(root)
+	source, absolute, err := directorySource(root)
 	if err != nil {
 		return err
 	}
@@ -380,7 +444,7 @@ func runSync(ctx context.Context, storePath, root string) error {
 		return fmt.Errorf("deploy policy: %w", err)
 	}
 
-	result := syncResult{Source: source.ExternalSourceID, Root: absolute, Skipped: skipped}
+	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: skipped}
 	var sequence uint64
 	paths := make([]string, 0, len(items))
 	for path := range items {
@@ -389,50 +453,37 @@ func runSync(ctx context.Context, storePath, root string) error {
 	sort.Strings(paths)
 	for _, path := range paths {
 		sequence++
-		absolutePath := items[path]
-		stored, err := storedRevision(ctx, store, source, path)
+		content, err := os.ReadFile(items[path])
 		if err != nil {
 			return fmt.Errorf("item %s: %w", path, err)
 		}
-		digest, length, err := fileDigest(absolutePath)
+		capturedAtUsec, err := fileCapturedAtUsec(items[path])
 		if err != nil {
 			return fmt.Errorf("item %s: %w", path, err)
 		}
-		if stored != nil && stored.ContentSHA256 == digest && stored.ByteLength == length {
-			result.Unchanged = append(result.Unchanged, path)
-			continue
-		}
-		if _, err := ingestItem(ctx, store, source, path, absolutePath, sequence); err != nil {
+		action, err := applyItem(ctx, store, source, itemInput{ID: path, Content: content, Captured: capturedAtUsec}, &sequence)
+		if err != nil {
 			return fmt.Errorf("item %s: %w", path, err)
 		}
-		if stored == nil {
-			result.Added = append(result.Added, path)
-		} else {
-			if err := deindexRevision(ctx, store, stored); err != nil {
-				return fmt.Errorf("item %s: %w", path, err)
-			}
-			result.Updated = append(result.Updated, path)
-		}
+		result.record(action, path)
 	}
 	// Deletions: items stored under this source whose file no longer exists.
-	previous, err := sourceItems(ctx, store, source)
+	previous, err := store.LocalItemIDs(ctx, source.ID)
 	if err != nil {
 		return err
 	}
 	for _, path := range previous {
-		if _, exists := items[path]; !exists {
-			stored, err := storedRevision(ctx, store, source, path)
-			if err != nil {
-				return fmt.Errorf("item %s: %w", path, err)
-			}
-			if stored == nil {
-				continue
-			}
-			if err := deindexRevision(ctx, store, stored); err != nil {
-				return fmt.Errorf("item %s: %w", path, err)
-			}
-			result.Deleted = append(result.Deleted, path)
+		if _, exists := items[path]; exists {
+			continue
 		}
+		action, err := applyItem(ctx, store, source, itemInput{ID: path, Deleted: true}, &sequence)
+		if err != nil {
+			return fmt.Errorf("item %s: %w", path, err)
+		}
+		result.record(action, path)
+	}
+	if err := store.CompleteLocalRecovery(ctx, source.ID); err != nil {
+		return err
 	}
 	result.TotalItems = len(items)
 	if info, err := os.Stat(storePath); err == nil {
@@ -442,75 +493,13 @@ func runSync(ctx context.Context, storePath, root string) error {
 	return emit(result)
 }
 
-// deindexRevision removes one revision's segments from the lexical index so
-// the revision stops being retrievable while its canonical records remain as
-// historical evidence.
-func deindexRevision(ctx context.Context, store *sqlite.Store, revision *itemRevision) error {
-	for _, segmentID := range revision.SegmentIDs {
-		if err := store.RemoveSegmentFromIndex(ctx, segmentID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// sourceItems lists the relative item paths currently stored for one source
-// by reading its observations through the existing verified read path.
-func sourceItems(ctx context.Context, store *sqlite.Store, source mousa.Source) ([]string, error) {
-	ids, err := store.SourceObservationIDs(ctx, source.ID)
-	if err != nil {
-		return nil, err
-	}
-	paths := make([]string, 0, len(ids))
-	for _, id := range ids {
-		observation, err := store.GetObservation(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		external := observation.ExternalObservationID
-		if !strings.HasPrefix(external, itemPrefix) {
-			continue
-		}
-		// Strip the revision suffix: "item/<path>@<digest>" -> "<path>".
-		relative := strings.TrimPrefix(external, itemPrefix)
-		if index := strings.Index(relative, "@"); index >= 0 {
-			relative = relative[:index]
-		}
-		paths = append(paths, relative)
-	}
-	return paths, nil
-}
-
 type statusResult struct {
 	Source          string `json:"source"`
 	CollectionState string `json:"collection_state"`
 	Observations    int    `json:"observations"`
+	ActiveItems     int    `json:"active_items"`
+	NeedsRecovery   bool   `json:"needs_recovery"`
 }
-
-func runStatus(ctx context.Context, storePath, root string) error {
-	source, absolute, err := localSource(root)
-	if err != nil {
-		return err
-	}
-	store, err := sqlite.Open(ctx, storePath)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	state, err := store.GetIngestState(ctx, source.ID)
-	if err != nil {
-		if sqlite.IsCode(err, sqlite.CodeNotFound) {
-			return emit(statusResult{Source: absolute, CollectionState: "absent"})
-		}
-		return err
-	}
-	items, err := sourceItems(ctx, store, source)
-	if err != nil {
-		return err
-	}
-	return emit(statusResult{Source: absolute, CollectionState: string(state.CollectionState), Observations: len(items)})
-}
-
 type evidenceResult struct {
 	Query         string        `json:"query"`
 	Source        string        `json:"source"`
@@ -531,12 +520,9 @@ type evidenceHit struct {
 	Text       string  `json:"text"`
 }
 
-func runQuery(ctx context.Context, storePath, root, query string) error {
+// runQuery runs one authorized query against one resolved source.
+func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query string) error {
 	started := time.Now()
-	source, absolute, err := localSource(root)
-	if err != nil {
-		return err
-	}
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
 		return err
@@ -548,19 +534,16 @@ func runQuery(ctx context.Context, storePath, root, query string) error {
 		return err
 	}
 	result.Query = query
-	result.Source = absolute
+	result.Source = label
 	result.BudgetBytes = budgetBytes
 	result.LatencyMicros = time.Since(started).Microseconds()
 	return emit(result)
 }
 
 func emit(value any) error {
-	encoded, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(encoded))
-	return nil
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
 }
 
 // deployLocalPolicy stores the deployment-scoped allow policy the local

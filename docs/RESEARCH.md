@@ -14,6 +14,89 @@ answering pipeline exists yet, so no RAG/answer-quality benchmark is applicable.
 benchmarks (LongMemEval, MemoryAgentBench) and FreshStack await the corresponding
 retrieval capabilities; see the roadmap in the documented roadmap.
 
+## Local CLI current-item lifecycle
+
+The [machine-readable report](../eval/local/results/current-items.json) compares the
+baseline built from `fd2f2d5493fed88ed932b0b8b031d732d31e7089` with
+explicit current-item activation. Candidate source-file hashes, both binary hashes,
+build flags, environment, all command samples, correctness results, and summary
+statistics are included. This is a synthetic lifecycle experiment, not a retrieval
+quality benchmark or a general performance claim.
+
+Protocol: 24 and 96 generated UTF-8 documents, five revisions, three repetitions.
+Each arm gets a fresh store and the same absolute source-root identity. Arm order
+alternates by repetition. The CLI imports, repeats no-op syncs, updates every item,
+queries current and stale terms, deletes an item, restores identical content, and
+queries the restored item. The evaluator checks exact returned item sets, revision
+text, sync action counts, and released-text byte accounting. Single-term queries
+avoid differences between repeat-preserving and deduplicated query policies.
+
+Measurement includes process startup, store opening and verification, command work,
+JSON output, and process exit. Builds and evaluator-side JSON validation are outside
+the timer. Every command starts a new process; this is **cold CLI**, not cold disk:
+filesystem caches are not dropped. GNU `time` reports maximum process RSS. Store
+file size is sampled after process exit. The pilot bounded expansion to these two
+sizes; commands have a 15-second timeout. No larger corpus or history claim follows.
+
+Environment: shared Ryzen 7 2700X host; Linux VM exposing EPYC-IBPB, six vCPUs,
+12 GiB RAM, job limits of 5.5 cores and 8 GiB, shared NVMe storage. Go 1.27.1,
+module Go version 1.25.0, `CGO_ENABLED=0`, `-trimpath -buildvcs=false`. Host
+contention and three repetitions limit timing precision. Worker wall-clock skew is
+irrelevant to elapsed times, which use a monotonic clock.
+
+Median elapsed milliseconds:
+
+| Documents | Operation | Baseline | Current-item activation |
+|---:|---|---:|---:|
+| 24 | Initial sync | 128.1 | 99.1 |
+| 24 | No-op after initial sync | 126.1 | 120.3 |
+| 24 | No-op at revision five | 470.6 | 301.9 |
+| 24 | Update to revision five | 479.4 | 338.7 |
+| 96 | Initial sync | 598.1 | 311.1 |
+| 96 | No-op after initial sync | 832.0 | 309.1 |
+| 96 | No-op at revision five | 4,211.0 | 980.1 |
+| 96 | Update to revision five | 3,605.4 | 1,165.0 |
+
+All 132 candidate command samples passed their correctness checks. The baseline
+failed 60 of 132 samples: repeated no-op classification, stale evidence exclusion,
+deletion, restoration classification, or restored retrieval. Restoration is checked
+both by action reporting and by actual query results; its new action name alone
+does not establish a retrieval fix. These timings therefore compare an incorrect
+baseline with the corrected workflow, not equivalent correct implementations.
+Maximum command duration was 4.273 seconds baseline and 1.189 seconds candidate;
+maximum observed process RSS was 26,444 KiB and 25,764 KiB respectively.
+
+Removing per-item history scans lowers the measured sync cost, but startup still
+verifies historical records. At 96 documents, candidate no-op latency grows from
+309.1 ms after the initial import to 980.1 ms at revision five. Overall cold sync
+is not history-independent. The extra current-item projection and conservative
+legacy-store replay requirement are correctness tradeoffs, not free optimizations.
+
+### Reproduction
+
+Use a disposable checkout of the commit containing this report and verify the
+candidate source hashes recorded in the JSON. Later source changes are a new
+comparison, not an exact reproduction. Python 3.9 or newer is required; install GNU
+`time` for RSS measurement. Without it, the script labels RSS as not measured.
+
+```sh
+git worktree add --detach ../mousa-lifecycle-baseline fd2f2d5493fed88ed932b0b8b031d732d31e7089
+(cd ../mousa-lifecycle-baseline && CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-baseline ./cmd/mousa)
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-candidate ./cmd/mousa
+python3 eval/local/lifecycle.py --baseline ../mousa-baseline --candidate ../mousa-candidate --output ../lifecycle.json
+```
+
+The script generates the corpus, prints progress, writes raw rows and summaries,
+and exits nonzero if any candidate correctness check fails. Baseline failures are
+retained rather than stopping the comparison. The saved report also includes
+environment and source/build fingerprints. Absolute timings and fresh request IDs
+are not expected to repeat byte-for-byte.
+
+JSONL validation, crash recovery, CRLF/BOM handling, unusual item names, and source
+isolation have separate behavioral tests. This directory timing experiment does
+not measure JSONL throughput, warm-core latency, durable CLI tracing, model-token
+efficiency, or another search system.
+
 ## Hypotheses under test
 
 - H1 (identity of ranking): the verified, policy-enforced, and traced retrieval paths
