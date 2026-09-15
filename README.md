@@ -49,6 +49,30 @@ Mousa is intended to expose one portable core through narrow interfaces for:
 - documented HTTP clients where a service boundary is justified;
 - ordinary JSON and JSONL import and export.
 
+The first shipped interface is the local vertical slice, `cmd/mousa`.
+
+## Local usage (cmd/mousa)
+
+Mousa ships one supported local workflow: a UTF-8/Markdown directory is imported and
+synced into a canonical store, and queries return authorized, source-linked evidence
+bounded by a byte budget.
+
+```sh
+go build -o mousa ./cmd/mousa
+mousa -store local.sqlite sync ./docs          # import or re-sync a directory
+mousa -store local.sqlite status ./docs        # report the source's ingest state
+mousa -store local.sqlite query ./docs 'zebra habitat'
+```
+
+`sync` and `query` print one JSON result on stdout. Sync semantics: one item = one file,
+item identity = relative POSIX path; unchanged files are no-ops, changed files become a
+new retrievable revision (previous revisions stay as historical evidence but leave the
+index), deleted files stop being retrievable, and a rename is a delete + add. Each query
+evaluates its own immutable policy decision and reports its decision ID; output releases
+only selected segment text with item, segment ID, rank, score, and byte provenance.
+Storing classification assertions remains a record-keeping feature: it is not automatic
+categorization and not classification-based authorization.
+
 These interfaces are planned, not shipped. A future human-facing application would provide observability, policy control, provenance inspection, correction, and export. It would not be the canonical store or a generic chat shell.
 
 ## Design principles

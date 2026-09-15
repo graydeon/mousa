@@ -330,10 +330,10 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			return nil, fmt.Errorf("drop-floor policy refused: %w", err)
 		}
 	}
-	results := make([]SearchResult, 0, len(judged))
 	if QueryTimeout < 0 {
 		return nil, fmt.Errorf("query timeout %s is negative", QueryTimeout)
 	}
+	results := make([]SearchResult, 0, len(judged))
 	for done, queryID := range judged {
 		if skipped, resumable := skip[queryID]; resumable {
 			results = append(results, skipped)
