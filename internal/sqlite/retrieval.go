@@ -108,10 +108,18 @@ func searchVerifiedLexicalForSource(ctx context.Context, q queryer, expression s
 
 func verifyLexicalEvidence(ctx context.Context, q queryer, raw []LexicalCandidate) ([]mousa.VerifiedLexicalCandidate, error) {
 	evidence := make([]mousa.LexicalCandidateEvidence, 0, len(raw))
+	// All candidates share the caller's transaction; ancestry depends on the
+	// representation, while segment bytes and lifecycle remain candidate checks.
+	ancestry := make(map[mousa.RepresentationID][]mousa.EvidencePath)
 	for _, candidate := range raw {
-		paths, err := lexicalEvidencePaths(ctx, q, candidate.Segment)
-		if err != nil {
-			return nil, err
+		paths, exists := ancestry[candidate.Segment.RepresentationID]
+		if !exists {
+			var err error
+			paths, err = lexicalEvidencePaths(ctx, q, candidate.Segment)
+			if err != nil {
+				return nil, err
+			}
+			ancestry[candidate.Segment.RepresentationID] = paths
 		}
 		sources, err := lexicalSourceEvidence(ctx, q, paths)
 		if err != nil {

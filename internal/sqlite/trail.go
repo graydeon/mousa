@@ -87,9 +87,27 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 }
 
 // GetSourceTrail returns one stored trail with verified relational projections, ordered candidate
-// rows, and parent decision agreement.
+// rows, and parent decision agreement in one read snapshot.
 func (store *Store) GetSourceTrail(ctx context.Context, id mousa.SourceTrailID) (mousa.SourceTrail, error) {
-	return getSourceTrail(ctx, store.db, id)
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return mousa.SourceTrail{}, ctxErr
+		}
+		return mousa.SourceTrail{}, classify("begin source trail read", err)
+	}
+	defer tx.Rollback()
+	trail, err := getSourceTrail(ctx, tx, id)
+	if err != nil {
+		return mousa.SourceTrail{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return mousa.SourceTrail{}, ctxErr
+		}
+		return mousa.SourceTrail{}, classify("finish source trail read", err)
+	}
+	return trail, nil
 }
 
 func insertSourceTrail(ctx context.Context, conn *sql.Conn, trail mousa.SourceTrail) error {
@@ -183,6 +201,7 @@ func verifySourceTrailCandidates(ctx context.Context, conn *sql.Conn, trail mous
 	return nil
 }
 
+// getSourceTrail requires a transaction snapshot, including for ancestry reuse.
 func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mousa.SourceTrail, error) {
 	var decisionID, packetID []byte
 	var outcome string
@@ -258,7 +277,12 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 // verifySourceTrailRecords verifies every stored trail, its ordered candidate rows, typed parents,
 // and that no candidate row exists outside the canonical records.
 func verifySourceTrailRecords(ctx context.Context, db *sql.DB) error {
-	rows, err := db.QueryContext(ctx, `SELECT id FROM source_trails ORDER BY id`)
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return startupError("begin source trail verification", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM source_trails ORDER BY id`)
 	if err != nil {
 		return startupError("scan source trails", err)
 	}
@@ -271,6 +295,10 @@ func verifySourceTrailRecords(ctx context.Context, db *sql.DB) error {
 		}
 		ids = append(ids, append([]byte(nil), raw...))
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return startupError("scan source trails", err)
+	}
 	if err := rows.Close(); err != nil {
 		return startupError("scan source trails", err)
 	}
@@ -281,12 +309,12 @@ func verifySourceTrailRecords(ctx context.Context, db *sql.DB) error {
 		}
 		var id mousa.SourceTrailID
 		copy(id[:], raw)
-		trail, err := getSourceTrail(ctx, db, id)
+		trail, err := getSourceTrail(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		for _, candidate := range trail.Candidates {
-			if _, err := getSegment(ctx, db, candidate.SegmentID); err != nil {
+			if _, err := getSegment(ctx, tx, candidate.SegmentID); err != nil {
 				if IsCode(err, CodeNotFound) {
 					return integrity("verify source trails", "typed segment parent is missing")
 				}
@@ -296,11 +324,14 @@ func verifySourceTrailRecords(ctx context.Context, db *sql.DB) error {
 		candidateCount += len(trail.Candidates)
 	}
 	var total int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM source_trail_candidates`).Scan(&total); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM source_trail_candidates`).Scan(&total); err != nil {
 		return startupError("scan source trail candidates", err)
 	}
 	if total != candidateCount {
 		return integrity("verify source trails", "candidate row count disagrees with canonical records")
+	}
+	if err := tx.Commit(); err != nil {
+		return startupError("finish source trail verification", err)
 	}
 	return nil
 }
