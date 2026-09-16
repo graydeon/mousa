@@ -17,6 +17,9 @@ func verifyExactTrailContent(ctx context.Context, q queryer, trail mousa.SourceT
 		available bool
 	}
 	retained := make(map[mousa.SHA256][]retainedText)
+	// The enclosing trail read holds one transaction snapshot. Keep only source
+	// membership here; each candidate still verifies its own segment and text.
+	verifiedRepresentations := make(map[mousa.RepresentationID]struct{})
 	for _, candidate := range trail.Candidates {
 		segment, err := getSegment(ctx, q, candidate.SegmentID)
 		if err != nil {
@@ -32,19 +35,22 @@ func verifyExactTrailContent(ctx context.Context, q queryer, trail mousa.SourceT
 		if !ok || span.End-span.Start != candidate.TextBytes {
 			return integrity("verify exact trail", "candidate size disagrees with canonical segment")
 		}
-		paths, err := lexicalEvidencePaths(ctx, q, segment)
-		if err != nil {
-			return err
-		}
-		inSource := false
-		for _, path := range paths {
-			if path.SourceID == sourceID {
-				inSource = true
-				break
+		if _, verified := verifiedRepresentations[segment.RepresentationID]; !verified {
+			paths, err := lexicalEvidencePaths(ctx, q, segment)
+			if err != nil {
+				return err
 			}
-		}
-		if !inSource {
-			return integrity("verify exact trail", "candidate does not derive from decision source")
+			inSource := false
+			for _, path := range paths {
+				if path.SourceID == sourceID {
+					inSource = true
+					break
+				}
+			}
+			if !inSource {
+				return integrity("verify exact trail", "candidate does not derive from decision source")
+			}
+			verifiedRepresentations[segment.RepresentationID] = struct{}{}
 		}
 		var text string
 		var digest []byte

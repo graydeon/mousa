@@ -243,6 +243,66 @@ recorded and excluded from the completed-run summary. Explicit closure and
 sidecar guards corrected the harness. Inputs and expected outcomes were unchanged.
 Exact packing remains opt-in; these results do not justify changing the default.
 
+### Snapshot-scoped ancestry reuse
+
+A [bounded follow-up study](https://github.com/graydeon/mousa-benchmarks/tree/a3b5702eaba52309cac72428bb900a42bd31f1b3/results/2026-09-16-packing-scalability)
+separated current-query work from reopening stores with 0, 10 and 100 trails.
+It reused three unchanged passage-documentation questions and the small
+duplicate-displacement case. Histories contained either original v1 trails or
+alternating v1/v2 trails. Each matched query copied the same closed snapshot;
+fresh request identities appended one decision and one trail.
+
+Repeated canonical ancestry was a measured cost. The 48 documentation candidates
+derive from two representations, but retrieval walked ancestry 48 times and
+exact-trail read-back walked it another 48 times. In the exact `install` seed
+diagnostic, packing took 0.27 ms; trail read-back took 18.53 ms, including
+11.57 ms of ancestry work. Those nested times are not additive. At 100 mixed
+trails, historical verification performed 4,800 ancestry walks across the two
+opening passes.
+
+The implementation now reuses ancestry per representation within one retrieval
+or one exact-trail read. Standalone trail reads and historical trail scans use
+read transactions so reuse stays within one snapshot. Every trail, candidate,
+canonical segment, digest, available byte string and lifecycle check remains
+verified. Both opening passes remain. Nothing is cached across operations,
+trails or transactions; historical v1 bytes and current identities are unchanged.
+
+The frozen comparison used 12 alternating pairs per case, with separate
+diagnostic and allocation-only binaries. Uninstrumented pooled documentation
+medians were:
+
+| History | Original packing, before → after | Exact packing, before → after |
+| --- | ---: | ---: |
+| 0 trails | 100.88 → 90.94 ms | 125.50 → 95.15 ms |
+| 10 original trails | 238.35 → 210.04 ms | 256.55 → 215.86 ms |
+| 100 original trails | 1,370.42 → 1,110.23 ms | 1,420.95 → 1,099.24 ms |
+| 10 mixed trails | 468.57 → 266.73 ms | 488.81 → 268.56 ms |
+| 100 mixed trails | 3,739.90 → 1,648.98 ms | 3,719.80 → 1,663.85 ms |
+
+The exact seed and mixed-100 improvements were 24.18% and 55.27%, exceeding the
+predeclared 15% adoption threshold. Required paired wins and all per-cell
+guardrails passed. The small seed control regressed: original packing increased
+49.34 → 54.27 ms (+9.9944%), narrowly inside the 10% ceiling, and exact packing
+increased 53.90 → 55.87 ms. This is not evidence of a general speedup or reliable
+small-case non-regression. Every sample and unsuccessful attempt is retained;
+no timed comparison was repeated.
+
+For exact `install`, allocation bytes during command execution fell
+7,980,608 → 5,707,232 at size zero and 336,463,928 → 223,070,880 at mixed-100.
+Pooled exact-documentation peak RSS was 18,610 → 18,204 KiB and
+22,736 → 22,894 KiB respectively. Cumulative allocation is not resident memory.
+The mixed-100 history still performs all 200 trail reads but only 200 ancestry
+walks. Startup remains history-dependent; this does not establish behavior
+beyond 100 trails, on changing corpora or under sustained writer contention.
+A read snapshot can retain WAL pages until historical verification finishes.
+
+Shared-representation tamper/recovery and concurrent-snapshot regressions,
+full/race/vet/module checks, and CLI client acceptance passed. Selected evidence,
+packet identities, accounting and normalized coordinates were unchanged.
+The next performance priority is the remaining per-candidate canonical segment
+and trail work in growing histories, not another packing policy or fewer
+historical checks. Exact packing remains opt-in.
+
 ## Scoped verification-statement reuse: inconclusive, not adopted
 
 A bounded experiment on 2026-09-15 compared the supported CLI at `b98e15c`
