@@ -15,6 +15,7 @@ const maxTrailCandidates = 100
 // TracedLexicalResult is one decision-gated retrieval that has been traced: the immutable trail,
 // the verified candidates of the decision Source, and the packed selection.
 type TracedLexicalResult struct {
+	Decision   mousa.PolicyDecision
 	Trail      mousa.SourceTrail
 	Candidates []mousa.VerifiedLexicalCandidate
 }
@@ -25,6 +26,17 @@ type TracedLexicalResult struct {
 // one writer transaction. A stored deny decision is data, not an error: it produces a trail with no
 // candidates and an empty selection. Tracing writes, so a read-only store cannot trace.
 func (store *Store) TraceEnforcedLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64) (TracedLexicalResult, error) {
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, false)
+}
+
+// EvaluateAndTraceLexical evaluates current policy, retrieves and packs verified
+// candidates, and stores the decision and Source Trail in one writer transaction.
+// It requires a new request identity; it never reuses a historical decision.
+func (store *Store) EvaluateAndTraceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64) (TracedLexicalResult, error) {
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true)
+}
+
+func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool) (TracedLexicalResult, error) {
 	if err := store.requireWritable("trace enforced lexical"); err != nil {
 		return TracedLexicalResult{}, err
 	}
@@ -39,6 +51,11 @@ func (store *Store) TraceEnforcedLexical(ctx context.Context, request mousa.Poli
 	}
 	var result TracedLexicalResult
 	err := store.writeImmediate(ctx, "trace enforced lexical", func(conn *sql.Conn) error {
+		if evaluateCurrent {
+			if _, err := evaluateSourceRetrieval(ctx, conn, request, false); err != nil {
+				return err
+			}
+		}
 		enforced, err := searchEnforcedLexical(ctx, conn, request, expression, limit)
 		if err != nil {
 			return err
@@ -57,7 +74,7 @@ func (store *Store) TraceEnforcedLexical(ctx context.Context, request mousa.Poli
 		if !reflect.DeepEqual(written, trail) {
 			return integrity("trace enforced lexical", "exact read-back disagrees with write")
 		}
-		result = TracedLexicalResult{Trail: written, Candidates: enforced.Candidates}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates}
 		return nil
 	})
 	if err != nil {

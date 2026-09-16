@@ -14,7 +14,7 @@ import (
 	driverSQLite "modernc.org/sqlite"
 )
 
-func prepareLocalRevision(t *testing.T, store *Store, item, text string) (mousa.Source, mousa.Representation, []byte) {
+func prepareLocalRevision(t *testing.T, store *Store, item, text string, policies ...string) (mousa.Source, mousa.Representation, []byte) {
 	t.Helper()
 	ctx := context.Background()
 	sourceID, err := mousa.NewSourceID("mousa-local", "activation-test")
@@ -38,7 +38,11 @@ func prepareLocalRevision(t *testing.T, store *Store, item, text string) (mousa.
 	if err := store.ApplyIngest(ctx, batch); err != nil {
 		t.Fatal(err)
 	}
-	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, []byte(text))
+	policy := mousa.TextSegmentFixedV1
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	representation, normalized, err := mousa.NormalizeUTF8TextWithPolicy(artifact, []byte(text), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +192,11 @@ func TestLocalItemCrashHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, next, text := prepareLocalRevision(t, store, "doc", "newterm evidence")
+	policy := os.Getenv("MOUSA_LOCAL_CRASH_POLICY")
+	if policy == "" {
+		policy = mousa.TextSegmentFixedV1
+	}
+	source, next, text := prepareLocalRevision(t, store, "doc", "newterm evidence", policy)
 	if _, err := store.db.Exec(`CREATE TEMP TRIGGER crash_local_activation AFTER UPDATE ON local_items BEGIN SELECT crash_before_local_commit(); END`); err != nil {
 		t.Fatal(err)
 	}

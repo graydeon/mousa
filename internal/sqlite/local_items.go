@@ -13,9 +13,10 @@ import (
 // LocalItem records current activation separately from immutable revision history.
 // Inactive items retain their last representation so a restore is not an addition.
 type LocalItem struct {
-	RepresentationID mousa.RepresentationID
-	Artifact         mousa.Artifact
-	Active           bool
+	RepresentationID   mousa.RepresentationID
+	Artifact           mousa.Artifact
+	Active             bool
+	SegmentationPolicy string
 }
 
 // GetLocalItem reads the indexed current-item relationship and its verified ancestry.
@@ -46,8 +47,13 @@ func getLocalItem(ctx context.Context, q queryer, sourceID mousa.SourceID, itemI
 	}
 	item := LocalItem{Active: active == 1}
 	copy(item.RepresentationID[:], raw)
-	if _, err := getRepresentation(ctx, q, item.RepresentationID); err != nil {
+	representation, err := getRepresentation(ctx, q, item.RepresentationID)
+	if err != nil {
 		return LocalItem{}, err
+	}
+	item.SegmentationPolicy, err = mousa.TextSegmentationPolicy(representation)
+	if err != nil {
+		return LocalItem{}, wrap(CodeIntegrity, "get local item segmentation", err)
 	}
 	artifact, err := representationSourceArtifact(ctx, q, item.RepresentationID)
 	if err != nil {

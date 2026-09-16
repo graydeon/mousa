@@ -1,0 +1,2931 @@
+{
+  "kind": "bounded development passage-policy comparison",
+  "starting_revision": "6e84d5ee5b583aa4397ed19d8640ec3559de32b5",
+  "candidate_runtime_sha256": {
+    "go.mod": "2126ba6de681ca474f76d80357fbf41b4bc21ffbbb44d01cce588c170da78d48",
+    "go.sum": "9146e7666d70f22e7739e8735d90275a271753977bd21337caf82345fd8f3cd0",
+    "internal/mousa/policy_definition.go": "2b596901877cfd008bb4539b6f349aae5555fb64dabaa9be1139dd713eeb8272",
+    "internal/mousa/identity.go": "4a08879971a29cc5dee034a9b6f4931ebd8c984c965f6f22c9d25675bee24286",
+    "internal/mousa/caller_identity.go": "f6519968e4621cfdce12eadf2c9d49fb9e0e07c23a53e15e932221b69a64b5dc",
+    "internal/mousa/text.go": "682da74624aa8ba8c3b5c11ae0af857a6809c85df6b24d9d17bf3633de52328e",
+    "internal/mousa/policy_definition_test.go": "756acee3abb67e4acfa95569e5b898f7dfcd9ad401ac941005088d5a9f6a8af3",
+    "internal/mousa/contracts.go": "0920bb4c6b281477c5dfc375b1ed02f1f669429f785a8e5a753b4715a829b028",
+    "internal/mousa/ingest.go": "d9dd7ea0724bdefaaf110079c8a8a0d799c9d009560da10c5ba15d5fc6eb5023",
+    "internal/mousa/policy_decision.go": "2d816933e55e4ae83ac7ef554c778d1e2dd1da5c697da0c7dbe146ba31110cfe",
+    "internal/mousa/passage_test.go": "4e7fd8b027ca9962acb6dff67c75755a0dd8c2a81a9ea42f6b48a465bf11a0b3",
+    "internal/mousa/ingest_test.go": "f8ec8bb1bcb69344e17bf31586affbb3a23f57b875bae14fbfa7e2b412b5ec1f",
+    "internal/mousa/caller_identity_test.go": "304ce65b022d2eca7503820be9db72e430c3c3dc63daede942a0493e06153080",
+    "internal/mousa/trail_test.go": "c9a80e5ced6688e96f67d188033c0a23f6f48b60c190d2c7f05b9522e5732c2a",
+    "internal/mousa/classification.go": "e07e50cbe902ef7995effd88c66eef2cf473343c90872f3c598042ead241b356",
+    "internal/mousa/identity_test.go": "606c01f6682faebbbd4f0c0bfd9e1f8a2a455601d0ef2319c47b85ecceb79ff3",
+    "internal/mousa/retrieval.go": "d1e91971040fb1a5afb1a1fbf37eb6669bb949c5e9d572f35516830e9d734389",
+    "internal/mousa/query.go": "57ef566fe5d4e75bafb50ae0b1b7310d0bcaade8e7509f6ea2ffb628c42974d8",
+    "internal/mousa/policy_binding.go": "2a1dc8f1b4247f419aa140aa613aa26718b4f48348413d40501bc417505b3b35",
+    "internal/mousa/classification_test.go": "60e5e6fff1b50fd0f6c23927e7f25d6bca9c28d46ab79fdff2d366827e498e05",
+    "internal/mousa/retrieval_test.go": "09c0f9a4b99a8c03eb7962530b4bcf4ccdbd813334836a85ee0b81b1958ab097",
+    "internal/mousa/passage.go": "4a806b114018829f06e9994f35781b24b35bde673c39b7a80a6bff61d71c3bf7",
+    "internal/mousa/trail.go": "8ce0e98718cf1b6df7be92e24fe1397e2f386eec3a2704418b5811b50fbe500d",
+    "internal/mousa/policy_binding_test.go": "2172e2bcb9a4bd0a48c9b25be09556d7f6f8e211deff7774f3ca950bbe63b763",
+    "internal/mousa/policy_decision_test.go": "dd694824fa00e1ba77f10bf0d495872406e3cf454557fd72b3619ed7ab459f51",
+    "internal/mousa/text_test.go": "4dab99b5cdefb265a3e13a9dc8181a3adda4dc4746a795eeb7860e7b311d4998",
+    "internal/mousa/contracts_test.go": "f0d5a1c3730fda6053b4d8adfb58ee25ddb14a7c1e2042b07a752b71bc37c083",
+    "internal/sqlite/policy_definition.go": "b2efbef2e522298d1733f62549389ae5b3375604f9adca0864a7fffd888a0507",
+    "internal/sqlite/migrate_test.go": "0910a12f57f2afb406292c696881e620bc9d63f486dbb8c35482e68bde8f039f",
+    "internal/sqlite/caller_identity.go": "54e93afd44ae5619b526c06beedeb17f1be59b096c295f39ed49059e03cb1935",
+    "internal/sqlite/policy_definition_test.go": "884a30fdd18c61caa2a55b6a8009b205937af103ebcb3b42271213e3263f5950",
+    "internal/sqlite/ingest.go": "a45bc6038bf8e4b882199e14f87c1e146d3499a31b1e1536c27ed97ecf89c569",
+    "internal/sqlite/policy_decision.go": "4d160b63e6909a032bf9e83bd523bd767c0628db5d24ff0949c620c8704f2160",
+    "internal/sqlite/passage_test.go": "339c08f19c14f943d7cdfded369a4d327ba459a1482729e8593c3ad673ba6c3f",
+    "internal/sqlite/ingest_test.go": "cae2c311526a58b4b02d7f53f3fb715aa785868e257571f6a65084685e9b773c",
+    "internal/sqlite/local_slice.go": "f92549c8648c481e3e1b62f52f390f51c1cc148a2a30a4a876aa37bf24fbfec8",
+    "internal/sqlite/caller_identity_test.go": "7953a5720f4b656674776af8c251e91d2e090c06f67767abf01089e784be56c2",
+    "internal/sqlite/migrate.go": "661a3b90c80dd6d4e06189d9d4fc6c35500e435c27e77245f1d405b9b6addf6f",
+    "internal/sqlite/trail_test.go": "30da7a48672feb0e6c54b81140d640fb9a85b30595bd9724c733737279e37153",
+    "internal/sqlite/open_test.go": "4648e9fc1910a2ac7c615b52c087d87781eafec76a7bd2b080325531af6a4054",
+    "internal/sqlite/test_helpers_test.go": "444992a0a50e762abd0301585be3052a4e1dfd5a42045dc04c11407069feb618",
+    "internal/sqlite/classification.go": "0ffebde8624e96623c574803e68ab440abc33bbc2f5f55b1f463c387a1da1496",
+    "internal/sqlite/retrieval.go": "9e31225ddf976a5753f8f91797ba6a698630325ca9f5b5b85967bdf1c43f1f66",
+    "internal/sqlite/errors.go": "c4c707547c2e6d4c2f00719a7d4498ea94c1c533cbd3eaf18e364c45baba6895",
+    "internal/sqlite/policy_binding.go": "0bf3a56d79ae4fc9f98a5f3694fd95d563430a2b882cee2182c7e686658f0d64",
+    "internal/sqlite/records.go": "d16ec3844a0b01cb1dab0a0c76ed32853c53128d950a8eabec89803e66979fb5",
+    "internal/sqlite/classification_test.go": "193f1e4e2fcb2f4ab0a944dcba1517b0f15bfcfc040a10762da5bd3aa042013c",
+    "internal/sqlite/retrieval_test.go": "5f7ae0cebcc4acac55031cc06ed8b690ce33ffff358480973c7eca83ea33f7b0",
+    "internal/sqlite/lexical_test.go": "122efc13328cb127b3d85e41f7d0083cba5f038d04424a410895afe810d89b00",
+    "internal/sqlite/trail.go": "a6433bece3df25fbeec18098190a21efb694cc1316438d0558bfd26ceb229634",
+    "internal/sqlite/records_test.go": "3eaa6272314f66cd283aa1b9287c0db329187beaa1669084bec9db507ccbe9c5",
+    "internal/sqlite/local_items.go": "71d6d6c61e8540a38904185b158408fd097e6580a19c6fd9faea5b085049ce50",
+    "internal/sqlite/lexical.go": "5498aa1e9e1e088ca95d306b7003f5c0b403f61be8b3a62f985380dc1e3a5f2d",
+    "internal/sqlite/trail_inspection.go": "98c46551b89d76d294c3372a1461a386e2b480ae5c13b387b4ab58eeb410987c",
+    "internal/sqlite/policy_binding_test.go": "252a7ce0765030847fd7931ba1e87c5df203a13b89db4f31f69bdad114ec63ba",
+    "internal/sqlite/recovery_test.go": "9ecc184448f9738a37efe04c2a2013ed785dcf09afd6dd8380157d30cd7e5d65",
+    "internal/sqlite/policy_decision_test.go": "f69a954e7b2d73a8dd3c34e0ef15389c30fbf99f242e34d000d947ed9ffd61e9",
+    "internal/sqlite/local_items_test.go": "3b08f669f2fccb9a0c98ed63d56afc250ba7b541d9685023fb6c954a670a196b",
+    "internal/sqlite/backup.go": "2b0379c9e2daba4877c40be584aad4e51a55e47a71ac5c6385495ebd028800a6",
+    "internal/sqlite/open.go": "3ab5fed05a8b8d12d2b0a65b951e1212144e7beee83ac1e928f6de9f406467fa",
+    "eval/beir/reduce_test.go": "fe1e23b1891a276474d8594bcc0a29743a0eda6a4f726417622e3d99a4a9f5a2",
+    "eval/beir/metrics.go": "db26fff5bdea8007f1487f6eb3a795f114af0a68c9d97c604f55e117124e0b44",
+    "eval/beir/coverage_test.go": "d81d26fec4050839707acccc9d960b64c596742fdcc257a77618e03a792467cc",
+    "eval/beir/index_probe_test.go": "7d7b0df11f99f72ea064d6f288c2fe7e3a1f609b2481f566a7e631fbcc321f21",
+    "eval/beir/dataset.go": "2fd6b1127bd4f01c31e57eb45aec01a6ff5b8353c5f720be49f84208f95386ed",
+    "eval/beir/store_driver.go": "d342953cb00864bb2b811476b1bc4cdcd944be2bf462af0289f51997b433283b",
+    "eval/beir/runconfig_test.go": "df563ed2f821ecb9db824b2305020e3e3678765c280c100a62d2578aa9df6928",
+    "eval/beir/reduce.go": "2d977b3bef346eb36c8043a976e0f16d851666ae6dfa127588774a1f547fd091",
+    "eval/beir/run_regression_test.go": "af5bd05ddb082912822347635b09cdac02308bd27557950a9f1d2563f7345a62",
+    "eval/beir/metrics_reference_test.go": "94367bd96de1af3faad20854fe0ae4c9ce8b6bcb743500b5ff75a07fea551974",
+    "eval/beir/report.go": "d7a83b7b5d8114cefb51ea983c5ccadd04e5296b3ccf316576fea256e586f00a",
+    "eval/beir/metrics_test.go": "e8b6d3557c5a2c0e9ae42bd0308b7e2fdd278720734e22ee7bd9c9ddc8a07b0b",
+    "eval/beir/coverage.go": "e21f52764d62d63de88b7e4fefc54bf5806eadef69039a8012ff95acf8050766",
+    "eval/beir/index_probe.go": "936a9fe559512234bb7b1f4b12968ae36a74aeecad7b0aef97af302a772d45be",
+    "eval/local/warm.go": "644325adc3837564cfb1310cf684ba1a249cb7d5cd729b1afa682da995cb44df",
+    "cmd/beir/compare.go": "e5922825177889b78e3ab41125935bc19a4fdd01d2477c1ddeb4052f7bed79e5",
+    "cmd/beir/main_test.go": "9a27e3128948d52cf8c8aae087b800fe31e837ee67f4f0570a72d6e18fc2df83",
+    "cmd/beir/main.go": "454b8180f9851807edc268695555d3c24a1f81e6beb9d100c19d69f2bbf348fa",
+    "cmd/mousa/jsonl_test.go": "2661947ccb482f897a47569760c30012533604e1708858df137476d657ead9a4",
+    "cmd/mousa/passage_test.go": "8a76b85e07023d8206b48d02d0b637b26206a0894d742fd73a73583e6abc668d",
+    "cmd/mousa/jsonl.go": "4338848a7e14ce7183307024ccc997550fdef408fae4240e11b82bbdbc1f9fde",
+    "cmd/mousa/directory.go": "034d66ee0b30731d36f2baee88c12e2d0407d86274dba04a43ae8d6f553af183",
+    "cmd/mousa/directory_test.go": "811ac47723ea7737a0dda338444b61078e4cbf57a6e9b126b4ef9143cb56b146",
+    "cmd/mousa/main_test.go": "a7b3e173c60d49dbe5188809dbc0dffc9c4c428bd472c9b00950a521c49143d6",
+    "cmd/mousa/query.go": "10c65053bab4b21d17fcda4af0f9da298e8828c3eb2cc7a6bc2904edb720d3c7",
+    "cmd/mousa/main.go": "14ec295a914f5199b0e13da9e42442307bb7b418bd84075ad5a526e91c5b2286",
+    "cmd/mousa/trail.go": "cc78316bd2fd8062e1016010d0727cae2ab557142a5da35e05da23cf7e675152",
+    "cmd/mousa/query_test.go": "f8dc9f8eabfcd43a0c8b7ec4ba56fcf0af8c915f349c2aafb31d13948c3e5c2a",
+    "cmd/mousa/access.go": "5fdf7e28349a95537b1f26e0c1849d78c2d034e1c822e24c85f908773950552a"
+  },
+  "binary_hashes": "5a635009b5f81baaf4808e657119fbb786fb342ae73980daa5ced3189798bb9f",
+  "method": {
+    "policies": [
+      "fixed-v1",
+      "passage-v1"
+    ],
+    "budgets": [
+      1024,
+      8192
+    ],
+    "repetitions": 3,
+    "configuration": "Go 1.27.1 linux/amd64, CGO_ENABLED=0, GOAMD64=v1, GOMAXPROCS=6; six-vCPU EPYC-IBPB VM, Ryzen 7 2700X host, 5.5-core/8-GiB job limits; shared host",
+    "timing": "Fresh CLI process; warm filesystem caches; copy initialized closed store before each query, outside timer; GNU time peak RSS; alternate arm order. Validation/build costs excluded. No repetitions added after results.",
+    "coverage": "Manual required-fact judgment using the unchanged original questions/evidence list, including equivalent wording; exact complete source-span coverage is reported separately and is stricter. No answer generation or model grader.",
+    "context_proxy": "Selected source bytes outside the single predeclared source span; not a semantic redundancy score. Equivalent evidence elsewhere is counted as outside-span context.",
+    "limits": "Small development corpus, not held-out evaluation, no general superiority claim; candidate source differs from starting revision as bound by runtime hashes."
+  },
+  "protocol": {
+    "policies": [
+      "fixed-v1",
+      "passage-v1"
+    ],
+    "budgets": [
+      1024,
+      8192
+    ],
+    "repetitions": 3,
+    "source_snapshots": "same files and source root across arms; original documentation unchanged",
+    "quality": "Original natural questions and evidence unchanged; keyword reformulations separate. Exact phrase screening plus manual facts judgment for original documentation. Synthetic complete means union of selected exact source slices covers every required byte; report split required structures separately.",
+    "varied_questions": [
+      {
+        "id": "runbook.md",
+        "file": "runbook.md",
+        "natural": "How do I restart Amber safely?",
+        "required": "# Amber restart\n\nTo restart Amber safely, run both commands in order:\n\n```sh\nservice amber stop\nservice amber start\n```\n\n",
+        "required_bytes": 121,
+        "feasible": {
+          "1024": true,
+          "8192": true
+        }
+      },
+      {
+        "id": "reference.md",
+        "file": "reference.md",
+        "natural": "What are the Bronze and Silver retention and copy counts and uses?",
+        "required": "# Storage classes\n\n| Class | Retention | Copies |\n|---|---|---|\n| Bronze | 7 days | 1 |\n| Silver | 30 days | 2 |\n\n- Bronze is for temporary staging.\n- Silver is for reviewed records.\n\n",
+        "required_bytes": 184,
+        "feasible": {
+          "1024": true,
+          "8192": true
+        }
+      },
+      {
+        "id": "prose.txt",
+        "file": "prose.txt",
+        "natural": "When does the orchard gate open and close, and what must visitors do?",
+        "required": "The orchard gate opens at sunrise and closes at sunset. Visitors must sign the ledger before entering the orchard.\n\n",
+        "required_bytes": 116,
+        "feasible": {
+          "1024": true,
+          "8192": true
+        }
+      },
+      {
+        "id": "unicode.txt",
+        "file": "unicode.txt",
+        "natural": "灯台 — when is inspection and who is responsible?",
+        "required": "# 灯台\n\n灯台の点検は金曜日です。担当者はÉlodieです。合図は🦊です。\n\n",
+        "required_bytes": 98,
+        "feasible": {
+          "1024": true,
+          "8192": true
+        }
+      },
+      {
+        "id": "oversized.md",
+        "file": "oversized.md",
+        "natural": "oversizedtask verify partition strict",
+        "required": "```sh\noversizedtask verify --partition 000 --strict\noversizedtask verify --partition 001 --strict\noversizedtask verify --partition 002 --strict\noversizedtask verify --partition 003 --strict\noversizedtask verify --partition 004 --strict\noversizedtask verify --partition 005 --strict\noversizedtask verify --partition 006 --strict\noversizedtask verify --partition 007 --strict\noversizedtask verify --partition 008 --strict\noversizedtask verify --partition 009 --strict\noversizedtask verify --partition 010 --strict\noversizedtask verify --partition 011 --strict\noversizedtask verify --partition 012 --strict\noversizedtask verify --partition 013 --strict\noversizedtask verify --partition 014 --strict\noversizedtask verify --partition 015 --strict\noversizedtask verify --partition 016 --strict\noversizedtask verify --partition 017 --strict\noversizedtask verify --partition 018 --strict\noversizedtask verify --partition 019 --strict\noversizedtask verify --partition 020 --strict\noversizedtask verify --partition 021 --strict\noversizedtask verify --partition 022 --strict\noversizedtask verify --partition 023 --strict\noversizedtask verify --partition 024 --strict\noversizedtask verify --partition 025 --strict\noversizedtask verify --partition 026 --strict\noversizedtask verify --partition 027 --strict\noversizedtask verify --partition 028 --strict\noversizedtask verify --partition 029 --strict\noversizedtask verify --partition 030 --strict\noversizedtask verify --partition 031 --strict\noversizedtask verify --partition 032 --strict\noversizedtask verify --partition 033 --strict\noversizedtask verify --partition 034 --strict\noversizedtask verify --partition 035 --strict\noversizedtask verify --partition 036 --strict\noversizedtask verify --partition 037 --strict\noversizedtask verify --partition 038 --strict\noversizedtask verify --partition 039 --strict\noversizedtask verify --partition 040 --strict\noversizedtask verify --partition 041 --strict\noversizedtask verify --partition 042 --strict\noversizedtask verify --partition 043 --strict\noversizedtask verify --partition 044 --strict\noversizedtask verify --partition 045 --strict\noversizedtask verify --partition 046 --strict\noversizedtask verify --partition 047 --strict\noversizedtask verify --partition 048 --strict\noversizedtask verify --partition 049 --strict\noversizedtask verify --partition 050 --strict\noversizedtask verify --partition 051 --strict\noversizedtask verify --partition 052 --strict\noversizedtask verify --partition 053 --strict\noversizedtask verify --partition 054 --strict\noversizedtask verify --partition 055 --strict\noversizedtask verify --partition 056 --strict\noversizedtask verify --partition 057 --strict\noversizedtask verify --partition 058 --strict\noversizedtask verify --partition 059 --strict\noversizedtask verify --partition 060 --strict\noversizedtask verify --partition 061 --strict\noversizedtask verify --partition 062 --strict\noversizedtask verify --partition 063 --strict\noversizedtask verify --partition 064 --strict\n```\n\n",
+        "required_bytes": 3001,
+        "feasible": {
+          "1024": false,
+          "8192": true
+        }
+      }
+    ],
+    "documentation_feasibility": [
+      {
+        "id": "install",
+        "full_declared_passage_bytes": 582,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "jsonl",
+        "full_declared_passage_bytes": 1376,
+        "1024_full_passage": false,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "partial",
+        "full_declared_passage_bytes": 304,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "restore",
+        "full_declared_passage_bytes": 542,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "budget",
+        "full_declared_passage_bytes": 428,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "withdraw",
+        "full_declared_passage_bytes": 624,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "history",
+        "full_declared_passage_bytes": 249,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "migration",
+        "full_declared_passage_bytes": 1202,
+        "1024_full_passage": false,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "trail",
+        "full_declared_passage_bytes": 1066,
+        "1024_full_passage": false,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      },
+      {
+        "id": "scope",
+        "full_declared_passage_bytes": 385,
+        "1024_full_passage": true,
+        "8192_full_passage": true,
+        "note": "Facts may fit in less text; no promise that ranking selects the full passage."
+      }
+    ],
+    "tolerances": {
+      "segment_count_ratio": 12,
+      "initial_store_ratio": 4,
+      "sync_median_ratio": 6,
+      "query_median": "max(3x baseline, baseline+50ms)",
+      "peak_rss": "max(2x baseline, baseline+8192KiB)"
+    },
+    "manifest": {
+      "documentation/README.md": {
+        "bytes": 14006,
+        "sha256": "d7171c3992cadfacc953958333ef5b0632fcc56668608faed59fa50a4b341aef"
+      },
+      "documentation/docs/CAPABILITIES.md": {
+        "bytes": 18820,
+        "sha256": "1c5f774344d1202cade87c3ced1a3eacca01df44bcd2ad26201b149766750821"
+      },
+      "varied/runbook.md": {
+        "bytes": 2956,
+        "sha256": "53de897664827d4d6dd266e82730b6593b9203fb2964f3939bebb49a91ed6f4e"
+      },
+      "varied/reference.md": {
+        "bytes": 3019,
+        "sha256": "5ca043c349090cbbe77f2fe5307eb41c1536e968aabdb197fec120ec2508633b"
+      },
+      "varied/oversized.md": {
+        "bytes": 3001,
+        "sha256": "106b7086cf236334e8308601e2e873cd43e12fd7fc0dea64d031b4fec8fc6215"
+      },
+      "varied/unicode.txt": {
+        "bytes": 2933,
+        "sha256": "34b0dbb17f925508dcf97cf3c12f6dc7f77493445581a7a978dacb3c2704df98"
+      },
+      "varied/prose.txt": {
+        "bytes": 2951,
+        "sha256": "c7240317dbaad5642badc012349ef974c2851fe5f1ee411bd851dfcfac1f6fcd"
+      }
+    }
+  },
+  "documentation_questions": [
+    {
+      "id": "install",
+      "natural": "What do I need to build Mousa and run its Python client example?",
+      "reformulation": "Go 1.25 Python 3.9 Linux prerequisites",
+      "file": "README.md",
+      "lines": [
+        118,
+        125
+      ],
+      "passage": "Prerequisites: Go 1.25 or later to build Mousa, and Python 3.9 or later\nwith its standard-library `sqlite3` module on Linux. Process-group timeout\nhandling and executable test fixtures are Linux-supported; other operating\nsystems are not validated. GNU `time` is optional for peak-RSS measurements;\nif `time` is on `PATH`, it must support GNU `-f` and `-o` options.\nNo QMD, Node, models, network access, or third-party Python packages are needed\nto run the client example or acceptance suite. Building requires the Go module\ndependencies, downloaded beforehand for an offline build.",
+      "evidence": [
+        "Go 1.25 or later",
+        "Python 3.9 or later",
+        "sqlite3",
+        "Linux",
+        "downloaded beforehand"
+      ]
+    },
+    {
+      "id": "jsonl",
+      "natural": "If I leave an item out of the next JSONL upload, is it deleted, and how do I delete it explicitly?",
+      "reformulation": "JSONL omission tombstone deleted true",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        109,
+        140
+      ],
+      "passage": "## JSONL input\n\nEach nonblank line contains one object with `id` and exactly one of `text` or\n`deleted`. For deletion, `deleted` must be `true`.\n\n```json\n{\"id\":\"notes/review@draft\",\"text\":\"The harbor inspection is scheduled for Friday.\"}\n{\"id\":\"notes/withdrawn\",\"deleted\":true}\n```\n\n```sh\n./mousa -store local.sqlite sync --source inspection-notes < items.jsonl\n./mousa -store local.sqlite query --source inspection-notes 'harbor inspection'\n```\n\nLimits per invocation:\n\n- 1 MiB per input line, excluding its line ending.\n- 64 MiB total input, including whitespace and line endings.\n- 10,000 nonblank records. Split larger inputs across invocations.\n- 4,096 UTF-8 bytes per item ID. IDs must be nonempty and cannot contain NUL.\n\nUnknown fields, duplicate JSON keys, null values, invalid UTF-8, unpaired Unicode\nsurrogates, trailing JSON values, and repeated item IDs within one invocation are\nerrors. Blank lines are ignored. Record order is not item identity or delivery\nsequence evidence. Omission from a JSONL stream never deletes an item; send an\nexplicit tombstone.\n\nOn malformed input or an exceeded limit, the command exits 1, identifies the failure\non stderr, and emits no success JSON on stdout. The successfully applied prefix\nremains committed. Correct the input and replay it: unchanged current content is a\nno-op, and repeated tombstones are reported as `absent`.",
+      "evidence": [
+        "Omission from a JSONL stream never deletes an item",
+        "explicit tombstone",
+        "\"deleted\":true"
+      ]
+    },
+    {
+      "id": "partial",
+      "natural": "What remains in the store when a JSONL upload fails halfway through, and how do I retry?",
+      "reformulation": "malformed input prefix replay unchanged tombstones",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        137,
+        140
+      ],
+      "passage": "On malformed input or an exceeded limit, the command exits 1, identifies the failure\non stderr, and emits no success JSON on stdout. The successfully applied prefix\nremains committed. Correct the input and replay it: unchanged current content is a\nno-op, and repeated tombstones are reported as `absent`.",
+      "evidence": [
+        "successfully applied prefix",
+        "remains committed",
+        "replay it",
+        "no-op"
+      ]
+    },
+    {
+      "id": "restore",
+      "natural": "How do I make a deleted document searchable again?",
+      "reformulation": "Deleted item restored Text",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        50,
+        57
+      ],
+      "passage": "| Prior state | Input | Reported action | Searchable state after success |\n|---|---|---|---|\n| Unknown item | Text, including empty text | `added` | Input revision |\n| Active item | Identical raw content | `unchanged` | Unchanged |\n| Active item | Different content, including an older revision | `updated` | Input revision only |\n| Deleted item | Text | `restored` | Input revision only |\n| Active item | Deletion | `deleted` | No evidence for that item |\n| Unknown or already deleted item | Deletion | `absent` | No evidence for that item |",
+      "evidence": [
+        "Deleted item",
+        "Text",
+        "restored",
+        "Input revision only"
+      ]
+    },
+    {
+      "id": "budget",
+      "natural": "Does the query size limit count JSON or tokens, and what happens when a passage is too large?",
+      "reformulation": "budget normalized UTF-8 whole segments skips remaining",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        223,
+        228
+      ],
+      "passage": "The candidate limit is 100, not an exhaustive match count. Packing walks verified\nrank order, skips an accepted segment that exceeds the remaining budget, and\ncontinues. It releases whole segments without truncation, deduplication, or\nredundancy removal. `--budget-bytes` must be positive and defaults to 8,192.\nThe budget counts normalized UTF-8 evidence text only, not model tokens or JSON,\nidentifier, or provenance overhead.",
+      "evidence": [
+        "skips an accepted segment",
+        "continues",
+        "whole segments without truncation",
+        "not model tokens or JSON"
+      ]
+    },
+    {
+      "id": "withdraw",
+      "natural": "Can I undo source withdrawal by allowing access again?",
+      "reformulation": "withdraw policy allow resume",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        293,
+        302
+      ],
+      "passage": "`access` manages a source-scoped allow/deny binding for the fixed CLI caller and\nretrieval purpose. Concurrent changes use the core compare-and-swap activation\ncontract; conflicts are errors, not silent overwrites. This is an operator control,\nnot caller authentication or protection against someone who can directly read or\nmodify the store.\n\n`withdraw` changes source lifecycle state without erasing index or canonical\nrecords. Policy allow does not resume a withdrawn source. The CLI has no resume\ncommand, and sync does not implicitly resume it. Item deletion/restoration is a\ndifferent operation from source withdrawal.",
+      "evidence": [
+        "Policy allow does not resume a withdrawn source",
+        "no resume"
+      ]
+    },
+    {
+      "id": "history",
+      "natural": "Can Mousa recover the old text of a document after I replace or delete it?",
+      "reformulation": "Canonical history digest reconstruct old revision text",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        71,
+        73
+      ],
+      "passage": "Canonical history retains identities, digests, and provenance, not a complete text\narchive. After deindexing, Mousa cannot reconstruct an old revision's text from its\ndigest. Retain original source material separately if historical text is required.",
+      "evidence": [
+        "not a complete text",
+        "cannot reconstruct an old revision",
+        "Retain original source material separately"
+      ]
+    },
+    {
+      "id": "migration",
+      "natural": "How do I recover search after upgrading an old directory store?",
+      "reformulation": "Migration 10 recovery complete directory sync absolute root backup",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        85,
+        107
+      ],
+      "passage": "## Upgrading an existing directory store\n\nSchema version 9 and earlier did not record a reliable current-item relationship.\nMigration 10 preserves canonical history, removes the ambiguous directory search\nprojection, and marks each existing directory source as requiring recovery. The CLI\nrefuses queries for that source until a complete directory sync succeeds:\n\n```sh\n./mousa -store local.sqlite sync ./documents\n./mousa -store local.sqlite status ./documents\n```\n\nUse the same absolute root identity and restore the desired source files before\nsyncing. Recovery reconstructs the current item set from those files; it does not\nguess chronology from stored hashes or modification times. If original source input\nis unavailable, current activation cannot be reconstructed automatically. Keep a\nbackup before upgrading. A failed recovery sync can be retried; the recovery flag\nremains set until a full sync finishes.\n\nPreview selection before recovery. The current defaults are narrower than older\nCLI versions that attempted every UTF-8 file. Use explicit include patterns or\n`--all-text` when the intended recovery set needs other file types or hidden files;\nreview the selection before committing it.",
+      "evidence": [
+        "Migration 10",
+        "complete directory sync",
+        "same absolute root identity",
+        "Keep a",
+        "backup before upgrading"
+      ]
+    },
+    {
+      "id": "trail",
+      "natural": "What does inspecting a past query prove about selected evidence and whether it is available now?",
+      "reformulation": "selected indexed_now historical packet inspection text",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        275,
+        291
+      ],
+      "passage": "Use the `trail_id` returned by a query. Inspection evaluates fresh source access\nbefore looking up history. A deny response contains authorization IDs/reasons but\nno historical payload, even for a nonexistent trail. An allowed request cannot\ninspect another source's trail.\n\nThe `historical` payload is a filtered view, not a complete canonical Source Trail\nrecord from which its ID can be recomputed. It contains the original decision\noutcome/reasons, effective expression, byte accounting, packet ID, and accepted\ncandidate metadata. Rejected candidates are counted but their identities, hashes,\nand other metadata are omitted. The trail stores the effective expression, not\nthe raw query or the name of its preparation policy; inspection cannot reconstruct\nthose missing fields.\n\n`selected` describes the historical packet. `indexed_now` describes index\nmembership in the inspection snapshot. Retired revisions can have historical\nmetadata without current index membership; neither property authorizes a new text\nrelease. Inspection never returns historical text.",
+      "evidence": [
+        "filtered view",
+        "selected",
+        "historical packet",
+        "indexed_now",
+        "index",
+        "never returns historical text"
+      ]
+    },
+    {
+      "id": "scope",
+      "natural": "Will my include and exclude patterns still apply when I sync the directory next time?",
+      "reformulation": "Selection flags invocation-local subsequent syncs scope deactivates",
+      "file": "docs/CAPABILITIES.md",
+      "lines": [
+        169,
+        173
+      ],
+      "passage": "Selection flags are invocation-local, not saved as source configuration. Use the\nsame flags on subsequent syncs to retain the same scope. A successful sync\ndeactivates previously indexed items outside its selected set, including items\nexcluded by a changed filter. `skipped` now contains `{item, reason}` objects with\nrelative paths rather than the older list of absolute path strings.",
+      "evidence": [
+        "invocation-local",
+        "same flags on subsequent syncs",
+        "deactivates previously indexed items"
+      ]
+    }
+  ],
+  "assessment": {
+    "method": "Manual required-fact judgment using the unchanged original questions/evidence list, including equivalent wording; exact complete source-span coverage is reported separately and is stricter. No answer generation or model grader.",
+    "questions": [
+      {
+        "id": "install",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "jsonl",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "partial",
+        "passage_1024": "partial",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "partial",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "insufficient",
+        "passage_1024": "insufficient",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "restore",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "budget",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "withdraw",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "history",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "insufficient",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "migration",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "trail",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "insufficient",
+        "passage_8192": "complete"
+      },
+      {
+        "id": "scope",
+        "fixed_1024": "no evidence",
+        "fixed_8192": "complete",
+        "passage_1024": "complete",
+        "passage_8192": "complete"
+      }
+    ],
+    "equivalences": {
+      "withdraw": "README says policy allow does not undo withdrawal and there is no resume command; same equivalence used in original exercise.",
+      "jsonl_8192": "Candidate selects explicit deleted:true example plus README sentence Deletion is explicit; omission does not delete. Original exact omission paragraph is not selected.",
+      "migration": "Required recovery instructions, same root, original source and backup are selected. Preview paragraph is omitted.",
+      "trail": "Selected/indexed_now, filtered historical view and no old text are selected; separate access-instruction paragraph is omitted."
+    },
+    "negative_findings": {
+      "unicode_1024": "989-byte Unicode passage is eligible at rank 2, but the unrelated 994-byte reference passage at rank 1 leaves 30 bytes. No query or policy was tuned after this result.",
+      "migration_8192": "Previously complete 1202-byte source span loses preview guidance because that newly separate segment has no lexical match to the original query; not a candidate-limit truncation.",
+      "trail_8192": "Previously complete source span loses access instructions: their 719-byte segment ranks 29, is not selected, and the final packet uses 8149 bytes.",
+      "redundancy": "Synthetic repeated filler yields 11 repeated selected content hashes across the five candidate 8192-byte responses; no overlapping source ranges were introduced.",
+      "oversized": "3001-byte fenced structure is fragmented into three passages. Neither policy supplies the full structure at 1024; both do at 8192."
+    },
+    "decision": "Keep passage-v1 opt-in. Useful small-passage gains and preserved access/lifecycle correctness justify availability, not a default change or universal relevance claim. Feasibility is not selection: the Unicode small-budget miss and two larger-budget full-span losses remain explicit."
+  },
+  "observations": {
+    "coverage": [
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "install",
+        "stage": "natural",
+        "required_bytes": 582,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [
+          "Go 1.25 or later",
+          "Python 3.9 or later",
+          "sqlite3",
+          "Linux",
+          "downloaded beforehand"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "install",
+        "stage": "natural",
+        "required_bytes": 582,
+        "covered_required_bytes": 582,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 988,
+        "context_bytes_outside_required": 406,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "jsonl",
+        "stage": "natural",
+        "required_bytes": 1376,
+        "covered_required_bytes": 729,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8587
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone"
+        ],
+        "used_bytes": 966,
+        "context_bytes_outside_required": 237,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "jsonl",
+        "stage": "natural",
+        "required_bytes": 1376,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone",
+          "\"deleted\":true"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "partial",
+        "stage": "natural",
+        "required_bytes": 304,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "successfully applied prefix",
+          "remains committed",
+          "replay it",
+          "no-op"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "partial",
+        "stage": "natural",
+        "required_bytes": 304,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "successfully applied prefix",
+          "remains committed",
+          "replay it",
+          "no-op"
+        ],
+        "used_bytes": 1005,
+        "context_bytes_outside_required": 1005,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "restore",
+        "stage": "natural",
+        "required_bytes": 542,
+        "covered_required_bytes": 542,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 948,
+        "context_bytes_outside_required": 406,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "restore",
+        "stage": "natural",
+        "required_bytes": 542,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "Deleted item",
+          "Text",
+          "restored",
+          "Input revision only"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "budget",
+        "stage": "natural",
+        "required_bytes": 428,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "skips an accepted segment",
+          "continues",
+          "whole segments without truncation",
+          "not model tokens or JSON"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "budget",
+        "stage": "natural",
+        "required_bytes": 428,
+        "covered_required_bytes": 428,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 1020,
+        "context_bytes_outside_required": 592,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "withdraw",
+        "stage": "natural",
+        "required_bytes": 624,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "Policy allow does not resume a withdrawn source"
+        ],
+        "used_bytes": 869,
+        "context_bytes_outside_required": 869,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "withdraw",
+        "stage": "natural",
+        "required_bytes": 624,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "Policy allow does not resume a withdrawn source",
+          "no resume"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "history",
+        "stage": "natural",
+        "required_bytes": 249,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "not a complete text",
+          "cannot reconstruct an old revision",
+          "Retain original source material separately"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "history",
+        "stage": "natural",
+        "required_bytes": 249,
+        "covered_required_bytes": 249,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 976,
+        "context_bytes_outside_required": 727,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "migration",
+        "stage": "natural",
+        "required_bytes": 1202,
+        "covered_required_bytes": 917,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          7571
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 917,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "migration",
+        "stage": "natural",
+        "required_bytes": 1202,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "Migration 10",
+          "complete directory sync",
+          "same absolute root identity",
+          "Keep a",
+          "backup before upgrading"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "trail",
+        "stage": "natural",
+        "required_bytes": 1066,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "filtered view",
+          "selected",
+          "historical packet",
+          "indexed_now",
+          "index",
+          "never returns historical text"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "trail",
+        "stage": "natural",
+        "required_bytes": 1066,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          17021
+        ],
+        "missing_literal_facts": [
+          "filtered view",
+          "historical packet",
+          "indexed_now",
+          "index",
+          "never returns historical text"
+        ],
+        "used_bytes": 1000,
+        "context_bytes_outside_required": 1000,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "scope",
+        "stage": "natural",
+        "required_bytes": 385,
+        "covered_required_bytes": 385,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 989,
+        "context_bytes_outside_required": 604,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "scope",
+        "stage": "natural",
+        "required_bytes": 385,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "invocation-local",
+          "same flags on subsequent syncs",
+          "deactivates previously indexed items"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "install",
+        "stage": "natural",
+        "required_bytes": 582,
+        "covered_required_bytes": 582,
+        "full_source_passage": true,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7610,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "install",
+        "stage": "natural",
+        "required_bytes": 582,
+        "covered_required_bytes": 582,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8127,
+        "context_bytes_outside_required": 7545,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "jsonl",
+        "stage": "natural",
+        "required_bytes": 1376,
+        "covered_required_bytes": 729,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8587
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone"
+        ],
+        "used_bytes": 8150,
+        "context_bytes_outside_required": 7421,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "jsonl",
+        "stage": "natural",
+        "required_bytes": 1376,
+        "covered_required_bytes": 334,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone"
+        ],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7858,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "partial",
+        "stage": "natural",
+        "required_bytes": 304,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "successfully applied prefix",
+          "remains committed",
+          "replay it"
+        ],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 8192,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "partial",
+        "stage": "natural",
+        "required_bytes": 304,
+        "covered_required_bytes": 304,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8189,
+        "context_bytes_outside_required": 7885,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "restore",
+        "stage": "natural",
+        "required_bytes": 542,
+        "covered_required_bytes": 542,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 7986,
+        "context_bytes_outside_required": 7444,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "restore",
+        "stage": "natural",
+        "required_bytes": 542,
+        "covered_required_bytes": 542,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7650,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "budget",
+        "stage": "natural",
+        "required_bytes": 428,
+        "covered_required_bytes": 428,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7764,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "budget",
+        "stage": "natural",
+        "required_bytes": 428,
+        "covered_required_bytes": 428,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8182,
+        "context_bytes_outside_required": 7754,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "withdraw",
+        "stage": "natural",
+        "required_bytes": 624,
+        "covered_required_bytes": 624,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 7996,
+        "context_bytes_outside_required": 7372,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "withdraw",
+        "stage": "natural",
+        "required_bytes": 624,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "Policy allow does not resume a withdrawn source"
+        ],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 8192,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "history",
+        "stage": "natural",
+        "required_bytes": 249,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "not a complete text",
+          "cannot reconstruct an old revision",
+          "Retain original source material separately"
+        ],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 8192,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "history",
+        "stage": "natural",
+        "required_bytes": 249,
+        "covered_required_bytes": 249,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8167,
+        "context_bytes_outside_required": 7918,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "migration",
+        "stage": "natural",
+        "required_bytes": 1202,
+        "covered_required_bytes": 917,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          7571
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 8037,
+        "context_bytes_outside_required": 7120,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "migration",
+        "stage": "natural",
+        "required_bytes": 1202,
+        "covered_required_bytes": 1202,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 6990,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "trail",
+        "stage": "natural",
+        "required_bytes": 1066,
+        "covered_required_bytes": 1066,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 6532,
+        "context_bytes_outside_required": 5466,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "trail",
+        "stage": "natural",
+        "required_bytes": 1066,
+        "covered_required_bytes": 791,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          17021
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 8149,
+        "context_bytes_outside_required": 7358,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "scope",
+        "stage": "natural",
+        "required_bytes": 385,
+        "covered_required_bytes": 385,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8144,
+        "context_bytes_outside_required": 7759,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "scope",
+        "stage": "natural",
+        "required_bytes": 385,
+        "covered_required_bytes": 385,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7807,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "runbook.md",
+        "stage": "natural",
+        "required_bytes": 121,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "runbook.md",
+        "stage": "natural",
+        "required_bytes": 121,
+        "covered_required_bytes": 121,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 1012,
+        "context_bytes_outside_required": 891,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "reference.md",
+        "stage": "natural",
+        "required_bytes": 184,
+        "covered_required_bytes": 184,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 994,
+        "context_bytes_outside_required": 810,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "reference.md",
+        "stage": "natural",
+        "required_bytes": 184,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "prose.txt",
+        "stage": "natural",
+        "required_bytes": 116,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "prose.txt",
+        "stage": "natural",
+        "required_bytes": 116,
+        "covered_required_bytes": 116,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 1007,
+        "context_bytes_outside_required": 891,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "unicode.txt",
+        "stage": "natural",
+        "required_bytes": 98,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 994,
+        "context_bytes_outside_required": 994,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "unicode.txt",
+        "stage": "natural",
+        "required_bytes": 98,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "oversized.md",
+        "stage": "natural",
+        "required_bytes": 3001,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "oversized.md",
+        "stage": "natural",
+        "required_bytes": 3001,
+        "covered_required_bytes": 1012,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          1018,
+          2030
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 1012,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "runbook.md",
+        "stage": "natural",
+        "required_bytes": 121,
+        "covered_required_bytes": 121,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 2956,
+        "context_bytes_outside_required": 2835,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "runbook.md",
+        "stage": "natural",
+        "required_bytes": 121,
+        "covered_required_bytes": 121,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 1012,
+        "context_bytes_outside_required": 891,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "reference.md",
+        "stage": "natural",
+        "required_bytes": 184,
+        "covered_required_bytes": 184,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 7914,
+        "context_bytes_outside_required": 7730,
+        "duplicate_selected_hashes": 5,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "reference.md",
+        "stage": "natural",
+        "required_bytes": 184,
+        "covered_required_bytes": 184,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 5970,
+        "context_bytes_outside_required": 5786,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "prose.txt",
+        "stage": "natural",
+        "required_bytes": 116,
+        "covered_required_bytes": 116,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 5884,
+        "context_bytes_outside_required": 5768,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "prose.txt",
+        "stage": "natural",
+        "required_bytes": 116,
+        "covered_required_bytes": 116,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 7892,
+        "context_bytes_outside_required": 7776,
+        "duplicate_selected_hashes": 6,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "unicode.txt",
+        "stage": "natural",
+        "required_bytes": 98,
+        "covered_required_bytes": 98,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 2990,
+        "context_bytes_outside_required": 2892,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "unicode.txt",
+        "stage": "natural",
+        "required_bytes": 98,
+        "covered_required_bytes": 98,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 5952,
+        "context_bytes_outside_required": 5854,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "oversized.md",
+        "stage": "natural",
+        "required_bytes": 3001,
+        "covered_required_bytes": 3001,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 3001,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "oversized.md",
+        "stage": "natural",
+        "required_bytes": 3001,
+        "covered_required_bytes": 3001,
+        "full_source_passage": true,
+        "split_required_passage_at": [
+          1018,
+          2030
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 3001,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "jsonl",
+        "stage": "keyword",
+        "required_bytes": 1376,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone",
+          "\"deleted\":true"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "jsonl",
+        "stage": "keyword",
+        "required_bytes": 1376,
+        "covered_required_bytes": 729,
+        "full_source_passage": false,
+        "split_required_passage_at": [
+          8587
+        ],
+        "missing_literal_facts": [
+          "Omission from a JSONL stream never deletes an item",
+          "explicit tombstone"
+        ],
+        "used_bytes": 729,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "jsonl",
+        "stage": "keyword",
+        "required_bytes": 1376,
+        "covered_required_bytes": 1376,
+        "full_source_passage": true,
+        "split_required_passage_at": [
+          8192
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 6816,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "jsonl",
+        "stage": "keyword",
+        "required_bytes": 1376,
+        "covered_required_bytes": 1376,
+        "full_source_passage": true,
+        "split_required_passage_at": [
+          8587
+        ],
+        "missing_literal_facts": [],
+        "used_bytes": 7972,
+        "context_bytes_outside_required": 6596,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "partial",
+        "stage": "keyword",
+        "required_bytes": 304,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "successfully applied prefix",
+          "remains committed",
+          "replay it",
+          "no-op"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "partial",
+        "stage": "keyword",
+        "required_bytes": 304,
+        "covered_required_bytes": 304,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 649,
+        "context_bytes_outside_required": 345,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "partial",
+        "stage": "keyword",
+        "required_bytes": 304,
+        "covered_required_bytes": 304,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7888,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "partial",
+        "stage": "keyword",
+        "required_bytes": 304,
+        "covered_required_bytes": 304,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8155,
+        "context_bytes_outside_required": 7851,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 1024,
+        "question": "history",
+        "stage": "keyword",
+        "required_bytes": 249,
+        "covered_required_bytes": 0,
+        "full_source_passage": false,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [
+          "not a complete text",
+          "cannot reconstruct an old revision",
+          "Retain original source material separately"
+        ],
+        "used_bytes": 0,
+        "context_bytes_outside_required": 0,
+        "duplicate_selected_hashes": 0,
+        "outcome": "budget_omitted"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 1024,
+        "question": "history",
+        "stage": "keyword",
+        "required_bytes": 249,
+        "covered_required_bytes": 249,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 976,
+        "context_bytes_outside_required": 727,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "budget": 8192,
+        "question": "history",
+        "stage": "keyword",
+        "required_bytes": 249,
+        "covered_required_bytes": 249,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 8192,
+        "context_bytes_outside_required": 7943,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "budget": 8192,
+        "question": "history",
+        "stage": "keyword",
+        "required_bytes": 249,
+        "covered_required_bytes": 249,
+        "full_source_passage": true,
+        "split_required_passage_at": [],
+        "missing_literal_facts": [],
+        "used_bytes": 7896,
+        "context_bytes_outside_required": 7647,
+        "duplicate_selected_hashes": 0,
+        "outcome": "evidence"
+      }
+    ],
+    "resources": [
+      {
+        "corpus": "documentation",
+        "stage": "initial",
+        "budget": null,
+        "policy": "fixed-v1",
+        "n": 3,
+        "median_ms": 163.449338,
+        "min_ms": 153.242233,
+        "max_ms": 166.986833,
+        "median_rss_kib": 16240,
+        "max_rss_kib": 16296,
+        "wall_samples": [
+          163.449338,
+          153.242233,
+          166.986833
+        ],
+        "rss_samples": [
+          16240,
+          16296,
+          14216
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "initial",
+        "budget": null,
+        "policy": "passage-v1",
+        "n": 3,
+        "median_ms": 330.594959,
+        "min_ms": 329.032809,
+        "max_ms": 344.727867,
+        "median_rss_kib": 18284,
+        "max_rss_kib": 18864,
+        "wall_samples": [
+          344.727867,
+          330.594959,
+          329.032809
+        ],
+        "rss_samples": [
+          18864,
+          16820,
+          18284
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "resync",
+        "budget": null,
+        "policy": "fixed-v1",
+        "n": 3,
+        "median_ms": 49.330117,
+        "min_ms": 36.044868,
+        "max_ms": 53.136207,
+        "median_rss_kib": 15380,
+        "max_rss_kib": 15388,
+        "wall_samples": [
+          36.044868,
+          49.330117,
+          53.136207
+        ],
+        "rss_samples": [
+          15388,
+          15320,
+          15380
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "resync",
+        "budget": null,
+        "policy": "passage-v1",
+        "n": 3,
+        "median_ms": 55.920399,
+        "min_ms": 43.133655,
+        "max_ms": 66.913247,
+        "median_rss_kib": 15556,
+        "max_rss_kib": 17472,
+        "wall_samples": [
+          43.133655,
+          66.913247,
+          55.920399
+        ],
+        "rss_samples": [
+          15556,
+          17472,
+          15448
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "natural",
+        "budget": 1024,
+        "policy": "fixed-v1",
+        "n": 30,
+        "median_ms": 55.9925995,
+        "min_ms": 47.161229,
+        "max_ms": 71.507094,
+        "median_rss_kib": 15668.0,
+        "max_rss_kib": 17616,
+        "wall_samples": [
+          47.337008,
+          68.41246,
+          54.552372,
+          68.556519,
+          64.524668,
+          63.309428,
+          47.339293,
+          65.084888,
+          56.012933,
+          53.151895,
+          71.507094,
+          47.686103,
+          47.161229,
+          52.728281,
+          50.898028,
+          68.896728,
+          53.802596,
+          55.972266,
+          52.352517,
+          50.769337,
+          48.25952,
+          50.443285,
+          49.671457,
+          69.002777,
+          65.825828,
+          67.999245,
+          68.256897,
+          65.135322,
+          69.594867,
+          62.294725
+        ],
+        "rss_samples": [
+          15568,
+          15416,
+          15516,
+          15556,
+          15712,
+          13632,
+          15900,
+          15652,
+          13640,
+          15692,
+          13640,
+          15812,
+          15844,
+          17616,
+          15684,
+          15828,
+          15564,
+          15580,
+          15800,
+          15548,
+          15812,
+          15820,
+          15548,
+          15600,
+          15636,
+          17496,
+          15400,
+          15724,
+          15716,
+          15824
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "natural",
+        "budget": 1024,
+        "policy": "passage-v1",
+        "n": 30,
+        "median_ms": 99.787419,
+        "min_ms": 71.511733,
+        "max_ms": 117.168209,
+        "median_rss_kib": 18392.0,
+        "max_rss_kib": 20440,
+        "wall_samples": [
+          104.947146,
+          80.027506,
+          112.241929,
+          99.88945,
+          98.955919,
+          117.168209,
+          92.126119,
+          82.87632,
+          113.210646,
+          84.99869,
+          99.685388,
+          98.105665,
+          108.293995,
+          112.879846,
+          94.460918,
+          71.511733,
+          87.13133,
+          109.991047,
+          112.900344,
+          96.549465,
+          100.528138,
+          83.887556,
+          91.618406,
+          107.276585,
+          78.009431,
+          104.448542,
+          100.414044,
+          105.704958,
+          102.412473,
+          81.449513
+        ],
+        "rss_samples": [
+          18840,
+          18332,
+          18404,
+          16536,
+          18584,
+          18644,
+          18208,
+          18572,
+          18464,
+          18244,
+          18196,
+          18444,
+          20440,
+          16288,
+          16032,
+          18208,
+          18512,
+          18200,
+          18348,
+          18388,
+          18248,
+          18384,
+          18396,
+          18100,
+          18528,
+          18588,
+          18476,
+          18344,
+          18424,
+          18580
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "natural",
+        "budget": 8192,
+        "policy": "fixed-v1",
+        "n": 30,
+        "median_ms": 67.263735,
+        "min_ms": 51.355025,
+        "max_ms": 77.112178,
+        "median_rss_kib": 15624.0,
+        "max_rss_kib": 17612,
+        "wall_samples": [
+          66.20575,
+          70.017801,
+          67.784973,
+          52.728021,
+          51.355025,
+          70.129651,
+          67.796093,
+          64.903257,
+          59.906935,
+          69.884721,
+          54.77509,
+          72.532106,
+          55.849546,
+          68.931182,
+          54.402281,
+          70.419173,
+          73.249171,
+          57.494711,
+          66.767795,
+          68.293867,
+          77.112178,
+          61.328493,
+          63.059509,
+          58.867136,
+          67.759675,
+          56.552024,
+          68.457765,
+          54.214809,
+          75.820043,
+          68.363949
+        ],
+        "rss_samples": [
+          15656,
+          15440,
+          15704,
+          17612,
+          15576,
+          15708,
+          15448,
+          15696,
+          15536,
+          15576,
+          15724,
+          15508,
+          15700,
+          15704,
+          15716,
+          15448,
+          15572,
+          15572,
+          15400,
+          15708,
+          15616,
+          15568,
+          15444,
+          15656,
+          15700,
+          15812,
+          17492,
+          15444,
+          15292,
+          15632
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "stage": "natural",
+        "budget": 8192,
+        "policy": "passage-v1",
+        "n": 30,
+        "median_ms": 104.40869649999999,
+        "min_ms": 82.846523,
+        "max_ms": 124.359028,
+        "median_rss_kib": 18424.0,
+        "max_rss_kib": 20596,
+        "wall_samples": [
+          102.951904,
+          111.489579,
+          104.420829,
+          92.645583,
+          92.650903,
+          111.466234,
+          113.36146,
+          99.484882,
+          86.473186,
+          111.073157,
+          94.742346,
+          96.261074,
+          103.018289,
+          96.344361,
+          111.310072,
+          107.949778,
+          104.396564,
+          105.613587,
+          85.820171,
+          103.776051,
+          106.986102,
+          101.783924,
+          91.979143,
+          82.846523,
+          124.359028,
+          112.431765,
+          110.487769,
+          107.951372,
+          118.273804,
+          110.786529
+        ],
+        "rss_samples": [
+          18656,
+          16272,
+          18476,
+          18464,
+          18848,
+          18352,
+          18592,
+          18584,
+          18452,
+          18340,
+          18348,
+          18340,
+          18396,
+          18628,
+          20596,
+          18320,
+          16160,
+          18068,
+          18324,
+          18592,
+          18592,
+          18456,
+          18256,
+          18128,
+          16544,
+          16468,
+          16408,
+          18588,
+          18488,
+          18588
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "initial",
+        "budget": null,
+        "policy": "fixed-v1",
+        "n": 3,
+        "median_ms": 197.020627,
+        "min_ms": 196.282582,
+        "max_ms": 200.01309,
+        "median_rss_kib": 15696,
+        "max_rss_kib": 16112,
+        "wall_samples": [
+          197.020627,
+          200.01309,
+          196.282582
+        ],
+        "rss_samples": [
+          15696,
+          13996,
+          16112
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "initial",
+        "budget": null,
+        "policy": "passage-v1",
+        "n": 3,
+        "median_ms": 226.983226,
+        "min_ms": 221.886688,
+        "max_ms": 241.687637,
+        "median_rss_kib": 16032,
+        "max_rss_kib": 16168,
+        "wall_samples": [
+          241.687637,
+          226.983226,
+          221.886688
+        ],
+        "rss_samples": [
+          16032,
+          15856,
+          16168
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "resync",
+        "budget": null,
+        "policy": "fixed-v1",
+        "n": 3,
+        "median_ms": 49.2572,
+        "min_ms": 47.873145,
+        "max_ms": 53.708109,
+        "median_rss_kib": 15260,
+        "max_rss_kib": 15388,
+        "wall_samples": [
+          53.708109,
+          47.873145,
+          49.2572
+        ],
+        "rss_samples": [
+          15204,
+          15388,
+          15260
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "resync",
+        "budget": null,
+        "policy": "passage-v1",
+        "n": 3,
+        "median_ms": 51.32595,
+        "min_ms": 38.181706,
+        "max_ms": 58.955492,
+        "median_rss_kib": 15336,
+        "max_rss_kib": 15468,
+        "wall_samples": [
+          38.181706,
+          58.955492,
+          51.32595
+        ],
+        "rss_samples": [
+          15468,
+          15336,
+          15276
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "natural",
+        "budget": 1024,
+        "policy": "fixed-v1",
+        "n": 15,
+        "median_ms": 52.778065,
+        "min_ms": 42.104684,
+        "max_ms": 68.750854,
+        "median_rss_kib": 15488,
+        "max_rss_kib": 15572,
+        "wall_samples": [
+          68.45505,
+          42.104684,
+          52.778065,
+          63.861674,
+          44.888186,
+          65.661279,
+          45.06139,
+          68.750854,
+          64.098808,
+          44.34167,
+          49.547495,
+          48.639301,
+          43.724203,
+          59.74419,
+          64.716177
+        ],
+        "rss_samples": [
+          15552,
+          13272,
+          15520,
+          15368,
+          15512,
+          15552,
+          15488,
+          15548,
+          15460,
+          13528,
+          13312,
+          15572,
+          15540,
+          15352,
+          13368
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "natural",
+        "budget": 1024,
+        "policy": "passage-v1",
+        "n": 15,
+        "median_ms": 67.894608,
+        "min_ms": 50.148563,
+        "max_ms": 75.78616,
+        "median_rss_kib": 15540,
+        "max_rss_kib": 17500,
+        "wall_samples": [
+          68.199891,
+          65.554048,
+          71.333809,
+          75.78616,
+          68.554536,
+          50.895624,
+          71.202202,
+          70.95087,
+          50.148563,
+          61.71166,
+          59.158091,
+          60.811793,
+          51.055133,
+          68.821457,
+          67.894608
+        ],
+        "rss_samples": [
+          15560,
+          15556,
+          15460,
+          15596,
+          15612,
+          15496,
+          15356,
+          15552,
+          15664,
+          15388,
+          15388,
+          15540,
+          15496,
+          17500,
+          15400
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "natural",
+        "budget": 8192,
+        "policy": "fixed-v1",
+        "n": 15,
+        "median_ms": 53.05279,
+        "min_ms": 43.508237,
+        "max_ms": 70.847937,
+        "median_rss_kib": 15384,
+        "max_rss_kib": 15532,
+        "wall_samples": [
+          49.199432,
+          65.661068,
+          43.508237,
+          53.05279,
+          47.121675,
+          67.9706,
+          47.073985,
+          70.847937,
+          48.9372,
+          68.849189,
+          44.70945,
+          45.406698,
+          63.606314,
+          64.802248,
+          57.159432
+        ],
+        "rss_samples": [
+          15376,
+          15488,
+          15372,
+          13436,
+          15504,
+          15384,
+          15364,
+          15408,
+          15520,
+          15372,
+          15444,
+          15532,
+          15380,
+          15348,
+          15456
+        ]
+      },
+      {
+        "corpus": "varied",
+        "stage": "natural",
+        "budget": 8192,
+        "policy": "passage-v1",
+        "n": 15,
+        "median_ms": 64.76084,
+        "min_ms": 51.422141,
+        "max_ms": 88.628538,
+        "median_rss_kib": 15748,
+        "max_rss_kib": 18044,
+        "wall_samples": [
+          68.881268,
+          53.343686,
+          65.324478,
+          73.656756,
+          64.245143,
+          88.628538,
+          63.645759,
+          61.27938,
+          64.76084,
+          54.342579,
+          70.448679,
+          72.930805,
+          60.044374,
+          68.502769,
+          51.422141
+        ],
+        "rss_samples": [
+          15404,
+          15496,
+          15440,
+          18044,
+          17796,
+          17812,
+          17876,
+          17924,
+          17892,
+          15492,
+          15388,
+          15748,
+          17684,
+          15520,
+          15532
+        ]
+      }
+    ],
+    "sizes": [
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "repeat": 0,
+        "store_bytes": 479232,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 40960,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 9
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "repeat": 0,
+        "store_bytes": 507904,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 45056,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 49
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "repeat": 1,
+        "store_bytes": 507904,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 45056,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 49
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "repeat": 1,
+        "store_bytes": 479232,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 40960,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 9
+      },
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "repeat": 2,
+        "store_bytes": 479232,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 40960,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 9
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "repeat": 2,
+        "store_bytes": 507904,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 45056,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 49
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "repeat": 0,
+        "store_bytes": 434176,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 5
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "repeat": 0,
+        "store_bytes": 442368,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 16
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "repeat": 1,
+        "store_bytes": 442368,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 16
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "repeat": 1,
+        "store_bytes": 434176,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 5
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "repeat": 2,
+        "store_bytes": 434176,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 5
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "repeat": 2,
+        "store_bytes": 442368,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 24576,
+          "segment_lexical_fts_data": 4096,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 16
+      },
+      {
+        "corpus": "documentation",
+        "policy": "legacy",
+        "repeat": 0,
+        "store_bytes": 479232,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 40960,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 9
+      },
+      {
+        "corpus": "documentation",
+        "policy": "legacy-reopened",
+        "repeat": 0,
+        "store_bytes": 479232,
+        "index_bytes": {
+          "segment_lexical_fts_config": 4096,
+          "segment_lexical_fts_content": 40960,
+          "segment_lexical_fts_data": 32768,
+          "segment_lexical_fts_docsize": 4096,
+          "segment_lexical_fts_idx": 4096,
+          "segment_lexical_rows": 4096
+        },
+        "segment_count": 9
+      }
+    ],
+    "boundaries": [
+      {
+        "corpus": "documentation",
+        "policy": "fixed-v1",
+        "within_alphanumeric_cuts": [
+          {
+            "item": "README.md",
+            "offset": 12288
+          },
+          {
+            "item": "docs/CAPABILITIES.md",
+            "offset": 4096
+          },
+          {
+            "item": "docs/CAPABILITIES.md",
+            "offset": 8192
+          },
+          {
+            "item": "docs/CAPABILITIES.md",
+            "offset": 12288
+          },
+          {
+            "item": "docs/CAPABILITIES.md",
+            "offset": 16384
+          }
+        ]
+      },
+      {
+        "corpus": "documentation",
+        "policy": "passage-v1",
+        "within_alphanumeric_cuts": []
+      },
+      {
+        "corpus": "varied",
+        "policy": "fixed-v1",
+        "within_alphanumeric_cuts": []
+      },
+      {
+        "corpus": "varied",
+        "policy": "passage-v1",
+        "within_alphanumeric_cuts": []
+      }
+    ],
+    "cli_calls": 279,
+    "all_exit_zero": true
+  },
+  "resource_ceiling_checks": [
+    {
+      "corpus": "documentation",
+      "metric": "segment_count",
+      "ratio": 5.444444444444445,
+      "limit": 12,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "store_bytes",
+      "ratio": 1.0598290598290598,
+      "limit": 4,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "initial",
+      "budget": null,
+      "ratio": 2.022614242708037,
+      "median_limit_ms": 980.6960280000001,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "initial_peak_rss",
+      "budget": null,
+      "candidate_kib": 18864,
+      "limit_kib": 32592,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "resync",
+      "budget": null,
+      "ratio": 1.1335955071827621,
+      "median_limit_ms": 295.980702,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "resync_peak_rss",
+      "budget": null,
+      "candidate_kib": 17472,
+      "limit_kib": 30776,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "natural",
+      "budget": 1024,
+      "ratio": 1.7821537112239272,
+      "median_limit_ms": 167.9777985,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "natural_peak_rss",
+      "budget": 1024,
+      "candidate_kib": 20440,
+      "limit_kib": 35232,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "natural",
+      "budget": 8192,
+      "ratio": 1.5522286489146044,
+      "median_limit_ms": 201.791205,
+      "pass": true
+    },
+    {
+      "corpus": "documentation",
+      "metric": "natural_peak_rss",
+      "budget": 8192,
+      "candidate_kib": 20596,
+      "limit_kib": 35224,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "segment_count",
+      "ratio": 3.2,
+      "limit": 12,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "store_bytes",
+      "ratio": 1.0188679245283019,
+      "limit": 4,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "initial",
+      "budget": null,
+      "ratio": 1.1520784877006813,
+      "median_limit_ms": 1182.123762,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "initial_peak_rss",
+      "budget": null,
+      "candidate_kib": 16168,
+      "limit_kib": 32224,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "resync",
+      "budget": null,
+      "ratio": 1.0419989361961297,
+      "median_limit_ms": 295.54319999999996,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "resync_peak_rss",
+      "budget": null,
+      "candidate_kib": 15468,
+      "limit_kib": 30776,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "natural",
+      "budget": 1024,
+      "ratio": 1.2864171507614008,
+      "median_limit_ms": 158.334195,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "natural_peak_rss",
+      "budget": 1024,
+      "candidate_kib": 17500,
+      "limit_kib": 31144,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "natural",
+      "budget": 8192,
+      "ratio": 1.2206867914015456,
+      "median_limit_ms": 159.15837,
+      "pass": true
+    },
+    {
+      "corpus": "varied",
+      "metric": "natural_peak_rss",
+      "budget": 8192,
+      "candidate_kib": 18044,
+      "limit_kib": 31064,
+      "pass": true
+    }
+  ],
+  "verification": {
+    "format": 0,
+    "mod_tidy_diff": 0,
+    "mod_verify": 0,
+    "vet": 0,
+    "cgo_free_full_tests": 0,
+    "race_full_tests": 0,
+    "required_cli_build": 0,
+    "required_python_client_acceptance": 0,
+    "measurement": 0,
+    "legacy_reopen": "Store created by original executable; all canonical record bytes unchanged after candidate reopen; retained after policy change."
+  }
+}

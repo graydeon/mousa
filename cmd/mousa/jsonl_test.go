@@ -278,7 +278,7 @@ func TestJSONLStreamStatusReportsSourceState(t *testing.T) {
 func TestJSONLSourceCannotCollideWithDirectoryPath(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "doc", "Directory walruses.")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--all-text", root)
 	jsonlSync(t, run, root, record("doc@draft", "Stream ferrets."))
 	_, directory := run.run(false, "query", root, "walruses ferrets")
 	if firstItem(t, directory) != "doc" || len(hits(directory)) != 1 {

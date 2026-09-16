@@ -13,6 +13,16 @@ const (
 )
 
 func NormalizeUTF8Text(artifact Artifact, content []byte) (Representation, []byte, error) {
+	return NormalizeUTF8TextWithPolicy(artifact, content, TextSegmentFixedV1)
+}
+
+// NormalizeUTF8TextWithPolicy binds the segment policy to the normalized
+// representation identity without changing its source bytes or ancestry.
+func NormalizeUTF8TextWithPolicy(artifact Artifact, content []byte, policy string) (Representation, []byte, error) {
+	parametersSHA256, err := textPolicyParameters(policy)
+	if err != nil {
+		return Representation{}, nil, err
+	}
 	if err := artifact.Validate(); err != nil {
 		return Representation{}, nil, err
 	}
@@ -45,7 +55,6 @@ func NormalizeUTF8Text(artifact Artifact, content []byte) (Representation, []byt
 		}
 	}
 
-	parametersSHA256 := SHA256(sha256.Sum256(nil))
 	contentSHA256 := SHA256(sha256.Sum256(normalized))
 	inputs := []DerivationInput{NewArtifactDerivationInput(artifact.ID)}
 	id, err := NewRepresentationID(inputs, UTF8TextProcessorID, UTF8TextProcessorVersion, parametersSHA256, UTF8TextMediaType, contentSHA256)
@@ -68,6 +77,13 @@ func NormalizeUTF8Text(artifact Artifact, content []byte) (Representation, []byt
 func SegmentUTF8Text(representation Representation, content []byte) ([]Segment, error) {
 	if err := validateUTF8TextContent(representation, content); err != nil {
 		return nil, err
+	}
+	policy, err := TextSegmentationPolicy(representation)
+	if err != nil {
+		return nil, err
+	}
+	if policy == TextSegmentPassageV1 {
+		return segmentPassages(representation, content)
 	}
 
 	const minimumNonFinalSegmentBytes = MaxUTF8TextSegmentBytes - utf8.UTFMax + 1

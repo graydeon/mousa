@@ -2,8 +2,11 @@ package beir
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/graydeon/mousa/internal/mousa"
 )
 
 // fakeOracle answers TermEvidence from a hand-computed table, so the reducer's
@@ -93,38 +96,26 @@ func (erroringOracle) TermEvidence(term string) (TermEvidence, error) {
 	return TermEvidence{}, errProbeFailed
 }
 
-// TestQueryTermsMatchesEngineTokenization pins the tokenizer contract the
-// probes depend on: ASCII alphanumeric runs, non-ASCII runes kept, lowercased,
-// punctuation split. The store folds tokens itself, so term evidence must be
-// probed through MATCH, never through vocabulary strings.
-func TestQueryTermsMatchesEngineTokenization(t *testing.T) {
-	got := queryTerms("Hello, WORLD! naïve 42 x-ray")
+// TestQueryTermsPreservePublishedSplitting checks the query preparation rule,
+// not the index's tokenization or diacritic folding.
+func TestQueryTermsPreservePublishedSplitting(t *testing.T) {
+	got := mousa.LexicalQueryTerms("Hello, WORLD! naïve 42 x-ray")
 	want := []string{"hello", "world", "naïve", "42", "x", "ray"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("queryTerms = %q, want %q", got, want)
 	}
 }
 
-// TestCappedTermsDropsTrailing pins that the reduction applies the published
-// 4096-byte cap before classification, so the kept terms are always a subset
-// of what the baseline expression would have carried.
+// The cap counts UTF-8 bytes, quotes, and separators without truncating a term.
 func TestCappedTermsDropsTrailing(t *testing.T) {
-	long := strings.Repeat("term ", 1200)
-	terms, err := cappedTerms(long)
+	prefix := strings.Repeat("é", 2042)
+	terms, err := mousa.PrepareLexicalTerms(prefix+" one two", false)
 	if err != nil {
-		t.Fatalf("cappedTerms: %v", err)
+		t.Fatal(err)
 	}
-	joined := strings.Join(terms, " OR ")
-	if len(joined) > maxExpressionBytes {
-		t.Fatalf("capped expression is %d bytes, want <= %d", len(joined), maxExpressionBytes)
-	}
-	// The last surviving term must still be a full term, and the count must
-	// have shrunk from the original 1200.
-	if len(terms) >= 1200 {
-		t.Fatalf("cap dropped nothing: %d terms remain", len(terms))
-	}
-	if !strings.HasPrefix(terms[0], `"term"`) {
-		t.Fatalf("first term %q is not the leading term", terms[0])
+	want := []string{`"` + prefix + `"`, `"one"`}
+	if !slices.Equal(terms, want) {
+		t.Fatalf("capped terms = %q, want %q", terms, want)
 	}
 }
 

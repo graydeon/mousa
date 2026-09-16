@@ -2,8 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -186,5 +188,72 @@ func TestSourceTrailCandidateRowTamperFailsClosed(t *testing.T) {
 	rawExec(t, store.path, `UPDATE source_trail_candidates SET final_rank = final_rank + 1 WHERE trail_id = x'`+result.Trail.ID.String()+`' AND ordinal = 0`)
 	if _, err := OpenReadOnly(ctx, store.path); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("tampered final_rank open error = %v, want integrity", err)
+	}
+}
+
+func TestEvaluateAndTraceRollsBackDecisionOnTraceFailure(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, _ := seedEnforcedRetrieval(t, store, "sharedterm evidence")
+	if _, err := store.db.ExecContext(ctx, `CREATE TRIGGER refuse_trail BEFORE INSERT ON source_trails
+		BEGIN SELECT RAISE(ABORT, 'trace storage unavailable'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024); err == nil {
+		t.Fatal("trace storage failure was ignored")
+	}
+	if _, err := store.db.ExecContext(ctx, `DROP TRIGGER refuse_trail`); err != nil {
+		t.Fatal(err)
+	}
+	withdrawVerifiedSource(t, store, request.SourceID, "after-failed-trace", 200)
+	result, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024)
+	if err != nil {
+		t.Fatalf("failed trace consumed its request identity: %v", err)
+	}
+	if result.Decision.Outcome != mousa.PolicyOutcomeDeny || len(result.Candidates) != 0 {
+		t.Fatalf("retry reused authorization from before withdrawal: %#v", result)
+	}
+	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024); !IsCode(err, CodeConflict) {
+		t.Fatalf("current evaluation accepted a historical request: %v", err)
+	}
+}
+
+func TestInspectSourceTrailOmitsHistoricalRejectedMetadata(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, document := seedEnforcedRetrieval(t, store, "sharedterm rejected evidence")
+	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	withdrawal := withdrawVerifiedSource(t, store, request.SourceID, "before-historical-trace", 200)
+	traced, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(traced.Trail.Candidates) != 1 || traced.Trail.Candidates[0].Disposition != mousa.CandidateRejected {
+		t.Fatalf("fixture did not record a historical rejection: %#v", traced.Trail)
+	}
+	source, err := store.GetSource(ctx, request.SourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumeVerifiedSource(t, store, source, withdrawal, "inspection-resume", 300)
+	inspection, err := store.InspectSourceTrail(ctx, testEvaluationRequest(t, source.ID, "inspect-rejection"), traced.Trail.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Historical == nil || inspection.Historical.LifecycleExcluded != 1 || len(inspection.Historical.Candidates) != 0 {
+		t.Fatalf("historical rejection was not filtered: %#v", inspection)
+	}
+	data, err := json.Marshal(inspection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{document.segments[0].ID.String(), document.segments[0].ContentSHA256.String(), "sharedterm rejected evidence"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("inspection released rejected metadata: %s", data)
+		}
 	}
 }

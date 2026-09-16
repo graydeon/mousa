@@ -532,11 +532,7 @@ func newEvaluationRequest(sourceID mousa.SourceID, externalRequestID string) (mo
 	return request, nil
 }
 
-// maxExpressionBytes is the store's query expression bound: validateLexicalQuery
-// rejects expressions over 4096 bytes.
-const maxExpressionBytes = 4096
-
-// ExpressionPolicy controls term folding in BuildExpression.
+// ExpressionPolicy controls term folding in BuildExpressionWithPolicy.
 //
 // PolicyOriginal keeps every query term, duplicating repeated terms. BM25
 // scores sum per matched term, so repetition multiplies a duplicated term's
@@ -567,29 +563,13 @@ const (
 	PolicyDropFloor ExpressionPolicy = "drop-floor"
 )
 
-// BuildExpression converts one natural-language query into the FTS5 MATCH
-// expression the store accepts: every alphanumeric term is lowercased, quoted,
-// and OR-joined so that BM25 ranking orders documents by term evidence. When
-// the joined expression exceeds the store's expression bound, trailing terms
-// are dropped (earliest terms first, which preserves leading query wording)
-// until it fits. The policy decides whether repeated terms are folded.
+// BuildExpressionWithPolicy quotes and OR-joins terms using the shared published
+// preparation rule. Only PolicyDedup folds repeated terms; floor reduction is
+// applied separately after preparing the original expression.
 func BuildExpressionWithPolicy(query string, policy ExpressionPolicy) (string, error) {
-	terms := make([]string, 0, len(queryTerms(query)))
-	seen := map[string]struct{}{}
-	for _, term := range queryTerms(query) {
-		if policy == PolicyDedup {
-			if _, duplicate := seen[term]; duplicate {
-				continue
-			}
-			seen[term] = struct{}{}
-		}
-		terms = append(terms, quoteTerm(term))
-	}
-	if len(terms) == 0 {
-		return "", fmt.Errorf("query produced no searchable terms")
-	}
-	for len(strings.Join(terms, " OR ")) > maxExpressionBytes && len(terms) > 1 {
-		terms = terms[:len(terms)-1]
+	terms, err := mousa.PrepareLexicalTerms(query, policy == PolicyDedup)
+	if err != nil {
+		return "", err
 	}
 	return strings.Join(terms, " OR "), nil
 }

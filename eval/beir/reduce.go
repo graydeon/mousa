@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/graydeon/mousa/internal/mousa"
 )
 
 // CONTRACT (experimental policy, not an adopted optimization): the predicate
@@ -62,7 +64,7 @@ type Reduction struct {
 // all-floor query has no evidence to rank by, and falling back to the baseline
 // expression would silently reintroduce the cost the policy exists to remove.
 func ReduceFloorTerms(query string, oracle TermEvidenceOracle) (Reduction, error) {
-	baselineTerms, err := cappedTerms(query)
+	baselineTerms, err := mousa.PrepareLexicalTerms(query, false)
 	if err != nil {
 		return Reduction{}, err
 	}
@@ -97,49 +99,6 @@ func ReduceFloorTerms(query string, oracle TermEvidenceOracle) (Reduction, error
 // account the fallback; other errors are failures.
 var errNoEvidenceTerms = errors.New("query reduced to no evidence-bearing terms")
 
-// cappedTerms tokenizes one query into quoted OR terms under the published
-// protocol: alphanumeric terms lowercased and quoted, repeats kept, trailing
-// terms dropped until the joined expression fits the store's bound.
-func cappedTerms(query string) ([]string, error) {
-	terms := make([]string, 0)
-	for _, term := range queryTerms(query) {
-		terms = append(terms, quoteTerm(term))
-	}
-	if len(terms) == 0 {
-		return nil, fmt.Errorf("query produced no searchable terms")
-	}
-	for len(strings.Join(terms, " OR ")) > maxExpressionBytes && len(terms) > 1 {
-		terms = terms[:len(terms)-1]
-	}
-	return terms, nil
-}
-
-func quoteTerm(term string) string {
-	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
-}
-
 func unquoteTerm(quoted string) string {
 	return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`), `""`, `"`)
-}
-
-// queryTerms splits one query into lowercased terms the way the store's
-// tokenizer will match them: runs of ASCII alphanumerics or any non-ASCII
-// rune. The index itself folds tokens (unicode61 remove_diacritics 2), which
-// is why term evidence must be probed through MATCH and never through
-// vocabulary strings.
-func queryTerms(query string) []string {
-	fields := strings.FieldsFunc(query, func(r rune) bool {
-		isLetter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-		isLetter = isLetter || r >= 0x80
-		return !isLetter
-	})
-	terms := make([]string, 0, len(fields))
-	for _, field := range fields {
-		term := strings.ToLower(strings.TrimSpace(field))
-		if term == "" {
-			continue
-		}
-		terms = append(terms, term)
-	}
-	return terms
 }

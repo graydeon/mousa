@@ -13,3 +13,7 @@ docs/agents/
 .agents/
 .claude/
 .codex/
+
+# Optional local evaluation dependencies and bytecode
+/eval/local/qmd/node_modules/
+/eval/local/__pycache__/

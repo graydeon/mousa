@@ -164,7 +164,7 @@ func decodeItemString(raw []byte) (string, error) {
 	return value, nil
 }
 
-func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input io.Reader) error {
+func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input io.Reader, segmentPolicy string) error {
 	started := time.Now()
 	source, err := streamSource(externalSourceID)
 	if err != nil {
@@ -178,7 +178,7 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 	if err := deployLocalPolicy(ctx, store); err != nil {
 		return fmt.Errorf("deploy policy: %w", err)
 	}
-	result := syncResult{Source: externalSourceID, Input: inputJSONL}
+	result := syncResult{Source: externalSourceID, Input: inputJSONL, SegmentPolicy: segmentPolicy}
 	lineOf := make(map[string]int)
 	limited := &io.LimitedReader{R: input, N: maxItemStreamBytes + 1}
 	scanner := bufio.NewScanner(limited)
@@ -215,7 +215,7 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 		if record.Text != nil {
 			item.Content = []byte(*record.Text)
 		}
-		action, err := applyItem(ctx, store, source, item, nil)
+		action, err := applyItem(ctx, store, source, item, nil, segmentPolicy)
 		if err != nil {
 			return recordError{Line: line, Err: fmt.Errorf("item %q: %w", record.ID, err)}
 		}

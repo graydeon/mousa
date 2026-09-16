@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -12,13 +11,9 @@ import (
 	"github.com/graydeon/mousa/internal/sqlite"
 )
 
-// queryItems runs one authorized, source-scoped lexical query and releases
-// only accepted candidates' text under the byte budget. The store's enforced
-// path verifies ancestry and lifecycle inside one transaction and evaluates
-// the exact stored decision for the request; the response carries the
-// decision ID so provenance is explicit, and rejected candidates (which carry
-// text and dispositions) are never serialized.
-func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query string, budgetBytes uint64) (*evidenceResult, error) {
+// queryItems uses the canonical evaluation, retrieval, packing, and tracing
+// transaction. Only selected, accepted text is released from that snapshot.
+func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64) (*evidenceResult, error) {
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -26,124 +21,120 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 	if needsRecovery {
 		return nil, fmt.Errorf("source requires a complete directory sync after migration before querying")
 	}
-	expression, err := buildQueryExpression(query)
+	terms, err := mousa.PrepareLexicalTerms(query, policy == "dedup")
 	if err != nil {
 		return nil, err
 	}
-	request := mousa.PolicyEvaluationRequest{
-		Schema:           mousa.PolicyEvaluationRequestSchema,
-		Action:           mousa.SourceRetrievalAction,
-		CallerNamespace:  localNamespace + ".caller",
-		ExternalCallerID: "cli",
-		// Every query is a fresh request: the identity includes nanosecond
-		// time and process id, so each invocation evaluates its own immutable
-		// decision against the current lifecycle/policy snapshot. Reusing one
-		// identity across invocations would freeze authorization at the first
-		// query's snapshot.
-		ExternalRequestID: fmt.Sprintf("query-%s-%x-%d-%d", source.ExternalSourceID, requestDigest(query), time.Now().UnixNano(), os.Getpid()),
-		PurposeNamespace:  localNamespace + ".purpose",
-		ExternalPurposeID: "retrieval",
-		SourceID:          source.ID,
-		RequestedAtUsec:   time.Now().UnixMicro(),
-	}
-	requestID, err := mousa.NewPolicyEvaluationRequestID(request)
+	expression := strings.Join(terms, " OR ")
+	request, err := newRetrievalRequest(source.ID)
 	if err != nil {
 		return nil, err
 	}
-	request.ID = requestID
-	// Evaluate and store the immutable decision for this exact request; the
-	// decision binds the lifecycle snapshot at evaluation time.
-	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
-		return nil, fmt.Errorf("evaluate retrieval policy: %w", err)
-	}
-	enforced, err := store.SearchEnforcedLexical(ctx, request, expression, queryCandidateLimit)
+	traced, err := store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes)
 	if err != nil {
 		return nil, err
 	}
-	result := &evidenceResult{DecisionID: fmt.Sprintf("%x", enforced.Decision.ID[:8])}
-	var used uint64
-	for _, candidate := range enforced.Candidates {
+	result := &evidenceResult{
+		RequestID: request.ID.String(), DecisionID: traced.Decision.ID.String(),
+		DecisionOutcome: string(traced.Decision.Outcome), DecisionReasons: traced.Decision.ReasonCodes,
+		EvaluatedAtUsec: traced.Decision.EvaluatedAtUsec,
+		TrailID:         traced.Trail.ID.String(), PacketID: traced.Trail.PacketID,
+		Expression: expression, QueryPolicy: policy,
+		UsedBytes: traced.Trail.UsedBytes, BudgetBytes: traced.Trail.BudgetBytes,
+		MatchedCandidates: len(traced.Candidates), CandidateLimit: queryCandidateLimit,
+		Evidence: []evidenceHit{},
+	}
+	type representationLocation struct {
+		record mousa.Representation
+		item   string
+		policy string
+	}
+	locations := make(map[mousa.RepresentationID]representationLocation)
+	for index, candidate := range traced.Candidates {
 		if candidate.Disposition != mousa.CandidateAccepted {
+			result.LifecycleExcluded++
 			continue
 		}
-		if used+uint64(len(candidate.Text)) > budgetBytes {
+		if !traced.Trail.Candidates[index].Selected {
+			result.BudgetOmitted++
 			continue
 		}
-		relative, err := itemPathForSegment(ctx, store, source, candidate.Segment.ID)
-		if err != nil {
+		segment := candidate.Segment
+		location, exists := locations[segment.RepresentationID]
+		if !exists {
+			representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
+			if err != nil {
+				return nil, err
+			}
+			if representation.ProcessorID != mousa.UTF8TextProcessorID {
+				return nil, fmt.Errorf("selected evidence is not normalized UTF-8 text")
+			}
+			policy, err := mousa.TextSegmentationPolicy(representation)
+			if err != nil {
+				return nil, err
+			}
+			item, err := itemPathForSegment(ctx, store, source, segment.ID)
+			if err != nil {
+				return nil, err
+			}
+			location = representationLocation{record: representation, item: item, policy: policy}
+			locations[segment.RepresentationID] = location
+		}
+		if err := segment.ValidateAgainst(location.record); err != nil {
 			return nil, err
 		}
-		used += uint64(len(candidate.Text))
-		result.UsedBytes = used
-		result.TotalMatches++
+		byteRange, ok := segment.Selector.TextByteRange()
+		if !ok || byteRange.End-byteRange.Start != uint64(len(candidate.Text)) {
+			return nil, fmt.Errorf("selected evidence range disagrees with released text")
+		}
 		result.Evidence = append(result.Evidence, evidenceHit{
-			Item:       relative,
-			SegmentID:  fmt.Sprintf("%x", candidate.Segment.ID),
-			Rank:       candidate.FinalRank,
-			Score:      candidate.BM25,
-			ByteLength: len(candidate.Text),
-			Text:       candidate.Text,
+			Item: location.item, SegmentID: segment.ID.String(),
+			RepresentationID:     segment.RepresentationID.String(),
+			RepresentationSHA256: location.record.ContentSHA256.String(),
+			ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: location.policy,
+			ContentSHA256: candidate.Segment.ContentSHA256.String(),
+			Rank:          candidate.FinalRank, Score: candidate.BM25,
+			ByteLength: len(candidate.Text), Text: candidate.Text,
 		})
+	}
+	switch {
+	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:
+		result.Outcome = "policy_excluded"
+		if !traced.Decision.StatePresent || traced.Decision.CollectionState == nil || *traced.Decision.CollectionState != mousa.CollectionActive {
+			result.Outcome = "lifecycle_excluded"
+		}
+	case len(result.Evidence) > 0:
+		result.Outcome = "evidence"
+	case result.BudgetOmitted > 0:
+		result.Outcome = "budget_omitted"
+	case result.LifecycleExcluded > 0:
+		result.Outcome = "lifecycle_excluded"
+	default:
+		result.Outcome = "no_matches"
 	}
 	return result, nil
 }
 
 const queryCandidateLimit = 100
 
-func requestDigest(query string) [32]byte {
-	return sha256.Sum256([]byte(query))
+func newRetrievalRequest(sourceID mousa.SourceID) (mousa.PolicyEvaluationRequest, error) {
+	request := mousa.PolicyEvaluationRequest{
+		Schema: mousa.PolicyEvaluationRequestSchema, Action: mousa.SourceRetrievalAction,
+		CallerNamespace: localNamespace + ".caller", ExternalCallerID: "cli",
+		ExternalRequestID: "cli-" + rand.Text(),
+		PurposeNamespace:  localNamespace + ".purpose", ExternalPurposeID: "retrieval",
+		SourceID: sourceID, RequestedAtUsec: time.Now().UnixMicro(),
+	}
+	id, err := mousa.NewPolicyEvaluationRequestID(request)
+	if err != nil {
+		return mousa.PolicyEvaluationRequest{}, err
+	}
+	request.ID = id
+	return request, nil
 }
 
-// buildQueryExpression tokenizes to quoted OR terms under the store's bound.
-// Repeated terms are folded: repetition multiplies a term's BM25 contribution
-// and is not the documented local-slice protocol.
-func buildQueryExpression(query string) (string, error) {
-	terms := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, term := range queryTerms(query) {
-		if _, duplicate := seen[term]; duplicate {
-			continue
-		}
-		seen[term] = struct{}{}
-		terms = append(terms, quoteTerm(term))
-	}
-	if len(terms) == 0 {
-		return "", fmt.Errorf("query produced no searchable terms")
-	}
-	for len(strings.Join(terms, " OR ")) > maxExpressionBytes && len(terms) > 1 {
-		terms = terms[:len(terms)-1]
-	}
-	return strings.Join(terms, " OR "), nil
-}
-
-const maxExpressionBytes = 4096
-
-func quoteTerm(term string) string {
-	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
-}
-
-func queryTerms(query string) []string {
-	fields := strings.FieldsFunc(query, func(r rune) bool {
-		isLetter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-		isLetter = isLetter || r >= 0x80
-		return !isLetter
-	})
-	terms := make([]string, 0, len(fields))
-	for _, field := range fields {
-		term := strings.ToLower(strings.TrimSpace(field))
-		if term == "" {
-			continue
-		}
-		terms = append(terms, term)
-	}
-	return terms
-}
-
-// itemPathForSegment resolves which item a retrieved segment belongs to via
-// the segment→representation→artifact→observation chain, so provenance is
-// derived from verified records rather than a parallel mapping. Stale
-// revisions never reach this point: their index rows were removed on update,
-// and the FTS5 index only serves current content.
+// itemPathForSegment derives an item identifier from verified immutable
+// ancestry. It also works for retired revisions; it does not infer activation.
 func itemPathForSegment(ctx context.Context, store *sqlite.Store, source mousa.Source, segmentID mousa.SegmentID) (string, error) {
 	segment, err := store.GetSegment(ctx, segmentID)
 	if err != nil {
