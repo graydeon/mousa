@@ -3,8 +3,11 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"os"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
 )
@@ -250,5 +253,137 @@ func TestExactTrailUsesOneReadSnapshot(t *testing.T) {
 	}
 	if _, err := store.GetSourceTrail(ctx, result.Trail.ID); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("next operation reused stale ancestry: %v", err)
+	}
+}
+
+func TestHistoricalVerificationSnapshotWriterProgress(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, document := seedEnforcedRetrieval(t, store, "sharedterm")
+	first, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 8192, mousa.PackingExactV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 4096, mousa.PackingExactV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := Open(ctx, store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	var busy, frames, checkpointed int
+	if err := writer.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &checkpointed); err != nil || busy != 0 {
+		t.Fatalf("initial checkpoint: %d, %v", busy, err)
+	}
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	read, err := getSourceTrail(ctx, tx, first.Trail.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read.Candidates[0].ContentSHA256 = mousa.SHA256{}
+	progress := make(chan error, 1)
+	go func() {
+		for range 16 {
+			if _, err := writer.db.ExecContext(ctx, `UPDATE representation_inputs SET ordinal = ordinal + 10 WHERE representation_id = ?`, document.representation.ID[:]); err != nil {
+				progress <- err
+				return
+			}
+		}
+		progress <- nil
+	}()
+	for i := range 16 {
+		want := first.Trail
+		if i%2 != 0 {
+			want = second.Trail
+		}
+		got, err := getSourceTrail(ctx, tx, want.ID)
+		if err != nil {
+			t.Fatalf("pinned historical read: %v", err)
+		}
+		before, err := mousa.EncodeSourceTrail(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := mousa.EncodeSourceTrail(got)
+		if err != nil || string(before) != string(after) {
+			t.Fatal("snapshot or returned-value mutation changed canonical bytes")
+		}
+	}
+	if err := <-progress; err != nil {
+		t.Fatalf("writer failed to progress during read snapshot: %v", err)
+	}
+	if err := writer.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &frames, &checkpointed); err != nil || frames <= checkpointed {
+		t.Fatalf("reader did not retain WAL frames: busy=%d frames=%d checkpointed=%d error=%v", busy, frames, checkpointed, err)
+	}
+	wal, err := os.Stat(store.path + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("writer_commits=16 retained_frames=%d checkpointed_frames=%d wal_bytes=%d", frames, checkpointed, wal.Size())
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifySourceTrailRecords(ctx, store.db); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("next historical scan reused stale ancestry: %v", err)
+	}
+	if _, err := writer.db.ExecContext(ctx, `UPDATE representation_inputs SET ordinal = ordinal - 160 WHERE representation_id = ?`, document.representation.ID[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifySourceTrailRecords(ctx, store.db); err != nil {
+		t.Fatalf("repaired historical scan: %v", err)
+	}
+	if err := writer.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &frames, &checkpointed); err != nil || busy != 0 || frames != 0 {
+		t.Fatalf("released reader prevented checkpoint: %d %d %d %v", busy, frames, checkpointed, err)
+	}
+	wal, err = os.Stat(store.path + "-wal")
+	if err != nil || wal.Size() != 0 {
+		t.Fatalf("WAL not truncated after snapshot release: %v, %v", wal, err)
+	}
+	t.Log("released_wal_bytes=0")
+}
+
+func TestHistoricalVerificationRechecksCandidateRelationships(t *testing.T) {
+	ctx := t.Context()
+	store := openLexicalStore(t)
+	defer store.Close()
+	request, _ := seedEnforcedRetrieval(t, store, "sharedterm")
+	result, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 8192, mousa.PackingExactV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := addVerifiedLexicalDocument(t, store, "other-source", "sharedterm other")
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := verifyExactTrailContent(ctx, tx, result.Trail, request.SourceID); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"digest", "size", "source"} {
+		t.Run(kind, func(t *testing.T) {
+			trail := result.Trail
+			trail.Candidates = slices.Clone(trail.Candidates)
+			source := request.SourceID
+			switch kind {
+			case "digest":
+				trail.Candidates[0].ContentSHA256 = mousa.SHA256{}
+			case "size":
+				trail.Candidates[0].TextBytes++
+			case "source":
+				source = other.source.ID
+			}
+			if err := verifyExactTrailContent(ctx, tx, trail, source); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("historical verification accepted changed %s: %v", kind, err)
+			}
+		})
 	}
 }
