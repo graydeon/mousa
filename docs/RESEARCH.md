@@ -1,5 +1,12 @@
 # Mousa research record
 
+Raw benchmark reports and optional comparison dependencies are maintained in
+[mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks).
+Historical report links below identify the byte-preserving migration commit.
+Product regression tests, required client acceptance, and evaluation tools that
+depend on Mousa internals remain in this repository. Moving reports does not
+change their original source identities, protocols, or conclusions.
+
 This record tracks Mousa's empirical evaluation: hypotheses, methods, raw results,
 limitations, and reproduction. It is the only source of measured claims about Mousa.
 Development subsets and modified protocols are labeled as such; none is described as a
@@ -18,7 +25,7 @@ retrieval capabilities; see the roadmap in the documented roadmap.
 
 A bounded development comparison on 2026-09-16 evaluated `fixed-v1` against
 `passage-v1` through the supported sync/query CLI. The default remains `fixed-v1`.
-The [report](../eval/local/results/passage-policy.json) records the frozen
+The [report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/passage-policy.json) records the frozen
 questions, required source passages, fixture hashes, candidate runtime hashes,
 individual timing samples, coverage screening and manual judgments.
 
@@ -198,7 +205,7 @@ including partial initialization. The prototype retained both opening passes,
 all record and projection checks, writable FTS integrity checking, and existing
 connection and snapshot semantics. It did not cache evidence or validity.
 
-The [measurement report](../eval/local/results/prepared-statements.json) retains
+The [measurement report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/prepared-statements.json) retains
 source and binary hashes, fixture hashes, individual samples, semantic query
 results, acceptance criteria, and lifecycle timings. The primary fixture was a
 closed 96-document store after three content generations and the existing
@@ -265,7 +272,7 @@ competitive superiority or a deployed performance improvement.
 A separately bounded investigation on 2026-09-15 recovered the exact prototype
 and baseline rather than extending the original acceptance run. The original
 failed gate and non-adoption decision above remain unchanged. The
-[diagnostic report](../eval/local/results/prepared-diagnosis.json) preserves
+[diagnostic report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/prepared-diagnosis.json) preserves
 the protocol, hashes, individual responses, timings, memory, and instrumentation.
 
 The hypothesis was that eager preparation and cleanup imposed fixed costs on
@@ -385,8 +392,8 @@ deltas are process-wide counters, not RSS.
 
 ### Measured results
 
-The [24-document report](../eval/local/results/workflow-24.json) and
-[96-document report](../eval/local/results/workflow-96.json) each passed with 326
+The [24-document report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/workflow-24.json) and
+[96-document report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/workflow-96.json) each passed with 326
 commands, including 225 comparison-query checks. Each size has three repetitions.
 The reports bind all measured Go/evaluation sources, the Mousa binary, and the QMD
 dependency lockfile to SHA-256 hashes. QMD reported `2.8.3 (facd35e)` and Node
@@ -439,7 +446,7 @@ treating the stage timings as an additive profile.
 
 ### Cost relative to the preceding Mousa CLI
 
-A separate [five-revision report](../eval/local/results/current-cli.json) compares
+A separate [five-revision report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/current-cli.json) compares
 the complete increment with `cf2d9db1dbac73e90e5e3adf3bb2302b0f065713`.
 It reuses the lifecycle protocol below: 24/96 documents, five revisions, three
 repetitions, alternating arm order, and identical single-term queries. Both arms
@@ -477,8 +484,10 @@ disables lifecycle scripts and omits optional model binaries; no model is needed
 ```sh
 CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-workflow ./cmd/mousa
 CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-warm ./eval/local
-npm ci --prefix eval/local/qmd --ignore-scripts --omit=optional --no-audit --no-fund
-python3 eval/local/workflow.py --mousa ../mousa-workflow --warm ../mousa-warm --qmd eval/local/qmd/node_modules/@tobilu/qmd/bin/qmd --dependency-lock eval/local/qmd/package-lock.json --documents 24 --repeats 3 --output ../workflow-24.json
+git clone https://github.com/graydeon/mousa-benchmarks.git ../mousa-benchmarks
+git -C ../mousa-benchmarks checkout 0d5b3c64194bc8dd2876687ad5ded3d85c625ad9
+npm ci --prefix ../mousa-benchmarks/comparisons/qmd --ignore-scripts --omit=optional --no-audit --no-fund
+python3 eval/local/workflow.py --mousa ../mousa-workflow --warm ../mousa-warm --qmd ../mousa-benchmarks/comparisons/qmd/node_modules/@tobilu/qmd/bin/qmd --dependency-lock ../mousa-benchmarks/comparisons/qmd/package-lock.json --documents 24 --repeats 3 --output ../workflow-24.json
 ```
 
 Repeat with `--documents 96` for the larger fixture. Use `--node` to select an
@@ -490,7 +499,7 @@ Ephemeral paths are redacted, while canonical identifiers remain unchanged.
 
 ## Local CLI current-item lifecycle
 
-The [machine-readable report](../eval/local/results/current-items.json) compares the
+The [machine-readable report](https://github.com/graydeon/mousa-benchmarks/blob/0d5b3c64194bc8dd2876687ad5ded3d85c625ad9/results/2026-09-16/current-items.json) compares the
 baseline built from `fd2f2d5493fed88ed932b0b8b031d732d31e7089` with
 explicit current-item activation. Candidate source-file hashes, both binary hashes,
 build flags, environment, all command samples, correctness results, and summary
