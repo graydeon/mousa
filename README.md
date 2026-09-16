@@ -230,3 +230,11 @@ README banner portrait source: Dante Gabriel Rossetti, *Mnemosyne* (c. 1876–18
 ## License
 
 Mousa is licensed under the GNU Affero General Public License v3.0. See [`LICENSE`](LICENSE).
+
+
+## Benchmark results
+
+Raw measurements, optional comparison dependencies, and reproduction guidance are
+published in [mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks).
+[Research methods and limitations](docs/RESEARCH.md) remain here. Product tests
+and required CLI client acceptance do not depend on the benchmark repository.
