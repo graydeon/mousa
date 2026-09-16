@@ -23,45 +23,52 @@ func (store *Store) EvaluateSourceRetrieval(ctx context.Context, request mousa.P
 	}
 	var stored mousa.PolicyDecision
 	err := store.writeImmediate(ctx, "evaluate source retrieval", func(conn *sql.Conn) error {
-		existing, err := getPolicyDecisionByRequest(ctx, conn, request.ID)
-		if err == nil {
-			if existing.Request != request {
-				return integrity("evaluate source retrieval", "stored request disagrees with request identity")
-			}
-			stored = existing
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err := requireUnusedExternalRequest(ctx, conn, request); err != nil {
-			return err
-		}
-		snapshot, err := readPolicyEvaluationSnapshot(ctx, conn, request)
-		if err != nil {
-			return err
-		}
-		decision, err := mousa.EvaluateSourceRetrieval(request, snapshot, time.Now().UnixMicro())
-		if err != nil {
-			return wrap(CodeInvalidRecord, "evaluate source retrieval", err)
-		}
-		if err := insertPolicyDecision(ctx, conn, decision); err != nil {
-			return err
-		}
-		written, err := getPolicyDecision(ctx, conn, decision.ID)
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(written, decision) {
-			return integrity("evaluate source retrieval", "exact read-back disagrees with write")
-		}
-		stored = written
-		return nil
+		var err error
+		stored, err = evaluateSourceRetrieval(ctx, conn, request, true)
+		return err
 	})
 	if err != nil {
 		return mousa.PolicyDecision{}, err
 	}
 	return stored, nil
+}
+
+func evaluateSourceRetrieval(ctx context.Context, conn *sql.Conn, request mousa.PolicyEvaluationRequest, allowReplay bool) (mousa.PolicyDecision, error) {
+	existing, err := getPolicyDecisionByRequest(ctx, conn, request.ID)
+	if err == nil {
+		if existing.Request != request {
+			return mousa.PolicyDecision{}, integrity("evaluate source retrieval", "stored request disagrees with request identity")
+		}
+		if !allowReplay {
+			return mousa.PolicyDecision{}, wrap(CodeConflict, "evaluate source retrieval", errors.New("current evaluation requires a new request identity"))
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return mousa.PolicyDecision{}, err
+	}
+	if err := requireUnusedExternalRequest(ctx, conn, request); err != nil {
+		return mousa.PolicyDecision{}, err
+	}
+	snapshot, err := readPolicyEvaluationSnapshot(ctx, conn, request)
+	if err != nil {
+		return mousa.PolicyDecision{}, err
+	}
+	decision, err := mousa.EvaluateSourceRetrieval(request, snapshot, time.Now().UnixMicro())
+	if err != nil {
+		return mousa.PolicyDecision{}, wrap(CodeInvalidRecord, "evaluate source retrieval", err)
+	}
+	if err := insertPolicyDecision(ctx, conn, decision); err != nil {
+		return mousa.PolicyDecision{}, err
+	}
+	written, err := getPolicyDecision(ctx, conn, decision.ID)
+	if err != nil {
+		return mousa.PolicyDecision{}, err
+	}
+	if !reflect.DeepEqual(written, decision) {
+		return mousa.PolicyDecision{}, integrity("evaluate source retrieval", "exact read-back disagrees with write")
+	}
+	return written, nil
 }
 
 // GetPolicyDecision returns one stored decision with verified relational and ordered input projections.

@@ -37,3 +37,7 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./... -count=1
+      - name: Client acceptance
+        run: |
+          go build -o mousa ./cmd/mousa
+          python3 eval/local/workflow_test.py --mousa ./mousa

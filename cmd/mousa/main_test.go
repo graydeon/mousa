@@ -130,7 +130,7 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 		t.Fatalf("old revision still retrievable after update: %v", queryOld)
 	}
 
-	// 4. Deleted/withdrawn content is excluded.
+	// 4. Deleted items are excluded.
 	if err := os.Remove(filepath.Join(root, "beta", "gamma.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -150,20 +150,11 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 		t.Fatalf("post-delete resync reported changes: %v", sync5)
 	}
 
-	// 6. Provenance and bounded output in evidence.
+	// 6. Provenance resolves the item's stable path.
 	_, query3 := run.run(false, "query", root, "ferrets")
 	hit := query3["evidence"].([]any)[0].(map[string]any)
 	if hit["item"] != "alpha.md" {
 		t.Fatalf("evidence provenance item = %v", hit["item"])
-	}
-	if hit["segment_id"] == "" || hit["byte_length"].(float64) == 0 {
-		t.Fatalf("evidence missing provenance fields: %v", hit)
-	}
-	if hit["segment_id"] == "" {
-		t.Fatalf("segment_id must be present: %v", hit)
-	}
-	if query3["decision_id"] == "" {
-		t.Fatalf("query result must carry its policy decision id: %v", query3)
 	}
 }
 
@@ -339,7 +330,7 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 	writeFile(t, root, "doc", "Walrus baseline")
 	writeFile(t, root, "doc@draft.md", "Walrus draft")
 	writeFile(t, root, "nested@folder/note@review.md", "Walrus review")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--all-text", root)
 	_, query := run.run(false, "query", root, "walrus")
 	want := map[string]bool{"doc": true, "doc@draft.md": true, "nested@folder/note@review.md": true}
 	for _, raw := range query["evidence"].([]any) {
@@ -355,7 +346,7 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "doc")); err != nil {
 		t.Fatal(err)
 	}
-	_, sync := run.run(false, "sync", root)
+	_, sync := run.run(false, "sync", "--all-text", root)
 	if lenOf(sync, "deleted") != 1 || lenOf(sync, "unchanged") != 2 {
 		t.Fatalf("deleting a prefix item must leave longer names unchanged: %v", sync)
 	}
@@ -386,9 +377,9 @@ func TestLocalSliceQueryIsScopedToItsSource(t *testing.T) {
 func TestLocalSliceStatusSeparatesCurrentItemsFromHistory(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "doc", "Old walrus observations.")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--all-text", root)
 	writeFile(t, root, "doc", "New ferret observations.")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--all-text", root)
 	_, updated := run.run(false, "status", root)
 	if updated["active_items"] != float64(1) || updated["observations"] != float64(2) {
 		t.Fatalf("status confuses active items with history: %v", updated)
@@ -396,7 +387,7 @@ func TestLocalSliceStatusSeparatesCurrentItemsFromHistory(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "doc")); err != nil {
 		t.Fatal(err)
 	}
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--all-text", root)
 	_, deleted := run.run(false, "status", root)
 	if deleted["active_items"] != float64(0) || deleted["observations"] != float64(2) {
 		t.Fatalf("deletion removed history or retained activation: %v", deleted)

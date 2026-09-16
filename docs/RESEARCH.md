@@ -14,6 +14,480 @@ answering pipeline exists yet, so no RAG/answer-quality benchmark is applicable.
 benchmarks (LongMemEval, MemoryAgentBench) and FreshStack await the corresponding
 retrieval capabilities; see the roadmap in the documented roadmap.
 
+## Opt-in passage segmentation
+
+A bounded development comparison on 2026-09-16 evaluated `fixed-v1` against
+`passage-v1` through the supported sync/query CLI. The default remains `fixed-v1`.
+The [report](../eval/local/results/passage-policy.json) records the frozen
+questions, required source passages, fixture hashes, candidate runtime hashes,
+individual timing samples, coverage screening and manual judgments.
+
+The documentation corpus was README.md and docs/CAPABILITIES.md from `6e84d5e`:
+32,826 bytes, unchanged from the earlier exercise. The original ten natural
+questions and three separate keyword reformulations were retained. Before
+measurement, five synthetic fixtures added a command runbook, a list/table
+reference, plain prose, Unicode text and a deliberately oversized fenced block.
+Their required spans were 121, 184, 116, 98 and 3,001 bytes respectively. Only the
+first four were declared feasible at 1,024 bytes; all five were feasible at 8,192.
+Feasibility does not imply that lexical ranking selects the required passage.
+
+| Corpus and measure | Budget | Fixed | Passage |
+|---|---:|---:|---:|
+| Documentation: complete required facts | 1,024 | 0/10 | 7/10 |
+| Documentation: complete required facts | 8,192 | 7/10 | 10/10 |
+| Documentation: entire declared source span selected | 1,024 | 0/10 | 5/10 |
+| Documentation: entire declared source span selected | 8,192 | 6/10 | 7/10 |
+| Synthetic: complete feasible source spans | 1,024 | 0/4 | 3/4 |
+| Synthetic: complete source spans | 8,192 | 5/5 | 5/5 |
+
+Required-fact judgments retain the original semantic-equivalence rule rather than
+requiring identical phrases. For example, the selected README says that omission
+does not delete an item; the JSONL example separately supplies `deleted:true`.
+At 1,024 bytes the JSONL question remains partial, and upload-retry and trail
+questions remain insufficient. The separate keyword diagnostics recover retry
+and historical-text limits at 1,024, but not the complete JSONL answer. At 8,192,
+both policies supply all three keyword-diagnostic answers. Those diagnostics do
+not replace the natural-question scores.
+
+There are losses that the aggregate required-fact score does not show. At 8,192,
+the recovery question loses the previously selected preview-guidance paragraph:
+after separation, that segment has no lexical match to the question. The trail
+question loses its separate access-instruction paragraph: the 719-byte segment
+ranks 29 and is omitted; the packet uses 8,149 bytes. Neither loss was removed
+from the full-span measure. In the synthetic Unicode question at 1,024 bytes, the
+989-byte required passage ranks second; an unrelated 994-byte reference passage
+is selected first and leaves 30 bytes. No query-specific or document-specific
+policy adjustment followed these results.
+
+The documentation fixed policy had five cuts between alphanumeric characters;
+the passage policy had none. This is a narrow boundary metric, not a Markdown
+validity score. The 3,001-byte synthetic fence becomes three fragments without
+reconstructed delimiters. Both policies supply the whole source span at 8,192,
+neither at 1,024. Repeated filler in the synthetic sources produces 11 repeated
+selected content hashes across the five passage-policy queries at 8,192, versus
+zero with fixed segments. Segmentation introduces no overlapping source ranges,
+but packing still does not remove repeated content. Documentation queries had
+no exact duplicate selected hashes. At 8,192, selected bytes outside each
+declared documentation span total 75,721 for fixed and 75,576 for passage across
+ten questions. This is a context-size proxy, not a semantic redundancy score:
+equivalent evidence in another source also falls outside that span.
+
+Measurements used three repetitions, alternating policy order, in one shared
+six-vCPU EPYC-IBPB VM on a Ryzen 7 2700X host, with 5.5-core and 8-GiB job limits.
+Both policies used the same candidate executable, Go 1.27.1, `CGO_ENABLED=0`,
+`GOAMD64=v1` and `GOMAXPROCS=6`. Each query copied an initialized closed store
+before timing, then launched a fresh CLI process. Filesystem caches were warm,
+not flushed. Timings include open, retrieval, durable trail, JSON output and exit;
+builds and fixture copies are excluded. Query medians pool three repetitions of
+each question: 30 samples per documentation arm/budget and 15 per synthetic arm.
+Peak RSS is the maximum observed with GNU `time`.
+
+| Corpus | Measure | Fixed | Passage |
+|---|---|---:|---:|
+| Documentation | Segments | 9 | 49 |
+| Documentation | Initial closed store bytes | 479,232 | 507,904 |
+| Documentation | Lexical index page bytes | 90,112 | 94,208 |
+| Documentation | Initial sync median ms | 163.45 | 330.59 |
+| Documentation | Unchanged sync median ms | 49.33 | 55.92 |
+| Documentation | Query median ms, 1,024 / 8,192 | 55.99 / 67.26 | 99.79 / 104.41 |
+| Documentation | Query peak RSS KiB, 1,024 / 8,192 | 17,616 / 17,612 | 20,440 / 20,596 |
+| Synthetic | Segments | 5 | 16 |
+| Synthetic | Initial closed store bytes | 434,176 | 442,368 |
+| Synthetic | Lexical index page bytes | 45,056 | 45,056 |
+| Synthetic | Initial sync median ms | 197.02 | 226.98 |
+| Synthetic | Unchanged sync median ms | 49.26 | 51.33 |
+| Synthetic | Query median ms, 1,024 / 8,192 | 52.78 / 53.05 | 67.89 / 64.76 |
+| Synthetic | Query peak RSS KiB, 1,024 / 8,192 | 15,572 / 15,532 | 17,500 / 18,044 |
+
+Before measurement, resource ceilings were 12 times the segment count, four
+times initial store bytes, six times median sync cost, query median no greater
+than the larger of three times baseline or baseline plus 50 ms, and peak RSS no
+greater than the larger of twice baseline or baseline plus 8,192 KiB. Both corpora
+met these opt-in engineering ceilings. They are not speedup criteria: documentation
+ingestion took about twice as long, and queries were 55–78% slower.
+
+All 279 measurement CLI calls exited successfully. Selected evidence matched
+canonical ranges and hashes, stayed within byte budgets, and repeated queries
+selected identical evidence. An executable built from the original revision
+created an existing store; the candidate reopened it without changing canonical
+records and retained those records after policy replacement. Focused policy,
+boundary, lifecycle, interruption, reader-snapshot and access tests passed, as
+did formatting, module, vet, full CGo-free, full race and required Python client
+acceptance checks.
+
+These results support an opt-in way to retrieve useful small source passages.
+They do not establish general relevance superiority, complete answers under tiny
+budgets, or a default-policy change. Full-span context loss, repeated context,
+the Unicode ranking miss and higher runtime costs remain measured limitations.
+
+## Normalized passage-location metadata
+
+A matched CLI check on 2026-09-16 compared `33ee5a4` with the additive location
+output in `dc47c9e`. Both binaries queried copies of the same store created by
+the older binary. A single synthetic item contained 300 repetitions of
+`Amber café 東京.` separated by CRLF blank lines and prefixed with a UTF-8 BOM.
+The normalized representation was 6,300 bytes. The query was `amber`, with a
+16,384-byte evidence budget, under each segmentation policy.
+
+Each policy used one warmup pair followed by 12 measured pairs, alternating
+binary order. Each invocation was a fresh process; timings include startup,
+query, tracing, JSON output and close, but not compilation. Filesystem caches
+were warm and were not dropped. The shared Linux worker had six virtual CPUs,
+an AMD Ryzen 7 2700X host, an 8-GiB job memory limit and Go 1.27.1.
+
+| Policy | Selected passages | Median before / after | Serialized bytes before / after |
+|---|---:|---:|---:|
+| fixed-v1 | 2 | 67.98 / 65.38 ms | 8,331 / 8,888 |
+| passage-v1 | 7 | 75.88 / 79.06 ms | 9,966 / 11,937 |
+
+Selected segment IDs, text, ranks and content hashes matched in every pair.
+The new coordinates and representation digests matched the normalized source,
+including when reading representations stored before the extension. Both arms
+released 6,300 evidence-text bytes. Metadata added 557 bytes for two fixed
+segments and 1,971 bytes for seven passages; this overhead is outside the text
+budget. These small shared-host latency differences are descriptive, not
+speedup targets or evidence of improved retrieval relevance.
+
+## Exact-content packing investigation: deferred
+
+A focused CLI fixture reproduced duplicate displacement under both segmentation
+policies. Two distinct items contained `amber amber` (11 bytes each); a third
+contained `amber repair code ZX17` (22 bytes). For query `amber` and a 33-byte
+budget, the two duplicate texts ranked first and consumed 22 bytes, leaving
+insufficient space for the distinct repair code. Their representation and segment
+identities differed despite identical text digests.
+
+A diagnostic walk of the authorized 100-byte response retained the first ranked
+copy and the repair item within 33 bytes. This was a hypothetical selection over
+released bytes, not an implemented packing policy. Separate-source trail access
+was rejected; denied and withdrawn queries returned no evidence; the peer source
+remained independently retrievable.
+
+The frozen passage fixtures also contain repeated selected bytes. Analysis of
+the saved first repetition found five repeated passages (4,860 bytes) for the
+storage-class question and six (5,832 bytes) for the orchard question, both at
+8,192 bytes under passage-v1. The frozen documentation responses contained no
+exact duplicate selected text. These observations do not change the original
+results or establish a general retrieval-quality improvement.
+
+Implementation is deferred because a truthful explanation needs a versioned
+canonical Source Trail change. The current v1 record has selection flags and
+lifecycle reasons, but no packing-policy identity, duplicate omission reason or
+retained-segment relationship. Treating a duplicate omission as a budget omission
+would be incorrect; removing candidates before tracing would lose provenance.
+
+The proposed contract keeps authorization and lifecycle filtering first, retains
+the first fitting exact byte string in verified rank order, and records each
+later duplicate's own segment identity plus its retained-segment relationship.
+An unselected oversized candidate does not reserve content. Hashes may narrow
+comparisons, but bytes must match. Different source identities are never merged.
+The existing packet identity can continue to describe the selected segments,
+ranks and budget; the new trail identity must also bind packing policy and
+omission explanations. Supporting both historical v1 records and that versioned
+contract is a prerequisite. No deduplication flag or changed default ships here.
+
+## Scoped verification-statement reuse: inconclusive, not adopted
+
+A bounded experiment on 2026-09-15 compared the supported CLI at `b98e15c`
+with a prototype that prepared six canonical-read SQL statements per opening
+verification pass. It reused statements for sources, observations, artifacts,
+representations, representation inputs, and segments across repeated reads.
+The pinned modernc SQLite driver retains a compiled single-statement handle
+and resets it when its rows close. Each pass owned and closed its statements,
+including partial initialization. The prototype retained both opening passes,
+all record and projection checks, writable FTS integrity checking, and existing
+connection and snapshot semantics. It did not cache evidence or validity.
+
+The [measurement report](../eval/local/results/prepared-statements.json) retains
+source and binary hashes, fixture hashes, individual samples, semantic query
+results, acceptance criteria, and lifecycle timings. The primary fixture was a
+closed 96-document store after three content generations and the existing
+update/delete/restore/query schedule. The second fixture used an equivalent
+newly generated store with six additional complete content generations. Each
+arm queried an identical copy within each fixture; the fixtures had different
+source identities.
+
+There were 12 alternating baseline/prototype pairs per fixture, after one
+untimed pair. Each invocation was a fresh process with full opening, query,
+output, and exit costs. Builds and fixture copying were outside the timer.
+Filesystem caches were not dropped: these are process-cold, not disk-cold,
+measurements. Both binaries used Go 1.27.1, `CGO_ENABLED=0`, `GOAMD64=v1`,
+`GOMAXPROCS=6`, and `-trimpath -buildvcs=false`, in one shared six-vCPU EPYC-IBPB
+VM on a Ryzen 7 2700X host, with 5.5-core and 8-GiB job limits.
+
+| Fixture | Arm | Median ms | Range ms | p90 ms | Median / maximum RSS KiB |
+|---|---|---:|---:|---:|---:|
+| Three generations | Baseline | 798.9 | 756.0–862.2 | 823.5 | 23,650 / 25,780 |
+| Three generations | Prototype | 692.5 | 556.5–782.4 | 723.9 | 21,474 / 22,108 |
+| Nine generations | Baseline | 1,729.1 | 1,645.6–1,881.3 | 1,827.9 | 24,382 / 26,164 |
+| Nine generations | Prototype | 1,452.9 | 1,341.2–1,496.2 | 1,494.8 | 22,292 / 24,520 |
+
+Primary median latency improved 13.3%; its two six-pair halves improved 12.6%
+and 17.0%. The history fixture improved 16.0%. The prototype was faster in all
+24 timed pairs. No latency sample was a Tukey 1.5-IQR outlier; RSS outliers are
+retained in the report. All 52 query responses, including warmups, agreed on
+semantic invariants within their fixture. Fresh request, decision, trail,
+packet, and timestamp fields were not required to be identical.
+
+Before measurement, adoption required a 10% primary median improvement,
+repeatability across both halves and at least 10 of 12 primary pairs, a positive
+history-fixture improvement, and correctness. Median and maximum RSS could
+increase by no more than the greater of 10% or 2,048 KiB. Query p90, maximum
+latency, and lifecycle-stage medians could not regress by more than 10%.
+No extra repetitions were allowed to resolve a mixed result.
+
+The fixed-query criteria passed, but three lifecycle-stage medians exceeded
+the declared tolerance across three alternating evolving-example pairs:
+
+| Stage | Baseline median ms | Prototype median ms | Increase |
+|---|---:|---:|---:|
+| Update | 56.5 | 73.4 | 29.9% |
+| Inspect denied trail | 57.0 | 63.4 | 11.1% |
+| Allow after withdrawal | 49.5 | 58.9 | 19.0% |
+
+These small samples do not isolate the cause of the increases. They prevent
+adoption under the declared rule despite the repeatable fixed-query improvement.
+The result is inconclusive overall; the experimental implementation was removed.
+No additional timing runs or broader optimization followed.
+
+All 260 workflow commands passed their assertions, including 194 Mousa commands
+and 66 minimal-SQLite comparison commands. Candidate verification also passed
+the focused store, CLI, model, and evaluation suites; formatting, module
+tidiness and verification, vet, full CGo-free tests, and race tests. Store tests
+cover tampering, failed opens, cancellation, interrupted recovery, read-only
+operation, and concurrent retries/snapshots. Focused prototype tests exercised
+fresh reads after reuse and initialization failure. Those tests were removed
+with the prototype. This is a synthetic self-comparison, not evidence of
+competitive superiority or a deployed performance improvement.
+
+### Lifecycle diagnosis: no implementation adjustment
+
+A separately bounded investigation on 2026-09-15 recovered the exact prototype
+and baseline rather than extending the original acceptance run. The original
+failed gate and non-adoption decision above remain unchanged. The
+[diagnostic report](../eval/local/results/prepared-diagnosis.json) preserves
+the protocol, hashes, individual responses, timings, memory, and instrumentation.
+
+The hypothesis was that eager preparation and cleanup imposed fixed costs on
+small lifecycle stores. All three disputed commands call `Open`, including
+denied inspection and an already-active allow policy. The earlier experiment
+alternated complete workflows, with independently generated request identities
+and timestamps. It did not compare adjacent commands from identical snapshots.
+
+The new protocol captured six closed snapshots during one baseline execution
+of the existing evolving example. Every invocation restored the same database
+path from its stage's byte-identical snapshot, with unchanged arguments and input.
+There were 24 adjacent alternating baseline/prototype pairs per stage after one
+warmup pair; stage order rotated between repetitions. The three controls were
+an initial query, allowed-trail inspection, and an unaffected-source query.
+Processes were fresh; filesystem caches were not dropped. Toolchain, binary
+flags, and worker resource limits matched the earlier experiment.
+
+| Stage | Baseline / prototype median ms | Difference ms | Change | Prototype faster pairs |
+|---|---:|---:|---:|---:|
+| Update | 69.389 / 68.590 | −0.799 | −1.2% | 11/24 |
+| Inspect denied trail | 64.823 / 66.135 | +1.311 | +2.0% | 10/24 |
+| Allow after withdrawal | 54.946 / 59.970 | +5.024 | +9.1% | 11/24 |
+| Initial query | 54.405 / 46.832 | −7.573 | −13.9% | 16/24 |
+| Inspect allowed trail | 56.702 / 55.815 | −0.887 | −1.6% | 14/24 |
+| Query unaffected source | 83.028 / 75.274 | −7.754 | −9.3% | 17/24 |
+
+The medians of paired differences for the disputed stages were +0.247, +2.645,
+and +0.944 ms, respectively; these are distinct from differences of medians.
+Baseline/prototype p90 values were 72.620/74.484, 84.751/78.795, and
+68.103/69.126 ms. Their maxima were 75.068/74.963, 104.911/84.008, and
+69.377/77.451 ms. Median peak RSS fell from 17,268/19,368/19,814 KiB to
+15,116/17,628/17,760 KiB; maximum RSS also fell for each disputed stage.
+The report includes ranges, inclusive quartiles, all paired differences,
+nearest-rank p90, and retained outliers for every stage. In particular, one
+prototype unaffected-source query took 1,295.834 ms, versus a baseline maximum
+of 97.746 ms. That tail event is not discarded or explained by the median gains.
+
+Separate instrumented runs executed each stage three times. Every invocation
+ran two verification scopes, and every scope used all six statements. The
+disputed stages made 33, 42, and 42 scoped statement calls per pass. Preparation
+plus cleanup across both passes had median costs of 0.162, 0.222, and 0.255 ms,
+respectively, far below the original 6–17 ms increases. An empty-store
+initialization prepared six unused statements, costing 0.171 ms including
+cleanup; this was not one of the regressing lifecycle states.
+
+The first job stopped after its first warmup pair because the diagnostic
+comparison incorrectly included the output's `latency_micros` field. The single
+permitted harness repair excluded that timing field, retained both samples,
+and resumed using the saved binaries and snapshots. No completed invocation
+was repeated. All 300 uninstrumented responses then passed paired semantic
+comparison; the 21-command setup passed its existing assertions, and all
+19 instrumented commands succeeded. Raw failure evidence remains in the report.
+Both uninstrumented binary hashes and runtime source manifests match the
+previously tested versions; their earlier correctness evidence is reused.
+No changed runtime implementation required a new full test suite.
+
+No disputed-stage median exceeded the new diagnostic protocol's 10% limit,
+and the measured costs do not support lazy preparation as a fix for these
+paths. No implementation adjustment was made, and no adjusted-candidate
+acceptance run was triggered. The original 10% cold-query improvement target
+and 10% lifecycle tolerance were not relaxed. The original regressions' cause
+remains unresolved: ordering, generated state, and shared-host variability were
+potential confounders, not measured causal explanations. The large tail event
+also remains unexplained. This optimization investigation is closed without
+adoption or a deployed performance improvement.
+
+## Evolving evidence and native lexical CLI comparison
+
+`eval/local/workflow.py` is an executable synthetic example and report generator.
+Its JSONL scenario checks source isolation, update, omission without deletion,
+explicit deletion, identical restore, byte omission, trail inspection, policy
+denial, withdrawal, and an unaffected peer source. Directory preview must select
+the expected files without creating a store.
+
+The comparison uses the same generated Markdown corpus for Mousa, QMD's native
+lexical CLI, and a minimal Python/SQLite FTS5 implementation. Each repetition starts
+fresh stores; engine order rotates. It measures initial sync, no-op syncs, three
+content generations, current and stale queries, deletion, and restoration. Queries
+use 128-, 256-, and 512-byte released-text budgets. Every returned item must have
+the current fixture text, belong to the query's relevant set, and fit the budget.
+The raw report retains command exits, responses, timings, RSS, selected items,
+fixture coverage, and post-exit storage size.
+
+This is a whole-route comparison, not an equal-feature or equal-ranking benchmark:
+
+- Mousa uses verified source-scoped retrieval, fresh policy evaluation, native
+  byte packing, and durable trails. Its store retains canonical history.
+- QMD 2.8.3 uses native lexical search, including prefix matching, its tokenizer,
+  and field-weighted BM25. The fixture uses single ASCII terms without stemming
+  or prefix collisions. Scores are not compared across engines.
+- Minimal SQLite uses body-only FTS5 and one transaction per sync. It has no
+  canonical history, authorization, trails, or directory-safety controls.
+- QMD and SQLite return candidate bodies before the evaluator applies greedy
+  byte packing. Their native output is **not** byte-limited. Native command time,
+  JSON decoding, and external packing time are recorded separately.
+
+All topic matches are relevant by construction. Recall under the byte budget
+measures coverage of this small fixture, not semantic relevance or answer quality.
+No embedding, reranking, generation, model download, or model-backed QMD route is
+run. There is no equivalent implemented Mousa route to compare with those modes.
+
+Comparison timing includes startup, store opening, output, and exit; builds and
+fixture generation are excluded. JSONL example rows also include input-file
+preparation and are not throughput measurements. Filesystem caches are not dropped. GNU `time`
+RSS is a maximum, not summed simultaneous process-tree memory; this matters for
+QMD's Node launcher and child. Post-exit storage includes each route's retained
+data, not an equal-retention index-size comparison.
+
+`eval/local/warm.go` separately measures preparation, warm verified retrieval,
+new historical tracing with pre-evaluated requests, and fresh current queries.
+Each stage copies the same closed single-source CLI store after restoration.
+Copying, store opening, request construction, warmup, and historical pre-evaluation
+are excluded. Traces use new requests rather than retries. Candidate counts and
+packed bytes must agree with the cold CLI reference. The stages are not additive;
+subtracting their timings does not isolate a component's cost. Runtime allocation
+deltas are process-wide counters, not RSS.
+
+### Measured results
+
+The [24-document report](../eval/local/results/workflow-24.json) and
+[96-document report](../eval/local/results/workflow-96.json) each passed with 326
+commands, including 225 comparison-query checks. Each size has three repetitions.
+The reports bind all measured Go/evaluation sources, the Mousa binary, and the QMD
+dependency lockfile to SHA-256 hashes. QMD reported `2.8.3 (facd35e)` and Node
+reported `v24.21.0`. No model-backed route was run.
+
+Both sizes used the shared Ryzen 7 2700X host, an EPYC-IBPB Linux VM with six vCPUs
+and 12 GiB RAM, job limits of 5.5 cores and 8 GiB, and shared NVMe storage.
+Mousa used Go 1.27.1 with `CGO_ENABLED=0 -trimpath -buildvcs=false`. Three repetitions
+on a shared host do not support precise speedup estimates; the raw samples and
+minimum/maximum command times are retained.
+
+Median cold-command milliseconds:
+
+| Documents | Route | Initial sync | No-op at generation three | Final `cedar` query, 128 B |
+|---:|---|---:|---:|---:|
+| 24 | Mousa | 102.5 | 235.3 | 244.1 |
+| 24 | QMD | 250.6 | 213.9 | 209.8 |
+| 24 | Minimal SQLite | 75.4 | 77.7 | 52.6 |
+| 96 | Mousa | 354.8 | 790.4 | 773.5 |
+| 96 | QMD | 303.9 | 248.7 | 229.9 |
+| 96 | Minimal SQLite | 81.3 | 71.5 | 59.2 |
+
+Mousa was slower on the larger cold workflow, despite returning the same ordered
+selected items in all 75 aligned query groups at each size. All engines excluded
+stale and deleted fixture text. Mean initial topic coverage at 128/256/512 bytes
+was 0.2083/0.4167/0.6667 for 24 documents and 0.0521/0.1042/0.1667 for 96 documents,
+identical across the three routes. This deliberately simple fixture establishes
+currentness and byte-budget behavior, not a general quality advantage.
+
+At 96 documents, maximum observed cold-command RSS was 25,780 KiB for Mousa,
+80,624 KiB for QMD, and 22,472 KiB for minimal SQLite. Median post-exit retained
+storage was 1,695,744, 340,313, and 110,592 bytes respectively. These numbers
+include different histories and guarantees; they are not equal-feature efficiency
+ratios.
+
+Warm-stage medians below pool 30 calls from each of three independent fixture
+copies per stage. The query is the same final `cedar` query and 128-byte budget
+as the cold reference above.
+
+| Documents | Preparation | Verified retrieval | New historical trace | Fresh current query |
+|---:|---:|---:|---:|---:|
+| 24 | 0.000376 ms | 3.157 ms | 7.336 ms | 8.725 ms |
+| 96 | 0.000361 ms | 11.296 ms | 23.997 ms | 26.306 ms |
+
+At 96 documents, mean allocated bytes per measured call were 24, 1,333,438,
+1,643,613, and 1,738,762 respectively. Cold CLI cost remains substantially larger
+than these already-open paths. The result supports investigating startup and
+historical verification costs; it does not justify weakening verification or
+treating the stage timings as an additive profile.
+
+### Cost relative to the preceding Mousa CLI
+
+A separate [five-revision report](../eval/local/results/current-cli.json) compares
+the complete increment with `cf2d9db1dbac73e90e5e3adf3bb2302b0f065713`.
+It reuses the lifecycle protocol below: 24/96 documents, five revisions, three
+repetitions, alternating arm order, and identical single-term queries. Both arms
+passed all 132 correctness checks. The candidate also records canonical query
+trails and uses the new directory path; this is not an isolated tracing ablation.
+
+| Documents | Operation | Preceding CLI median ms | Current CLI median ms |
+|---:|---|---:|---:|
+| 24 | Initial sync | 98.0 | 97.1 |
+| 24 | No-op at revision five | 284.7 | 324.1 |
+| 24 | Current query at revision five | 274.3 | 301.6 |
+| 96 | Initial sync | 341.2 | 362.4 |
+| 96 | No-op at revision five | 938.9 | 1,022.1 |
+| 96 | Update to revision five | 1,141.0 | 1,292.6 |
+| 96 | Current query at revision five | 1,054.5 | 1,135.7 |
+
+The new contracts have measurable cost on this workload. Startup still verifies
+retained history, so overall cold operation is not history-independent. The
+record preserves the regressions rather than treating additional functionality
+as a free optimization. Reproduce with `eval/local/lifecycle.py`, building its
+baseline from the commit above and its candidate from the report's source
+manifest. Do not combine these samples with the three-engine fixture: its text,
+history depth, and query schedule differ.
+
+### Reproduce the workflow
+
+Use Linux x86-64, Python 3.9 or newer, the module's supported Go toolchain, GNU
+`time`, and Node 24.21.0 for the pinned QMD comparison. QMD is optional evaluation
+software, not a Mousa runtime dependency. Its MIT-licensed published package is
+2.8.3, release source `facd35e01359e59d938bc9418e93fb9318addee3`.
+The nested lockfile pins the downloaded dependency graph, including the Linux
+SQLite vector binary needed by QMD's store initialization. Installation below
+disables lifecycle scripts and omits optional model binaries; no model is needed.
+
+```sh
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-workflow ./cmd/mousa
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -o ../mousa-warm ./eval/local
+npm ci --prefix eval/local/qmd --ignore-scripts --omit=optional --no-audit --no-fund
+python3 eval/local/workflow.py --mousa ../mousa-workflow --warm ../mousa-warm --qmd eval/local/qmd/node_modules/@tobilu/qmd/bin/qmd --dependency-lock eval/local/qmd/package-lock.json --documents 24 --repeats 3 --output ../workflow-24.json
+```
+
+Repeat with `--documents 96` for the larger fixture. Use `--node` to select an
+explicit Node executable and `--environment` to attach a JSON hardware record.
+Without QMD or the warm probe, the report labels that route NOT RUN. A command
+timeout terminates its process group; any failed check produces a nonzero exit
+and a partial FAIL report. Source and binary hashes identify the measured inputs.
+Ephemeral paths are redacted, while canonical identifiers remain unchanged.
+
 ## Local CLI current-item lifecycle
 
 The [machine-readable report](../eval/local/results/current-items.json) compares the

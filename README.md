@@ -1,6 +1,6 @@
 ![Mousa — an experimental memory instrument](assets/mousa_readme_banner_v2_1600x480.png)
 
-> **Status:** Pre-alpha. Build `cmd/mousa` from source for local UTF-8 directory sync, bounded JSONL input, and source-scoped lexical queries. The Go core also implements policy decisions, Source Trails, and context packets; not every core capability is exposed by the CLI. Packages remain internal, with no stable SDK. See the [capability matrix](docs/CAPABILITIES.md) for supported behavior and the [research record](docs/RESEARCH.md) for measured results and limitations.
+> **Status:** Pre-alpha. Build `cmd/mousa` from source for local UTF-8 directory sync, bounded JSONL input, source-scoped lexical queries, and authorized Source Trail inspection. Query policy and released-text byte budgets are explicit. Packages remain internal, with no stable SDK. See the [capability matrix](docs/CAPABILITIES.md) for supported behavior and the [research record](docs/RESEARCH.md) for measured results and limitations.
 
 Mousa is a local-first retrieval and memory backbone for agents and other software that need useful context over long periods. It is intended to recover relevant source material, preserve what changed, and assemble compact context packets that can be inspected before use. The result is memory with a source trail rather than an opaque answer.
 
@@ -58,16 +58,33 @@ source-linked evidence under a byte budget. Build with Go 1.25 or newer:
 
 ```sh
 CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+./mousa -store local.sqlite sync --preview ./documents
 ./mousa -store local.sqlite sync ./documents
 ./mousa -store local.sqlite status ./documents
-./mousa -store local.sqlite query ./documents 'zebra habitat'
+./mousa -store local.sqlite query --budget-bytes 4096 ./documents 'zebra habitat'
 ```
 
-`sync`, `status`, and `query` print JSON on stdout. Directory item identity is the
+Commands print JSON on stdout. Directory item identity is the
 relative POSIX path. Updates and reverts atomically replace current search evidence;
 deletion removes current evidence without deleting canonical history. Identical
 content restored after deletion becomes searchable again. `status` reports active
 items separately from historical observations.
+
+Directory defaults select Markdown/plain-text extensions and skip hidden and
+generated entries. Preview shows selected names and byte lengths without opening
+the store. Use repeatable `--include`/`--exclude` globs to constrain scope and
+`--all-text` only as a deliberate override. Selection flags are not saved between
+invocations; successful scope changes remove old items outside the selected set.
+See [directory selection and limits](docs/CAPABILITIES.md#directory-selection-and-input-limits).
+
+The default ingestion policy, `fixed-v1`, uses segments of at most 4,096 UTF-8 bytes.
+To opt into bounded passage boundaries, use
+`./mousa -store local.sqlite sync --segment-policy passage-v1 ./documents`.
+This policy groups document blocks into at most 1,024-byte source slices, with
+explicit fallback for oversized blocks. Repeat the flag on resync; a policy change
+replaces current evidence even when source bytes are unchanged. Smaller passages
+can fit smaller evidence budgets but change lexical ranking and increase segment
+count. See [policy identity, boundaries and limitations](docs/CAPABILITIES.md#ingestion-segment-policies).
 
 For an explicit item stream:
 
@@ -82,10 +99,96 @@ Deletion is explicit; omission does not delete. Failed input retains its committ
 prefix and emits no success result. See the [input and recovery contract](docs/CAPABILITIES.md)
 before upgrading an existing directory store or retaining sensitive material.
 
-The CLI currently uses a fixed 8,192-byte released-text budget and does not expose
-durable Source Trail inspection. A byte budget is not a token budget. Verified
-provenance does not establish factual truth, and classification records are not
-automatic categorization or classification-based authorization.
+Each query stores a canonical Source Trail and returns full request, decision,
+trail, packet, and selected segment IDs. Inspect the returned `trail_id` with
+`./mousa -store local.sqlite trail ./documents TRAIL_ID`, or use
+`trail --source inspection-notes TRAIL_ID` for JSONL input. Replace `TRAIL_ID` with
+the returned identifier. Inspection evaluates
+current source access before releasing historical metadata; it never returns old
+text or rejected candidate identities.
+
+The default query-term policy is `original`, which preserves repetition.
+`--policy dedup` explicitly folds repeated terms and can change ranking. Earlier
+CLI versions implicitly used deduplication. `--budget-bytes` sets a positive
+released-text budget, defaulting to 8,192 bytes; JSON overhead and model tokens are
+not covered. Queries distinguish no matches, policy/lifecycle exclusion, and budget
+omission. See the [query and inspection contract](docs/CAPABILITIES.md#query-policy-packing-and-tracing).
+
+### CLI client example
+
+Run the maintained Python standard-library example against the built CLI:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 eval/local/workflow.py --example-only --mousa ./mousa \
+  --output client-results.json --timeout 5
+```
+
+Prerequisites: Go 1.25 or later to build Mousa, and Python 3.9 or later
+with its standard-library `sqlite3` module on Linux. Process-group timeout
+handling and executable test fixtures are Linux-supported; other operating
+systems are not validated. GNU `time` is optional for peak-RSS measurements;
+if `time` is on `PATH`, it must support GNU `-f` and `-o` options.
+No QMD, Node, models, network access, or third-party Python packages are needed
+to run the client example or acceptance suite. Building requires the Go module
+dependencies, downloaded beforehand for an offline build.
+The example creates an isolated temporary store and removes it after the run;
+`client-results.json` retains the responses and command results.
+
+The client passes argument arrays and JSONL stdin without shell interpolation.
+It runs the same lifecycle checks with `fixed-v1` and `passage-v1`, repeating the
+chosen policy on resync. It ingests two bulletins, a separate peer source and a
+multibyte directory fixture, then checks update, deletion, restoration, denial,
+withdrawal and cross-source trail rejection. It distinguishes `no_matches`,
+`budget_omitted`, `policy_excluded`, and `lifecycle_excluded`. Denied trail
+inspection releases no historical metadata.
+
+The example retains original source bytes and uses `verify_evidence` to check
+the normalized representation digest before slicing the returned byte range.
+It verifies the selected text and its content digest, rejects changed bytes for
+an old saved response, and checks policy changes on identical source bytes.
+The directory fixture exercises multiple passages, UTF-8, BOM, CRLF and CR.
+See [normalized passage coordinates](docs/CAPABILITIES.md#verify-a-selected-passages-location)
+for the additive output fields, normalization rules and limits of saved evidence.
+
+Success exits zero and writes `"result": "PASS"`. An unexpected child exit,
+invalid JSON object, or failed behavioral check stops the workflow with exit
+one and a partial `"result": "FAIL"` report. Each child has the `--timeout`
+deadline; expiration kills and reaps its process group and records exit 124.
+Missing prerequisites or invalid arguments can fail before a report is created.
+Inspect the report's `error`, `rows`, and `summary`; timings are single-invocation
+diagnostics, not a speedup or retrieval-quality claim.
+
+This is a supported example of the CLI, not a stable SDK or a general client
+library. It does not implement retrieval or packing. The same
+[evolving workflow](docs/RESEARCH.md#evolving-evidence-and-native-lexical-cli-comparison)
+can separately run native lexical comparisons when `--example-only` is omitted.
+Run the required client acceptance suite from the repository root:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 eval/local/workflow_test.py --mousa ./mousa
+```
+
+The command requires an explicit readable executable and runs the actual CLI
+workflow plus nonzero-exit, malformed-JSON, wrong-shaped-output, and timeout
+consumer tests. It exits nonzero on a failed test, unmet prerequisite, or skipped
+test. Failures include captured workflow output for diagnosis. Each run uses
+temporary stores; CLI calls have five-second deadlines (0.2 seconds for the
+intentional timeout), and each workflow subprocess has a 120-second deadline.
+The suite does not run comparisons or benchmarks. Ad hoc `unittest` discovery
+may still skip the real-CLI test when `MOUSA_EXECUTABLE` is unset; it is not a
+substitute for this required command.
+
+`access ./documents deny` blocks this CLI caller's retrieval and trail inspection;
+`access ./documents allow` restores that policy permission. Both also accept
+`--source <id>`. `withdraw ./documents` changes source lifecycle state: policy allow
+does not undo withdrawal, and the CLI has no resume command. These controls are not
+secure erasure or a replacement for filesystem access controls.
+
+Integrity checks, authorization, current activation, and factual truth are separate
+properties. Classification records are not automatic categorization or
+classification-based authorization.
 
 SDK, MCP, HTTP, and human-facing application interfaces remain planned. They are not
 part of the supported CLI workflow.
@@ -115,7 +218,7 @@ Implemented and planned capabilities, marked per item:
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; freshness, supersession, and conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget-aware selection today, with deterministic truncation, deduplication, redundancy removal, and token-aware budgeting planned;
-- source-linked context packets with durable Source Trail identifiers (implemented in the core; not yet exposed by `cmd/mousa`);
+- source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented export formats that other tools can read without Mousa (planned).
 
 Items marked planned are design targets. They are not a release checklist or a statement of current functionality, and nothing in this document is a measured claim.

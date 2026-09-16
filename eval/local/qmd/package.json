@@ -1,0 +1,9 @@
+{
+  "name": "mousa-lexical-comparison",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@tobilu/qmd": "2.8.3",
+    "sqlite-vec-linux-x64": "0.1.9"
+  }
+}

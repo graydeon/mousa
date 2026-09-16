@@ -13,9 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
-	"unicode/utf8"
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
@@ -46,6 +44,12 @@ func main() {
 		err = statusCommand(ctx, *storePath, rest)
 	case "query":
 		err = queryCommand(ctx, *storePath, rest)
+	case "trail":
+		err = trailCommand(ctx, *storePath, rest)
+	case "access":
+		err = accessCommand(ctx, *storePath, rest)
+	case "withdraw":
+		err = withdrawCommand(ctx, *storePath, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mousa: unknown command %q\n", command)
 		usage()
@@ -70,7 +74,34 @@ commands:
   query <dir> <text>          query a synced directory, returns bounded evidence (JSON)
   query --source <id> <text>  query a JSONL-synced source, returns bounded evidence (JSON)
   status <dir>                report the source's ingest state (JSON)
-  status --source <id>        report a JSONL-synced source's ingest state (JSON)`)
+  status --source <id>        report a JSONL-synced source's ingest state (JSON)
+  trail <dir> <trail-id>      inspect authorized historical metadata, never text (JSON)
+  trail --source <id> <id>    inspect a JSONL source's trail (JSON)
+  access <dir> allow|deny     set this CLI caller's source-scoped access policy (JSON)
+  access --source <id> allow|deny
+  withdraw <dir>             withdraw a directory source from retrieval (JSON)
+  withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
+
+query options (before positional arguments):
+  --policy original|dedup    query-term policy; default original retains repetition
+  --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
+
+sync options (before positional arguments):
+  --segment-policy fixed-v1|passage-v1
+                            ingestion boundaries; default fixed-v1, repeat on resync
+
+directory sync options (before the root argument):
+  --preview                 list selection without opening or changing the store
+  --include <glob>           replace extension selection; repeatable
+  --exclude <glob>           exclude files/directories; repeatable, always wins
+  --all-text                override hidden/generated and extension defaults
+  --max-file-bytes <N>       positive per-file limit; default 1048576
+  --max-bytes <N>            positive total selected bytes; default 67108864
+  --max-entries <N>          positive visited-entry limit; default 10000
+
+Directory defaults select .md, .markdown, .txt, .rst and skip hidden/generated entries.
+Observed symlinks and .git entries beneath the root are always skipped.
+UTF-8 validity is not secret filtering; scope exclusions deactivate old selected items.`)
 	os.Exit(2)
 }
 
@@ -93,15 +124,29 @@ func newCommandFlags(name string) *flag.FlagSet {
 func syncCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("sync")
 	sourceID := flags.String("source", "", "external source ID; reads JSONL item records from stdin instead of a directory")
+	segmentPolicy := flags.String("segment-policy", mousa.TextSegmentFixedV1, "ingestion segmentation: fixed-v1 or passage-v1")
+	options := directoryFlags(flags)
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	if *segmentPolicy != mousa.TextSegmentFixedV1 && *segmentPolicy != mousa.TextSegmentPassageV1 {
+		return usageError{"segment policy must be fixed-v1 or passage-v1"}
 	}
 	rest := flags.Args()
 	switch {
 	case *sourceID == "" && len(rest) == 1:
-		return runSyncDirectory(ctx, storePath, rest[0])
+		return runSyncDirectory(ctx, storePath, rest[0], *options, *segmentPolicy)
 	case *sourceID != "" && len(rest) == 0:
-		return runSyncJSONL(ctx, storePath, *sourceID, os.Stdin)
+		directoryOption := false
+		flags.Visit(func(option *flag.Flag) {
+			if option.Name != "source" && option.Name != "segment-policy" {
+				directoryOption = true
+			}
+		})
+		if directoryOption {
+			return usageError{"directory selection flags cannot be used with --source"}
+		}
+		return runSyncJSONL(ctx, storePath, *sourceID, os.Stdin, *segmentPolicy)
 	default:
 		return usageError{"sync takes one directory argument, or --source <external-id> with JSONL records on stdin"}
 	}
@@ -126,14 +171,26 @@ func statusCommand(ctx context.Context, storePath string, args []string) error {
 func queryCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("query")
 	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	policy := flags.String("policy", "original", "query-term policy: original or dedup")
+	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
-	source, label, query, err := selectQuerySource(*sourceID, flags.Args())
+	if *policy != "original" && *policy != "dedup" {
+		return usageError{"query policy must be original or dedup"}
+	}
+	if *budget == 0 {
+		return usageError{"query byte budget must be positive"}
+	}
+	positional := flags.Args()
+	if len(positional) == 0 {
+		return usageError{"query requires a source and query text"}
+	}
+	source, label, err := selectSource(*sourceID, positional[:len(positional)-1], "query")
 	if err != nil {
 		return err
 	}
-	return runQuery(ctx, storePath, source, label, query)
+	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -156,28 +213,6 @@ func selectSource(externalSourceID string, positional []string, command string) 
 	return directorySource(positional[0])
 }
 
-// selectQuerySource is selectSource for query, which also takes the query text.
-func selectQuerySource(externalSourceID string, positional []string) (mousa.Source, string, string, error) {
-	if externalSourceID != "" {
-		if len(positional) != 1 {
-			return mousa.Source{}, "", "", usageError{"query --source <external-id> takes exactly one query-text argument"}
-		}
-		source, err := streamSource(externalSourceID)
-		if err != nil {
-			return mousa.Source{}, "", "", err
-		}
-		return source, externalSourceID, positional[0], nil
-	}
-	if len(positional) != 2 {
-		return mousa.Source{}, "", "", usageError{"query takes <dir> <query text> or --source <external-id> <query text>"}
-	}
-	source, label, err := directorySource(positional[0])
-	if err != nil {
-		return mousa.Source{}, "", "", err
-	}
-	return source, label, positional[1], nil
-}
-
 // directorySource derives the deterministic Source identity for one directory
 // root. The absolute path is the external identity, so moving the root
 // creates a new source rather than silently mixing content.
@@ -185,13 +220,6 @@ func directorySource(root string) (mousa.Source, string, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return mousa.Source{}, "", err
-	}
-	info, err := os.Stat(absolute)
-	if err != nil {
-		return mousa.Source{}, "", err
-	}
-	if !info.IsDir() {
-		return mousa.Source{}, "", fmt.Errorf("%s is not a directory", absolute)
 	}
 	sourceID, err := mousa.NewSourceID(localNamespace, absolute)
 	if err != nil {
@@ -208,47 +236,6 @@ func streamSource(externalSourceID string) (mousa.Source, error) {
 		return mousa.Source{}, err
 	}
 	return mousa.Source{Schema: mousa.SourceSchema, ID: sourceID, Namespace: "mousa-jsonl", ExternalSourceID: externalSourceID}, nil
-}
-
-// localItems walks one root and returns the current item set: relative POSIX
-// path → absolute file path, sorted for deterministic order. Non-UTF-8 files
-// and anything not a regular file are skipped and reported.
-func localItems(root string) (map[string]string, []string, error) {
-	items := map[string]string{}
-	var skipped []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if entry.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			skipped = append(skipped, path)
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if !utf8.Valid(raw) {
-			skipped = append(skipped, path)
-			return nil
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		items[filepath.ToSlash(relative)] = path
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return items, skipped, nil
 }
 
 // itemRevisionObservationID derives the observation identity of a specific
@@ -282,7 +269,7 @@ const (
 
 // applyItem compares raw-content identity with the explicitly active revision.
 // Canonical history may be prepared independently; index activation is atomic.
-func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64) (string, error) {
+func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64, segmentPolicy string) (string, error) {
 	if input.Deleted {
 		return store.DeleteLocalItem(ctx, source.ID, input.ID)
 	}
@@ -291,15 +278,15 @@ func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, in
 	if err != nil && !sqlite.IsCode(err, sqlite.CodeNotFound) {
 		return "", err
 	}
-	if err == nil && current.Active && current.Artifact.ContentSHA256 == digest && current.Artifact.ByteLength == uint64(len(input.Content)) {
+	if err == nil && current.Active && current.SegmentationPolicy == segmentPolicy && current.Artifact.ContentSHA256 == digest && current.Artifact.ByteLength == uint64(len(input.Content)) {
 		return actionUnchanged, nil
 	}
-	return ingestRevision(ctx, store, source, input, digest, sequence)
+	return ingestRevision(ctx, store, source, input, digest, sequence, segmentPolicy)
 }
 
 // ingestRevision reuses accepted delivery evidence when restoring old content.
 // Partial preparation is immutable and can be retried without changing activation.
-func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, digest mousa.SHA256, sequence *uint64) (string, error) {
+func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, digest mousa.SHA256, sequence *uint64, segmentPolicy string) (string, error) {
 	observationID, err := itemRevisionObservationID(source, input.ID, digest)
 	if err != nil {
 		return "", err
@@ -321,7 +308,7 @@ func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 		Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: segmentKeyPrefix,
 		MediaType: mousa.UTF8TextMediaType, ContentSHA256: digest, ByteLength: uint64(len(input.Content)),
 	}
-	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, input.Content)
+	representation, normalized, err := mousa.NormalizeUTF8TextWithPolicy(artifact, input.Content, segmentPolicy)
 	if err != nil {
 		return "", err
 	}
@@ -349,33 +336,23 @@ func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 	return store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized)
 }
 
-// fileCapturedAtUsec is the capture time of a first delivery from a file: its
-// modification time. A missing or non-positive timestamp yields 0, which
-// ingestRevision replaces with the local clock.
-func fileCapturedAtUsec(path string) (int64, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	return info.ModTime().UnixMicro(), nil
-}
-
 // The result is machine-readable and reports every action. One struct serves
 // both input forms: a directory root and a JSONL record stream.
 type syncResult struct {
-	Source      string   `json:"source"`
-	Input       string   `json:"input"`
-	Root        string   `json:"root,omitempty"`
-	Added       []string `json:"added,omitempty"`
-	Updated     []string `json:"updated,omitempty"`
-	Restored    []string `json:"restored,omitempty"`
-	Unchanged   []string `json:"unchanged,omitempty"`
-	Deleted     []string `json:"deleted,omitempty"`
-	Absent      []string `json:"absent,omitempty"`
-	Skipped     []string `json:"skipped,omitempty"`
-	TotalItems  int      `json:"total_items"`
-	StoreBytes  int64    `json:"store_bytes"`
-	ElapsedSecs float64  `json:"elapsed_seconds"`
+	Source        string          `json:"source"`
+	Input         string          `json:"input"`
+	Root          string          `json:"root,omitempty"`
+	SegmentPolicy string          `json:"segment_policy"`
+	Added         []string        `json:"added,omitempty"`
+	Updated       []string        `json:"updated,omitempty"`
+	Restored      []string        `json:"restored,omitempty"`
+	Unchanged     []string        `json:"unchanged,omitempty"`
+	Deleted       []string        `json:"deleted,omitempty"`
+	Absent        []string        `json:"absent,omitempty"`
+	Skipped       []directorySkip `json:"skipped,omitempty"`
+	TotalItems    int             `json:"total_items"`
+	StoreBytes    int64           `json:"store_bytes"`
+	ElapsedSecs   float64         `json:"elapsed_seconds"`
 }
 
 // record files one applied item under the action that was taken.
@@ -421,19 +398,24 @@ func runStatus(ctx context.Context, storePath string, source mousa.Source, label
 	return emit(statusResult{Source: label, CollectionState: string(state.CollectionState), ActiveItems: active, Observations: observations, NeedsRecovery: recovery})
 }
 
-// runSyncDirectory imports or re-syncs one directory root. Items are the
-// root's UTF-8 regular files; an item's relative POSIX path is its identity.
-// Deletion is derived from absence: an item whose file no longer exists stops
-// being retrievable, because the directory scan is the complete item set.
-func runSyncDirectory(ctx context.Context, storePath, root string) error {
+// runSyncDirectory applies the complete selected set. Scope exclusions deactivate
+// old items just like removal; selection errors leave the store untouched.
+func runSyncDirectory(ctx context.Context, storePath, root string, options directoryOptions, segmentPolicy string) error {
 	started := time.Now()
 	source, absolute, err := directorySource(root)
 	if err != nil {
 		return err
 	}
-	items, skipped, err := localItems(absolute)
+	selection, err := selectDirectory(absolute, options)
 	if err != nil {
 		return err
+	}
+	if options.Preview {
+		return emit(map[string]any{
+			"preview": true, "source": absolute, "selected": selection.Items,
+			"skipped": selection.Skipped, "selected_bytes": selection.Bytes,
+			"segment_policy": segmentPolicy,
+		})
 	}
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
@@ -444,39 +426,28 @@ func runSyncDirectory(ctx context.Context, storePath, root string) error {
 		return fmt.Errorf("deploy policy: %w", err)
 	}
 
-	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: skipped}
+	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: selection.Skipped, SegmentPolicy: segmentPolicy}
 	var sequence uint64
-	paths := make([]string, 0, len(items))
-	for path := range items {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
+	selected := make(map[string]struct{}, len(selection.Items))
+	for _, item := range selection.Items {
+		selected[item.ID] = struct{}{}
 		sequence++
-		content, err := os.ReadFile(items[path])
+		action, err := applyItem(ctx, store, source, itemInput{ID: item.ID, Content: item.content, Captured: item.captured}, &sequence, segmentPolicy)
 		if err != nil {
-			return fmt.Errorf("item %s: %w", path, err)
+			return fmt.Errorf("item %s: %w", item.ID, err)
 		}
-		capturedAtUsec, err := fileCapturedAtUsec(items[path])
-		if err != nil {
-			return fmt.Errorf("item %s: %w", path, err)
-		}
-		action, err := applyItem(ctx, store, source, itemInput{ID: path, Content: content, Captured: capturedAtUsec}, &sequence)
-		if err != nil {
-			return fmt.Errorf("item %s: %w", path, err)
-		}
-		result.record(action, path)
+		result.record(action, item.ID)
 	}
-	// Deletions: items stored under this source whose file no longer exists.
+	// A completed selection defines both additions and removals from scope.
 	previous, err := store.LocalItemIDs(ctx, source.ID)
 	if err != nil {
 		return err
 	}
 	for _, path := range previous {
-		if _, exists := items[path]; exists {
+		if _, exists := selected[path]; exists {
 			continue
 		}
-		action, err := applyItem(ctx, store, source, itemInput{ID: path, Deleted: true}, &sequence)
+		action, err := applyItem(ctx, store, source, itemInput{ID: path, Deleted: true}, &sequence, segmentPolicy)
 		if err != nil {
 			return fmt.Errorf("item %s: %w", path, err)
 		}
@@ -485,7 +456,7 @@ func runSyncDirectory(ctx context.Context, storePath, root string) error {
 	if err := store.CompleteLocalRecovery(ctx, source.ID); err != nil {
 		return err
 	}
-	result.TotalItems = len(items)
+	result.TotalItems = len(selection.Items)
 	if info, err := os.Stat(storePath); err == nil {
 		result.StoreBytes = info.Size()
 	}
@@ -501,41 +472,57 @@ type statusResult struct {
 	NeedsRecovery   bool   `json:"needs_recovery"`
 }
 type evidenceResult struct {
-	Query         string        `json:"query"`
-	Source        string        `json:"source"`
-	DecisionID    string        `json:"decision_id"`
-	TotalMatches  int           `json:"total_matches"`
-	UsedBytes     uint64        `json:"used_bytes"`
-	BudgetBytes   uint64        `json:"budget_bytes"`
-	Evidence      []evidenceHit `json:"evidence"`
-	LatencyMicros int64         `json:"latency_micros"`
+	Query             string                       `json:"query"`
+	Source            string                       `json:"source"`
+	QueryPolicy       string                       `json:"query_policy"`
+	Expression        string                       `json:"expression"`
+	RequestID         string                       `json:"request_id"`
+	DecisionID        string                       `json:"decision_id"`
+	DecisionOutcome   string                       `json:"decision_outcome"`
+	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	EvaluatedAtUsec   int64                        `json:"evaluated_at_usec"`
+	TrailID           string                       `json:"trail_id"`
+	PacketID          string                       `json:"packet_id"`
+	Outcome           string                       `json:"outcome"`
+	MatchedCandidates int                          `json:"matched_candidates"`
+	CandidateLimit    int                          `json:"candidate_limit"`
+	LifecycleExcluded int                          `json:"lifecycle_excluded"`
+	BudgetOmitted     int                          `json:"budget_omitted"`
+	UsedBytes         uint64                       `json:"used_bytes"`
+	BudgetBytes       uint64                       `json:"budget_bytes"`
+	Evidence          []evidenceHit                `json:"evidence"`
+	LatencyMicros     int64                        `json:"latency_micros"`
 }
 
 type evidenceHit struct {
-	Item       string  `json:"item"`
-	SegmentID  string  `json:"segment_id"`
-	Rank       int     `json:"rank"`
-	Score      float64 `json:"bm25_score"`
-	ByteLength int     `json:"byte_length"`
-	Text       string  `json:"text"`
+	Item                 string  `json:"item"`
+	SegmentID            string  `json:"segment_id"`
+	ContentSHA256        string  `json:"content_sha256"`
+	RepresentationID     string  `json:"representation_id"`
+	RepresentationSHA256 string  `json:"representation_sha256"`
+	ByteStart            uint64  `json:"byte_start"`
+	ByteEnd              uint64  `json:"byte_end"`
+	SegmentPolicy        string  `json:"segment_policy"`
+	Rank                 int     `json:"rank"`
+	Score                float64 `json:"bm25_score"`
+	ByteLength           int     `json:"byte_length"`
+	Text                 string  `json:"text"`
 }
 
 // runQuery runs one authorized query against one resolved source.
-func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query string) error {
+func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	const budgetBytes = 8 << 10
-	result, err := queryItems(ctx, store, source, query, budgetBytes)
+	result, err := queryItems(ctx, store, source, query, policy, budgetBytes)
 	if err != nil {
 		return err
 	}
 	result.Query = query
 	result.Source = label
-	result.BudgetBytes = budgetBytes
 	result.LatencyMicros = time.Since(started).Microseconds()
 	return emit(result)
 }
@@ -546,40 +533,11 @@ func emit(value any) error {
 	return encoder.Encode(value)
 }
 
-// deployLocalPolicy stores the deployment-scoped allow policy the local
-// queries evaluate against: caller mousa-local.caller/cli with purpose
-// mousa-local.purpose/retrieval may retrieve any source. This mirrors the
-// harness's deployment policy; per-source or deny policies are a later
-// contract, not silently absent.
+// deployLocalPolicy supplies the CLI caller's deployment-level allow. A source
+// policy can deny retrieval, and an allow never overrides lifecycle withdrawal.
 func deployLocalPolicy(ctx context.Context, store *sqlite.Store) error {
-	inner := mousa.SourceRetrievalPolicy{
-		Schema:            mousa.SourceRetrievalPolicySchema,
-		Action:            mousa.SourceRetrievalAction,
-		CallerNamespace:   localNamespace + ".caller",
-		ExternalCallerID:  "cli",
-		PurposeNamespace:  localNamespace + ".purpose",
-		ExternalPurposeID: "retrieval",
-		Effect:            mousa.SourceRetrievalEffectAllow,
-	}
-	data, err := mousa.EncodeSourceRetrievalPolicy(inner)
+	definition, err := putLocalPolicyDefinition(ctx, store, mousa.SourceRetrievalEffectAllow)
 	if err != nil {
-		return err
-	}
-	digest := mousa.SHA256(sha256.Sum256(data))
-	definitionID, err := mousa.NewPolicyDefinitionID(localNamespace, "allow", "1", mousa.SourceRetrievalPolicyMediaType, mousa.SourceRetrievalPolicySchema, digest)
-	if err != nil {
-		return err
-	}
-	definition := mousa.PolicyDefinition{
-		Schema: mousa.PolicyDefinitionSchema, ID: definitionID, Namespace: localNamespace,
-		ExternalPolicyID: "allow", ExternalPolicyVersion: "1",
-		DefinitionMediaType: mousa.SourceRetrievalPolicyMediaType, DefinitionSchema: mousa.SourceRetrievalPolicySchema,
-		DefinitionSHA256: digest, Definition: string(data),
-	}
-	if err := store.PutPolicyDefinition(ctx, definition); err != nil {
-		if sqlite.IsCode(err, sqlite.CodeConflict) {
-			return nil // already deployed
-		}
 		return err
 	}
 	scope := mousa.NewDeploymentPolicyScope()

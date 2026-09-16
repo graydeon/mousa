@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/graydeon/mousa/internal/mousa"
 	modernsqlite "modernc.org/sqlite"
 )
 
@@ -111,7 +112,7 @@ func (probe *IndexProbe) TermEvidence(ctx context.Context, term string) (TermEvi
 		SELECT (SELECT count(*) FROM segment_lexical_fts WHERE segment_lexical_fts MATCH ?1),
 		       (SELECT bm25(segment_lexical_fts) FROM segment_lexical_fts
 		        WHERE segment_lexical_fts MATCH ?1 ORDER BY bm25(segment_lexical_fts) ASC LIMIT 1)`,
-		quoteTerm(term)).Scan(&frequency, &strongest)
+		mousa.QuoteLexicalTerm(term)).Scan(&frequency, &strongest)
 	if err != nil {
 		return TermEvidence{}, fmt.Errorf("probe term %q: %w", term, err)
 	}
@@ -252,7 +253,7 @@ func (oracle *ReductionOracle) TermEvidence(term string) (TermEvidence, error) {
 func TermList(query string) []string {
 	seen := map[string]struct{}{}
 	terms := make([]string, 0)
-	for _, term := range queryTerms(query) {
+	for _, term := range mousa.LexicalQueryTerms(query) {
 		if _, duplicate := seen[term]; duplicate {
 			continue
 		}
@@ -267,7 +268,7 @@ func TermList(query string) []string {
 func JoinTerms(terms []string) string {
 	quoted := make([]string, 0, len(terms))
 	for _, term := range terms {
-		quoted = append(quoted, quoteTerm(term))
+		quoted = append(quoted, mousa.QuoteLexicalTerm(term))
 	}
 	return strings.Join(quoted, " OR ")
 }
