@@ -303,6 +303,70 @@ The next performance priority is the remaining per-candidate canonical segment
 and trail work in growing histories, not another packing policy or fewer
 historical checks. Exact packing remains opt-in.
 
+## Historical-scan reuse: rejected by small-case guards
+
+A bounded comparison on 2026-09-16 tested canonical segment and ancestry reuse
+across trails within one historical-scan read snapshot, against
+`e68be171b6dce5f4ee410aece1a655aa2009b78b`. The candidate was not adopted.
+The [complete study and lossless evidence archive](https://github.com/graydeon/mousa-benchmarks/tree/3fb4c4b37b25773f696caced1c0f5dec8cf727ff/results/2026-09-16-history-diversity)
+preserve every observation and the rejected source patch. The earlier study above
+is unchanged.
+
+Three synthetic fixtures had one segment/one representation, 32 segments/one
+representation, and 32 segments/32 representations. Closed snapshots contained
+zero or 200 alternating v1/v2 trails. Both packing policies used the same query,
+8192-byte budget and inputs. Twelve matched pairs per cell produced 288 timed CLI
+calls, plus 24 labeled warmups and separate stage/allocation probes, on a shared
+desktop worker with Go 1.27.1. Stable evidence, packet IDs, scores, ranges, digests
+and accounting matched; no retrieval-quality reduction was proposed.
+
+| Fixture and history | Original median | Exact median |
+|---|---:|---:|
+| One segment, zero trails | 43.56 → 53.21 ms | 45.98 → 54.22 ms |
+| Shared representation, 200 trails | 2342.14 → 1210.65 ms | 2348.98 → 1210.82 ms |
+| Diverse representations, 200 trails | 3988.31 → 1342.62 ms | 4002.88 → 1296.84 ms |
+
+The history-free small-case regressions of 22.18% and 17.93% exceeded the frozen
+10% ceiling. Shared/history0/original also failed the tail guard: its maximum
+rose from 82.54 to 130.29 ms. All resource guards passed, but three of the 48
+numerical gates failed. No cell was rerun to obtain a passing result. The cause
+of the small-case regressions remains unresolved; shared-host contention is not
+an established explanation.
+
+The profile supports the repeated-work hypothesis at larger histories. In the
+separate diverse/history200/exact probe, historical canonical segment reads fell
+from 19200 to 64 and ancestry walks from 6400 to 64, while all 400 trail reads
+remained. Opening took 4095.55 → 1213.62 ms; query execution took
+42.53 → 39.68 ms. Separate main-execution allocation bytes fell
+510458328 → 200260984; median process peak RSS was 23576 → 22936 KiB.
+These are distinct metrics, not additive parts of the uninstrumented median.
+
+The rejected candidate bounded each transaction-local metadata map to 4096
+entries and retained neither text nor mutable trail values. It preserved both
+opening passes and every trail's canonical/projection, digest/size, available-text
+and duplicate checks. No validity crossed operations or opening passes. Its
+focused tamper, recovery and concurrency checks passed; full/race suites were
+not run for the rejected candidate.
+
+A retained product regression checks writer progress, returned-value isolation,
+later-operation damage visibility, recovery and WAL release. In the candidate's
+focused check, 16 SQL projection changes committed while the reader held its
+snapshot; 32 WAL frames and 131872 bytes remained until reader release, after
+which a truncating checkpoint reduced the WAL to zero bytes. This deliberately
+tests tampering visibility, not supported sync throughput or sustained writers.
+
+The first diagnostic fixture attempt created denied empty trails because its
+caller identity differed from the CLI. Those observations remain archived and
+are excluded from valid scaling evidence. The corrected smoke checks allowed
+decisions and the full historical candidate count before measurement.
+
+Runtime behavior remains unchanged: original packing is the default, exact-v1
+is opt-in, and historical verification still grows with recorded history. The
+next step is bounded causal investigation of the failed history-free guards,
+not adoption based only on the large-history wins. This study covers at most
+200 trails and 32 representations, not deep ancestry, larger diversity or
+sustained concurrent-writer behavior.
+
 ## Scoped verification-statement reuse: inconclusive, not adopted
 
 A bounded experiment on 2026-09-15 compared the supported CLI at `b98e15c`
