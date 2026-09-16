@@ -165,9 +165,9 @@ func measureStage(fixture string, sourceID mousa.SourceID, query, stage string, 
 			var result sqlite.TracedLexicalResult
 			var err error
 			if stage == "new_historical_trace" {
-				result, err = store.TraceEnforcedLexical(ctx, requests[index], expression, 100, budget)
+				result, err = store.TraceEnforcedLexical(ctx, requests[index], expression, 100, budget, "original")
 			} else {
-				result, err = store.EvaluateAndTraceLexical(ctx, requests[index], expression, 100, budget)
+				result, err = store.EvaluateAndTraceLexical(ctx, requests[index], expression, 100, budget, "original")
 			}
 			if err != nil {
 				return err

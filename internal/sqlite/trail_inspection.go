@@ -31,6 +31,8 @@ type SourceTrailView struct {
 	PacketID          string                       `json:"packet_id"`
 	LifecycleExcluded int                          `json:"lifecycle_excluded"`
 	Candidates        []SourceTrailCandidateView   `json:"candidates"`
+	Schema            string                       `json:"schema,omitempty"`
+	PackingPolicy     string                       `json:"packing_policy,omitempty"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -42,6 +44,8 @@ type SourceTrailCandidateView struct {
 	TextBytes     uint64          `json:"text_bytes"`
 	Selected      bool            `json:"selected"`
 	IndexedNow    bool            `json:"indexed_now"`
+	Omission      string          `json:"omission,omitempty"`
+	DuplicateOf   string          `json:"duplicate_of,omitempty"`
 }
 
 // InspectSourceTrail authorizes a new request before looking up a trail of the
@@ -101,6 +105,10 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
+		if trail.Schema == mousa.SourceTrailSchemaV2 {
+			view.Schema = trail.Schema
+			view.PackingPolicy = trail.PackingPolicy
+		}
 		for _, candidate := range trail.Candidates {
 			if candidate.Disposition != mousa.CandidateAccepted {
 				view.LifecycleExcluded++
@@ -135,6 +143,7 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 				SegmentID: candidate.SegmentID, ContentSHA256: candidate.ContentSHA256,
 				Rank: candidate.FinalRank, TextBytes: candidate.TextBytes,
 				Selected: candidate.Selected, IndexedNow: indexed,
+				Omission: candidate.Omission, DuplicateOf: candidate.DuplicateOf,
 			})
 		}
 		result.Historical = view

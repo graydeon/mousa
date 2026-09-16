@@ -20,7 +20,7 @@ func TestTraceEnforcedLexicalRecordsAndRepeats(t *testing.T) {
 		t.Fatalf("EvaluateSourceRetrieval = %#v, %v", decision, err)
 	}
 
-	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20)
+	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20, "original")
 	if err != nil {
 		t.Fatalf("TraceEnforcedLexical: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestTraceEnforcedLexicalRecordsAndRepeats(t *testing.T) {
 		t.Fatalf("GetSourceTrail = %#v, %v", stored, err)
 	}
 
-	repeat, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20)
+	repeat, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20, "original")
 	if err != nil {
 		t.Fatalf("exact retry: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestTraceEnforcedLexicalRecordsDenyDecision(t *testing.T) {
 	if err != nil || decision.Outcome != mousa.PolicyOutcomeDeny {
 		t.Fatalf("EvaluateSourceRetrieval = %#v, %v", decision, err)
 	}
-	result, err := store.TraceEnforcedLexical(ctx, request, "anything", 10, 64)
+	result, err := store.TraceEnforcedLexical(ctx, request, "anything", 10, 64, "original")
 	if err != nil {
 		t.Fatalf("deny trace: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestTraceEnforcedLexicalPrecedenceAndReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer readOnly.Close()
-	if _, err := readOnly.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 64); !IsCode(err, CodeReadOnly) {
+	if _, err := readOnly.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 64, "original"); !IsCode(err, CodeReadOnly) {
 		t.Fatalf("read-only trace error = %v, want read_only", err)
 	}
 
@@ -112,16 +112,16 @@ func TestTraceEnforcedLexicalPrecedenceAndReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer writable.Close()
-	if _, err := writable.TraceEnforcedLexical(ctx, mousa.PolicyEvaluationRequest{}, "sharedterm", 10, 64); !IsCode(err, CodeInvalidRecord) {
+	if _, err := writable.TraceEnforcedLexical(ctx, mousa.PolicyEvaluationRequest{}, "sharedterm", 10, 64, "original"); !IsCode(err, CodeInvalidRecord) {
 		t.Fatalf("invalid request error = %v, want invalid_record", err)
 	}
-	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 0, 64); !IsCode(err, CodeInvalidQuery) {
+	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 0, 64, "original"); !IsCode(err, CodeInvalidQuery) {
 		t.Fatalf("invalid limit error = %v, want invalid_query", err)
 	}
-	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 0); !IsCode(err, CodeInvalidQuery) {
+	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 0, "original"); !IsCode(err, CodeInvalidQuery) {
 		t.Fatalf("zero budget error = %v, want invalid_query", err)
 	}
-	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 64); !IsCode(err, CodeNotFound) {
+	if _, err := writable.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 64, "original"); !IsCode(err, CodeNotFound) {
 		t.Fatalf("never-evaluated error = %v, want not_found", err)
 	}
 }
@@ -133,7 +133,7 @@ func TestSourceTrailTamperFailsClosed(t *testing.T) {
 	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20)
+	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20, "original")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestSourceTrailCandidateRowTamperFailsClosed(t *testing.T) {
 	if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20)
+	result, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1<<20, "original")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,21 +200,21 @@ func TestEvaluateAndTraceRollsBackDecisionOnTraceFailure(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT, 'trace storage unavailable'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024); err == nil {
+	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024, "original"); err == nil {
 		t.Fatal("trace storage failure was ignored")
 	}
 	if _, err := store.db.ExecContext(ctx, `DROP TRIGGER refuse_trail`); err != nil {
 		t.Fatal(err)
 	}
 	withdrawVerifiedSource(t, store, request.SourceID, "after-failed-trace", 200)
-	result, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024)
+	result, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024, "original")
 	if err != nil {
 		t.Fatalf("failed trace consumed its request identity: %v", err)
 	}
 	if result.Decision.Outcome != mousa.PolicyOutcomeDeny || len(result.Candidates) != 0 {
 		t.Fatalf("retry reused authorization from before withdrawal: %#v", result)
 	}
-	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024); !IsCode(err, CodeConflict) {
+	if _, err := store.EvaluateAndTraceLexical(ctx, request, "sharedterm", 10, 1024, "original"); !IsCode(err, CodeConflict) {
 		t.Fatalf("current evaluation accepted a historical request: %v", err)
 	}
 }
@@ -228,7 +228,7 @@ func TestInspectSourceTrailOmitsHistoricalRejectedMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	withdrawal := withdrawVerifiedSource(t, store, request.SourceID, "before-historical-trace", 200)
-	traced, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1024)
+	traced, err := store.TraceEnforcedLexical(ctx, request, "sharedterm", 10, 1024, "original")
 	if err != nil {
 		t.Fatal(err)
 	}

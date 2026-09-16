@@ -13,6 +13,9 @@ import (
 const (
 	ContextPacketSchema = "mousa.context_packet.v1"
 	SourceTrailSchema   = "mousa.source_trail.v1"
+	SourceTrailSchemaV2 = "mousa.source_trail.v2"
+	PackingOriginal     = "original"
+	PackingExactV1      = "exact-v1"
 )
 
 // PacketPlan is the deterministic outcome of the Pack stage for one verified candidate set: the
@@ -51,9 +54,8 @@ func ParseContextPacketID(value string) (ContextPacketID, error) {
 
 // PackVerifiedLexicalCandidates is the Pack stage: it walks candidates in verified order and selects
 // every accepted candidate whose released text fits the remaining byte budget, skipping candidates
-// that do not fit and continuing. Rejected candidates are never selected. The budget is an explicit
-// released-text byte budget; token-aware budgeting, truncation, deduplication, and redundancy removal
-// remain deferred.
+// that do not fit and continuing. Rejected candidates are never selected. This is the original
+// released-text byte packing policy; exact-content packing requires verified text in NewSourceTrail.
 func PackVerifiedLexicalCandidates(candidates []TrailCandidate, budgetBytes uint64) (PacketPlan, error) {
 	if budgetBytes == 0 {
 		return PacketPlan{}, retrievalValidationError("budget_bytes", ValidationCodeInvalidRange, "must be positive")
@@ -79,8 +81,8 @@ func PackVerifiedLexicalCandidates(candidates []TrailCandidate, budgetBytes uint
 	return plan, nil
 }
 
-// NewContextPacketID derives the packet identity from the packet schema, request identity, decision
-// identity, budget, used bytes, and every selected candidate in order.
+// NewContextPacketID binds the budget and ordered selected segment identities, digests, ranks
+// and byte lengths. Request, decision and packing policy are bound by the trail instead.
 func NewContextPacketID(candidates []TrailCandidate, budgetBytes uint64, selected []bool) (ContextPacketID, error) {
 	if len(selected) != len(candidates) {
 		return ContextPacketID{}, errors.New("selection length disagrees with candidates")
@@ -123,22 +125,25 @@ type TrailCandidate struct {
 	Disposition   CandidateDisposition `json:"disposition"`
 	Reasons       []LifecycleReason    `json:"reasons"`
 	Selected      bool                 `json:"selected"`
+	Omission      string               `json:"omission,omitempty"`
+	DuplicateOf   string               `json:"duplicate_of,omitempty"`
 }
 
 // SourceTrail is one immutable record of how a context packet was produced: the enforced decision,
 // the search expression, the pack budget accounting, and every considered candidate with its
 // disposition and selection. Released text is never copied into the record.
 type SourceTrail struct {
-	Schema      string           `json:"schema"`
-	ID          SourceTrailID    `json:"id"`
-	RequestID   string           `json:"request_id"`
-	DecisionID  string           `json:"decision_id"`
-	Outcome     string           `json:"outcome"`
-	Expression  string           `json:"expression"`
-	BudgetBytes uint64           `json:"budget_bytes"`
-	UsedBytes   uint64           `json:"used_bytes"`
-	PacketID    string           `json:"packet_id"`
-	Candidates  []TrailCandidate `json:"candidates"`
+	Schema        string           `json:"schema"`
+	ID            SourceTrailID    `json:"id"`
+	RequestID     string           `json:"request_id"`
+	DecisionID    string           `json:"decision_id"`
+	Outcome       string           `json:"outcome"`
+	Expression    string           `json:"expression"`
+	BudgetBytes   uint64           `json:"budget_bytes"`
+	UsedBytes     uint64           `json:"used_bytes"`
+	PacketID      string           `json:"packet_id"`
+	Candidates    []TrailCandidate `json:"candidates"`
+	PackingPolicy string           `json:"packing_policy,omitempty"`
 }
 
 // SourceTrailID binds the complete trail explanation and parent snapshot.
@@ -168,7 +173,10 @@ func ParseSourceTrailID(value string) (SourceTrailID, error) {
 
 // NewSourceTrail is the Trace stage: it packs the verified candidates within the explicit budget and
 // builds one immutable trail record whose identity binds the complete explanation.
-func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, expression string, candidates []VerifiedLexicalCandidate, budgetBytes uint64) (SourceTrail, error) {
+func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, expression string, candidates []VerifiedLexicalCandidate, budgetBytes uint64, packingPolicy string) (SourceTrail, error) {
+	if packingPolicy != PackingOriginal && packingPolicy != PackingExactV1 {
+		return SourceTrail{}, retrievalValidationError("packing_policy", ValidationCodeInvalidValue, "must be original or exact-v1")
+	}
 	if err := request.Validate(); err != nil {
 		return SourceTrail{}, prefixValidationError(err, "request")
 	}
@@ -199,12 +207,34 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 			Reasons:       append([]LifecycleReason(nil), candidate.Reasons...),
 		}
 	}
-	plan, err := PackVerifiedLexicalCandidates(trailCandidates, budgetBytes)
-	if err != nil {
-		return SourceTrail{}, err
+	var plan PacketPlan
+	var err error
+	if budgetBytes == 0 {
+		return SourceTrail{}, retrievalValidationError("budget_bytes", ValidationCodeInvalidRange, "must be positive")
 	}
-	for index := range trailCandidates {
-		trailCandidates[index].Selected = plan.Selected[index]
+	if packingPolicy == PackingExactV1 {
+		if err := packExact(trailCandidates, candidates, budgetBytes); err != nil {
+			return SourceTrail{}, err
+		}
+		plan.Selected = make([]bool, len(trailCandidates))
+		for index, candidate := range trailCandidates {
+			plan.Selected[index] = candidate.Selected
+			if candidate.Selected {
+				plan.UsedBytes += candidate.TextBytes
+			}
+		}
+		plan.PacketID, err = NewContextPacketID(trailCandidates, budgetBytes, plan.Selected)
+		if err != nil {
+			return SourceTrail{}, err
+		}
+	} else {
+		plan, err = PackVerifiedLexicalCandidates(trailCandidates, budgetBytes)
+		if err != nil {
+			return SourceTrail{}, err
+		}
+		for index := range trailCandidates {
+			trailCandidates[index].Selected = plan.Selected[index]
+		}
 	}
 	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 {
 		return SourceTrail{}, retrievalValidationError("expression", ValidationCodeInvalidRange, "must be non-empty valid UTF-8 within bounds")
@@ -220,6 +250,10 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 		PacketID:    plan.PacketID.String(),
 		Candidates:  trailCandidates,
 	}
+	if packingPolicy == PackingExactV1 {
+		trail.Schema = SourceTrailSchemaV2
+		trail.PackingPolicy = packingPolicy
+	}
 	id, err := NewSourceTrailID(trail)
 	if err != nil {
 		return SourceTrail{}, err
@@ -231,11 +265,14 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 	return trail, nil
 }
 
-// Validate recomputes every derived relation: the pack plan from the ordered candidates, the used
-// bytes, the packet identity, and the trail identity.
+// Validate checks text-free structure, accounting and identities. Exact equality must be
+// checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
-	if trail.Schema != SourceTrailSchema {
-		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.source_trail.v1", nil)
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 {
+		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
+	}
+	if err := trail.validatePacking(); err != nil {
+		return err
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {
 		return prefixValidationError(err, "request_id")
@@ -313,8 +350,8 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema != SourceTrailSchema {
-		return SourceTrailID{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.source_trail.v1", nil)
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 {
+		return SourceTrailID{}, newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
 	requestID, err := ParsePolicyEvaluationRequestID(trail.RequestID)
 	if err != nil {
@@ -345,6 +382,9 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 		used[:],
 		packetID[:],
 	}
+	if trail.Schema == SourceTrailSchemaV2 {
+		fields = append(fields, []byte(trail.PackingPolicy))
+	}
 	for index, candidate := range trail.Candidates {
 		var rank, bytes, selected [8]byte
 		binary.BigEndian.PutUint64(rank[:], uint64(candidate.FinalRank))
@@ -361,6 +401,9 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 			[]byte(candidate.Disposition),
 			selected[:],
 		)
+		if trail.Schema == SourceTrailSchemaV2 {
+			fields = append(fields, []byte(candidate.Omission), []byte(candidate.DuplicateOf))
+		}
 		for _, reason := range candidate.Reasons {
 			fields = append(fields, []byte(reason))
 		}
@@ -385,45 +428,66 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		return SourceTrail{}, err
 	}
 	var wire struct {
-		Schema      string `json:"schema"`
-		ID          string `json:"id"`
-		RequestID   string `json:"request_id"`
-		DecisionID  string `json:"decision_id"`
-		Outcome     string `json:"outcome"`
-		Expression  string `json:"expression"`
-		BudgetBytes uint64 `json:"budget_bytes"`
-		UsedBytes   uint64 `json:"used_bytes"`
-		PacketID    string `json:"packet_id"`
-		Candidates  []struct {
-			SegmentID     string   `json:"segment_id"`
-			ContentSHA256 string   `json:"content_sha256"`
-			FinalRank     int      `json:"final_rank"`
-			TextBytes     uint64   `json:"text_bytes"`
-			Disposition   string   `json:"disposition"`
-			Reasons       []string `json:"reasons"`
-			Selected      bool     `json:"selected"`
+		Schema        string          `json:"schema"`
+		ID            string          `json:"id"`
+		RequestID     string          `json:"request_id"`
+		DecisionID    string          `json:"decision_id"`
+		Outcome       string          `json:"outcome"`
+		Expression    string          `json:"expression"`
+		BudgetBytes   uint64          `json:"budget_bytes"`
+		UsedBytes     uint64          `json:"used_bytes"`
+		PacketID      string          `json:"packet_id"`
+		PackingPolicy json.RawMessage `json:"packing_policy"`
+		Candidates    []struct {
+			SegmentID     string          `json:"segment_id"`
+			ContentSHA256 string          `json:"content_sha256"`
+			FinalRank     int             `json:"final_rank"`
+			TextBytes     uint64          `json:"text_bytes"`
+			Disposition   string          `json:"disposition"`
+			Reasons       []string        `json:"reasons"`
+			Selected      bool            `json:"selected"`
+			Omission      json.RawMessage `json:"omission"`
+			DuplicateOf   json.RawMessage `json:"duplicate_of"`
 		} `json:"candidates"`
 	}
 	if err := decodeJSONContract(data, &wire); err != nil {
 		return SourceTrail{}, err
 	}
-	if wire.Schema != SourceTrailSchema {
-		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.source_trail.v1", nil)
+	if wire.Schema != SourceTrailSchema && wire.Schema != SourceTrailSchemaV2 {
+		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
+	}
+	decodePackingField := func(field string, raw json.RawMessage) (string, error) {
+		if len(raw) == 0 {
+			return "", nil
+		}
+		if wire.Schema == SourceTrailSchema {
+			return "", newValidationError(field, ValidationCodeInvalidSchema, "field requires source trail v2", nil)
+		}
+		var value *string
+		if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+			return "", newValidationError(field, ValidationCodeInvalidValue, "must be a string", err)
+		}
+		return *value, nil
+	}
+	packingPolicy, err := decodePackingField("packing_policy", wire.PackingPolicy)
+	if err != nil {
+		return SourceTrail{}, err
 	}
 	id, err := ParseSourceTrailID(wire.ID)
 	if err != nil {
 		return SourceTrail{}, validationErrorForField(err, "id")
 	}
 	trail := SourceTrail{
-		Schema:      wire.Schema,
-		ID:          id,
-		RequestID:   wire.RequestID,
-		DecisionID:  wire.DecisionID,
-		Outcome:     wire.Outcome,
-		Expression:  wire.Expression,
-		BudgetBytes: wire.BudgetBytes,
-		UsedBytes:   wire.UsedBytes,
-		PacketID:    wire.PacketID,
+		Schema:        wire.Schema,
+		ID:            id,
+		RequestID:     wire.RequestID,
+		DecisionID:    wire.DecisionID,
+		Outcome:       wire.Outcome,
+		Expression:    wire.Expression,
+		BudgetBytes:   wire.BudgetBytes,
+		UsedBytes:     wire.UsedBytes,
+		PacketID:      wire.PacketID,
+		PackingPolicy: packingPolicy,
 	}
 	trail.Candidates = make([]TrailCandidate, len(wire.Candidates))
 	for index, candidate := range wire.Candidates {
@@ -436,12 +500,22 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		if err != nil {
 			return SourceTrail{}, validationErrorForField(prefixValidationError(err, field), field)
 		}
+		omission, err := decodePackingField(field+".omission", candidate.Omission)
+		if err != nil {
+			return SourceTrail{}, err
+		}
+		duplicateOf, err := decodePackingField(field+".duplicate_of", candidate.DuplicateOf)
+		if err != nil {
+			return SourceTrail{}, err
+		}
 		entry := TrailCandidate{
 			SegmentID:     segmentID,
 			ContentSHA256: content,
 			FinalRank:     candidate.FinalRank,
 			TextBytes:     candidate.TextBytes,
 			Disposition:   CandidateDisposition(candidate.Disposition),
+			Omission:      omission,
+			DuplicateOf:   duplicateOf,
 		}
 		if len(candidate.Reasons) > 0 {
 			entry.Reasons = make([]LifecycleReason, len(candidate.Reasons))

@@ -141,7 +141,7 @@ func TestPackVerifiedLexicalCandidatesRejectsZeroBudget(t *testing.T) {
 func TestNewSourceTrailBindsExplanation(t *testing.T) {
 	request := testTrailRequest(t)
 	decision := trailDecision(t, request, PolicyOutcomeAllow)
-	trail, err := NewSourceTrail(request, decision, "alpha", trailCandidates(t), 100)
+	trail, err := NewSourceTrail(request, decision, "alpha", trailCandidates(t), 100, "original")
 	if err != nil {
 		t.Fatalf("NewSourceTrail: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestNewSourceTrailBindsExplanation(t *testing.T) {
 func TestNewSourceTrailDenyProducesEmptySelection(t *testing.T) {
 	request := testTrailRequest(t)
 	decision := trailDecision(t, request, PolicyOutcomeDeny)
-	trail, err := NewSourceTrail(request, decision, "alpha", nil, 64)
+	trail, err := NewSourceTrail(request, decision, "alpha", nil, 64, "original")
 	if err != nil {
 		t.Fatalf("NewSourceTrail: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestNewSourceTrailDenyProducesEmptySelection(t *testing.T) {
 func TestTrailValidateRejectsTamperedDerivedValues(t *testing.T) {
 	request := testTrailRequest(t)
 	decision := trailDecision(t, request, PolicyOutcomeAllow)
-	trail, err := NewSourceTrail(request, decision, "alpha", trailCandidates(t), 100)
+	trail, err := NewSourceTrail(request, decision, "alpha", trailCandidates(t), 100, "original")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,13 +222,13 @@ func TestNewSourceTrailRejectsMismatchedParents(t *testing.T) {
 		t.Fatal(err)
 	}
 	other.ID = otherID
-	if _, err := NewSourceTrail(other, decision, "alpha", nil, 64); err == nil {
+	if _, err := NewSourceTrail(other, decision, "alpha", nil, 64, "original"); err == nil {
 		t.Fatal("decision from another request must be rejected")
 	}
-	if _, err := NewSourceTrail(request, decision, "", nil, 64); err == nil {
+	if _, err := NewSourceTrail(request, decision, "", nil, 64, "original"); err == nil {
 		t.Fatal("empty expression must be rejected")
 	}
-	if _, err := NewSourceTrail(request, decision, "alpha", nil, 0); err == nil {
+	if _, err := NewSourceTrail(request, decision, "alpha", nil, 0, "original"); err == nil {
 		t.Fatal("zero budget must be rejected")
 	}
 }

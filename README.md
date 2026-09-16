@@ -34,7 +34,7 @@ Each stage has one responsibility and a visible boundary. The pipeline can be te
 
 ## Source Trails
 
-A Source Trail is the durable record of how a context packet was produced. Today's `mousa.source_trail.v1` record binds the policy request and decision, the decision outcome, the search expression, the byte budget, the context packet identity, and the ordered candidates with segment identity, content hash, final rank, released byte count, disposition, lifecycle reasons, and selection flag. Binding an actor, filters, ranking stages, transforms, supersession decisions, and an explicit packet hash remains planned.
+A Source Trail records how a context packet was produced. The default `mousa.source_trail.v1` binds the policy request and decision, outcome, search expression, byte budget, packet identity, and ordered candidates with segment identity, content hash, final rank, byte count, disposition, lifecycle reasons, and selection flag. Opt-in exact-content packing writes `mousa.source_trail.v2`, which also binds the packing policy, omission reason and retained-segment relationship. Historical v1 bytes and identities remain unchanged. Ranking-stage explanations, transforms and supersession decisions remain planned.
 
 The goal is not to present a score as an explanation. The goal is to retain enough evidence to inspect what was selected, what was rejected, and why.
 
@@ -114,6 +114,18 @@ released-text budget, defaulting to 8,192 bytes; JSON overhead and model tokens 
 not covered. Queries distinguish no matches, policy/lifecycle exclusion, and budget
 omission. See the [query and inspection contract](docs/CAPABILITIES.md#query-policy-packing-and-tracing).
 
+`--packing-policy exact-v1` separately enables exact-content deduplication:
+
+```sh
+./mousa -store local.sqlite query --packing-policy exact-v1 --budget-bytes 4096 ./documents 'harbor inspection'
+```
+
+It omits byte-equal copies of already selected passages without changing ranking.
+Authorization and lifecycle filtering run first; text that does not fit reserves
+nothing. Each duplicate keeps its own provenance and references the retained
+segment in the trail. Equal text is not independent corroboration or shared
+authorization. Default `--packing-policy original` retains repeated passages.
+
 ### CLI client example
 
 Run the maintained Python standard-library example against the built CLI:
@@ -142,6 +154,8 @@ multibyte directory fixture, then checks update, deletion, restoration, denial,
 withdrawal and cross-source trail rejection. It distinguishes `no_matches`,
 `budget_omitted`, `policy_excluded`, and `lifecycle_excluded`. Denied trail
 inspection releases no historical metadata.
+It also verifies exact-content packing and the retained-segment explanation under
+both policies, including the small-budget duplicate-displacement regression.
 
 The example retains original source bytes and uses `verify_evidence` to check
 the normalized representation digest before slicing the returned byte range.
@@ -217,7 +231,7 @@ Implemented and planned capabilities, marked per item:
 - deterministic ingestion, chunk identity, source hashing, and manifests (ingestion and identity implemented; manifests planned);
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; freshness, supersession, and conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
-- byte-budget-aware selection today, with deterministic truncation, deduplication, redundancy removal, and token-aware budgeting planned;
+- byte-budget-aware selection with opt-in exact-content deduplication (implemented); truncation, approximate redundancy removal and token-aware budgeting remain planned;
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented export formats that other tools can read without Mousa (planned).
 
