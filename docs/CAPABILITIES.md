@@ -22,7 +22,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
-| Byte-budget evidence selection | Yes | `query --budget-bytes <positive>` | UTF-8 byte boundary and skip-oversized-then-continue packing | Core budget ablations and synthetic CLI coverage at three byte budgets |
+| Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
@@ -288,12 +288,26 @@ the index's `unicode61` tokenizer. Keep the leading terms whose expression fits
 4,096 bytes. An oversized first term is retained and rejected by the store rather
 than silently removed.
 
-The candidate limit is 100, not an exhaustive match count. Packing walks verified
-rank order, skips an accepted segment that exceeds the remaining budget, and
-continues. It releases whole segments without truncation, deduplication, or
-redundancy removal. `--budget-bytes` must be positive and defaults to 8,192.
+The candidate limit is 100, not an exhaustive match count. Default packing
+(`--packing-policy original`) walks verified rank order, skips accepted segments
+that exceed the remaining budget, and continues. It releases whole segments and
+retains repeated text. `--budget-bytes` must be positive and defaults to 8,192.
 The budget counts normalized UTF-8 evidence text only, not model tokens or JSON,
 identifier, or provenance overhead.
+
+Opt in to `--packing-policy exact-v1` to omit exact copies of already selected
+passages. Authorization and lifecycle filtering happen first. The first fitting
+passage in verified rank order is retained; a later candidate with the same digest
+is omitted only after byte equality is checked. Unselected or oversized candidates
+reserve nothing. Duplicate omission takes precedence over budget omission when a
+retained equal passage exists, including when the remaining budget is zero.
+
+This changes packing, not query preparation or ranking. It works with either
+segmentation policy and with either query-term policy. There is no semantic
+similarity, overlap removal, truncation, source merging or inferred corroboration.
+Selected segment identities, ranks, source ancestry and normalized byte ranges
+remain the original ones. Deduplication cannot recover candidates outside the
+100-candidate limit or make an oversized passage fit.
 
 With the default `fixed-v1` policy, text is segmented into at most 4,096 UTF-8 bytes,
 ending at a code-point boundary, not a sentence, paragraph, or Markdown boundary.
@@ -365,11 +379,18 @@ bytes separately from the unchanged evidence-text budget.
 | `lifecycle_excluded` | Source lifecycle blocked retrieval, or every considered candidate was lifecycle-rejected. |
 | `budget_omitted` | Accepted candidates existed, but none fit the text budget. |
 
-`budget_omitted` and `lifecycle_excluded` counters describe considered candidates.
-They can both be nonzero. If accepted candidates exist but none fit, the outcome
-is `budget_omitted`. A source-level gate runs before search, so its counters are
-zero; that does not assert the corpus has no matches. `decision_reasons` records
-the source-level evaluation reasons without candidate metadata.
+`budget_omitted` and `lifecycle_excluded` count considered candidates. Exact packing
+also returns `packing_policy: "exact-v1"` and `duplicate_omitted`, including zero.
+These added fields are absent with original packing, preserving default output.
+Selected count is `len(evidence)`; selected, duplicate-omitted, budget-omitted and
+lifecycle-rejected counts sum to `matched_candidates`. Duplicate omission is not
+a lifecycle rejection and does not hide the candidate from its trail.
+
+If accepted candidates exist but none fit, the outcome is `budget_omitted`;
+duplicates require a selected retained passage, so there is no separate
+duplicate-only outcome. A source-level gate runs before search, so its candidate
+counters are zero; that does not assert the corpus has no matches.
+`decision_reasons` records source-level evaluation reasons without candidate metadata.
 
 The decision authorizes the query's transaction snapshot, not all future access.
 The trail records a packet plan, not proof that stdout reached its recipient.
@@ -407,6 +428,33 @@ those missing fields.
 membership in the inspection snapshot. Retired revisions can have historical
 metadata without current index membership; neither property authorizes a new text
 release. Inspection never returns historical text.
+
+### Versioned exact-packing explanations
+
+Original packing writes canonical `mousa.source_trail.v1` records without rewriting
+historical bytes or IDs. Exact packing writes `mousa.source_trail.v2` with
+`packing_policy: "exact-v1"`. Its inspected view adds `schema` and `packing_policy`.
+Accepted unselected candidates have `omission: "budget"` or `"duplicate"`;
+duplicates also have `duplicate_of`, the segment ID of an earlier selected
+candidate in that packet. Selected and rejected candidates have no packing
+omission. Historical rejected metadata remains excluded from the inspected view.
+
+The v2 trail ID binds the policy and relationships. The packet ID still binds the
+budget and ordered selected segment IDs, digests, ranks and byte sizes; equal
+selections under different policies can have the same packet ID. Unknown versions
+and invalid version/policy combinations fail. V1 decoders reject v2-only fields,
+even empty ones. Older executables that understand only v1 cannot reopen stores
+containing v2 trails; upgrade readers before opting in.
+
+Text-free validation checks ranks, sizes, accounting and a prior selected target
+with the same digest and size. It rejects dangling, forward, cyclic and conflicting
+relationships. Recomputing an ID does not prove the asserted bytes are equal.
+Creation compares verified source text. Store reads and reopening additionally
+check canonical segment metadata and source ancestry, and compare still-indexed
+verified text. After update or deletion, retired text is not retained: its
+historical equality cannot be re-proved from this text-free record alone.
+Neither a trail ID nor a content digest is a signature against an attacker who
+can rewrite the entire store. Inspection still requires fresh source authorization.
 
 `access` manages a source-scoped allow/deny binding for the fixed CLI caller and
 retrieval purpose. Concurrent changes use the core compare-and-swap activation

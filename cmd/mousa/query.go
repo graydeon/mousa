@@ -13,7 +13,7 @@ import (
 
 // queryItems uses the canonical evaluation, retrieval, packing, and tracing
 // transaction. Only selected, accepted text is released from that snapshot.
-func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64) (*evidenceResult, error) {
+func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 	if err != nil {
 		return nil, err
 	}
-	traced, err := store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes)
+	traced, err := store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -40,9 +40,13 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 		EvaluatedAtUsec: traced.Decision.EvaluatedAtUsec,
 		TrailID:         traced.Trail.ID.String(), PacketID: traced.Trail.PacketID,
 		Expression: expression, QueryPolicy: policy,
-		UsedBytes: traced.Trail.UsedBytes, BudgetBytes: traced.Trail.BudgetBytes,
+		PackingPolicy: traced.Trail.PackingPolicy,
+		UsedBytes:     traced.Trail.UsedBytes, BudgetBytes: traced.Trail.BudgetBytes,
 		MatchedCandidates: len(traced.Candidates), CandidateLimit: queryCandidateLimit,
 		Evidence: []evidenceHit{},
+	}
+	if packingPolicy == mousa.PackingExactV1 {
+		result.DuplicateOmitted = new(int)
 	}
 	type representationLocation struct {
 		record mousa.Representation
@@ -56,7 +60,11 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 			continue
 		}
 		if !traced.Trail.Candidates[index].Selected {
-			result.BudgetOmitted++
+			if traced.Trail.Candidates[index].Omission == "duplicate" {
+				*result.DuplicateOmitted++
+			} else {
+				result.BudgetOmitted++
+			}
 			continue
 		}
 		segment := candidate.Segment

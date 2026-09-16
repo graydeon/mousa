@@ -397,7 +397,7 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			candidates = enforced.Candidates
 		case ModeTraced:
 			var traced sqlite.TracedLexicalResult
-			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit, config.Budget)
+			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit, config.Budget, "original")
 			candidates = traced.Candidates
 			trail = traced.Trail
 		default:

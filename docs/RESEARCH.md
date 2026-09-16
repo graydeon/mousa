@@ -72,8 +72,8 @@ validity score. The 3,001-byte synthetic fence becomes three fragments without
 reconstructed delimiters. Both policies supply the whole source span at 8,192,
 neither at 1,024. Repeated filler in the synthetic sources produces 11 repeated
 selected content hashes across the five passage-policy queries at 8,192, versus
-zero with fixed segments. Segmentation introduces no overlapping source ranges,
-but packing still does not remove repeated content. Documentation queries had
+zero with fixed segments. Segmentation introduces no overlapping source ranges.
+That experiment used original packing, which did not remove repeated content. Documentation queries had
 no exact duplicate selected hashes. At 8,192, selected bytes outside each
 declared documentation span total 75,721 for fixed and 75,576 for passage across
 ten questions. This is a context-size proxy, not a semantic redundancy score:
@@ -155,7 +155,7 @@ segments and 1,971 bytes for seven passages; this overhead is outside the text
 budget. These small shared-host latency differences are descriptive, not
 speedup targets or evidence of improved retrieval relevance.
 
-## Exact-content packing investigation: deferred
+## Exact-content packing
 
 A focused CLI fixture reproduced duplicate displacement under both segmentation
 policies. Two distinct items contained `amber amber` (11 bytes each); a third
@@ -177,21 +177,71 @@ storage-class question and six (5,832 bytes) for the orchard question, both at
 exact duplicate selected text. These observations do not change the original
 results or establish a general retrieval-quality improvement.
 
-Implementation is deferred because a truthful explanation needs a versioned
-canonical Source Trail change. The current v1 record has selection flags and
-lifecycle reasons, but no packing-policy identity, duplicate omission reason or
-retained-segment relationship. Treating a duplicate omission as a budget omission
-would be incorrect; removing candidates before tracing would lose provenance.
+Implementation was initially deferred until the canonical explanation could be
+versioned. V1 had selection flags and lifecycle reasons, but no packing-policy
+identity, duplicate omission reason or retained-segment relationship. Treating a
+duplicate as a budget omission would be incorrect; removing it before tracing
+would lose provenance.
 
-The proposed contract keeps authorization and lifecycle filtering first, retains
-the first fitting exact byte string in verified rank order, and records each
-later duplicate's own segment identity plus its retained-segment relationship.
-An unselected oversized candidate does not reserve content. Hashes may narrow
-comparisons, but bytes must match. Different source identities are never merged.
-The existing packet identity can continue to describe the selected segments,
-ranks and budget; the new trail identity must also bind packing policy and
-omission explanations. Supporting both historical v1 records and that versioned
-contract is a prerequisite. No deduplication flag or changed default ships here.
+The implemented `--packing-policy exact-v1` writes `mousa.source_trail.v2` and
+keeps default packing and historical v1 bytes/IDs unchanged. It filters authority
+and lifecycle first, retains the first fitting exact byte string in verified rank
+order, and binds each later duplicate's own identity and retained-segment reference.
+An oversized unselected candidate reserves nothing. Digests narrow comparisons;
+bytes must match. Packet identity still describes the selected segments, ranks and
+budget rather than the packing policy. Historical inspection remains freshly
+authorized and text-free; retired bytes cannot be re-proved from the record alone.
+
+### Matched packing measurements
+
+The [frozen protocol, observations and reproduction material](https://github.com/graydeon/mousa-benchmarks/tree/573c6cd6a9cb3e38f654c8dad5846b327424e9b4/results/2026-09-16-exact-packing)
+compare original and exact packing on 26 cases: both segmentation policies for
+the displacement fixture, two repeated-content questions and ten documentation
+questions. Six alternating matched pairs per case follow one warmup pair.
+Every query uses a fresh CLI process and a copy of the same closed historical
+store. Original evidence, packet IDs and accounting match the historical
+executable; exact selection matches a first-fitting byte-equality oracle over
+the unchanged verified ranking. The companion records both repository bases,
+exact source/input/binary hashes and measurement-time publication status.
+
+| Case | Original → exact packing |
+| --- | --- |
+| 33-byte displacement, both policies | Unique selected texts 1 → 2; repair coverage 0 → 22 bytes; repeated selected bytes 11 → 0; released text 22 → 33 bytes |
+| Storage classes, passage-v1 | Unique selected texts 4 → 6; repeated bytes 4,860 → 0; released text 7,914 → 5,055 bytes |
+| Orchard, passage-v1 | Unique selected texts 3 → 6; repeated bytes 5,832 → 0; released text 7,892 → 5,055 bytes |
+| Repeated fixtures, fixed-v1 | No duplicates and no selection or required-span improvement |
+| Documentation, both policies | Identical selected evidence and required-span coverage in all 20 cases; no deduplication benefit |
+
+The two repeated passage cases already retained their complete required source
+spans; additional unique text did not improve that measure. Each replaces four
+budget omissions with zero and records seven duplicate omissions. Unique byte
+strings and required-source-span coverage are not semantic relevance or answer
+quality. No BEIR or comparator campaign was run.
+
+Costs remain material. Across the ten passage documentation questions, descriptive
+pooled wall medians increased from 106.23 to 128.37 ms despite identical evidence;
+each question's median increased. Fixed documentation pooled medians were
+66.49 → 68.97 ms. Output with unchanged selection grows by about 58 bytes for
+policy/count metadata. Repeated passage output shrinks from median
+14,618 → 9,921 bytes for storage classes and 14,610 → 9,941 for orchard.
+Peak passage-documentation RSS was 20,540 → 20,784 KiB. Repeated passage query
+stores grew by one 4,096-byte page; other tested closed-store page counts did not
+grow. V2 adds verified-content and ancestry checks; this experiment does not
+isolate their individual costs.
+
+All observations are retained, including 398.27 ms for exact passage documentation,
+316.54 ms for original fixed documentation and 207.56 ms for original passage
+storage classes. Six samples per case do not establish a population percentile.
+Small-case medians happened to decrease; this is not a general speedup claim.
+The shared-host environment, CPU-time resolution and per-process RSS limits are
+documented with individual measurements. Allocations were not measured.
+
+An earlier attempt stopped because the measurement harness failed to close Python
+SQLite inspection connections, retaining WAL history across copied stores. Its
+46 completed calls, including 24 invalid timed observations, remain separately
+recorded and excluded from the completed-run summary. Explicit closure and
+sidecar guards corrected the harness. Inputs and expected outcomes were unchanged.
+Exact packing remains opt-in; these results do not justify changing the default.
 
 ## Scoped verification-statement reuse: inconclusive, not adopted
 

@@ -85,6 +85,8 @@ commands:
 query options (before positional arguments):
   --policy original|dedup    query-term policy; default original retains repetition
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
+  --packing-policy original|exact-v1
+                            exact-v1 omits byte-equal copies of selected passages
 
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
@@ -173,11 +175,15 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	sourceID := flags.String("source", "", "external source ID instead of a directory root")
 	policy := flags.String("policy", "original", "query-term policy: original or dedup")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
+	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
 	if *policy != "original" && *policy != "dedup" {
 		return usageError{"query policy must be original or dedup"}
+	}
+	if *packing != mousa.PackingOriginal && *packing != mousa.PackingExactV1 {
+		return usageError{"packing policy must be original or exact-v1"}
 	}
 	if *budget == 0 {
 		return usageError{"query byte budget must be positive"}
@@ -190,7 +196,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget)
+	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget, *packing)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -488,6 +494,8 @@ type evidenceResult struct {
 	CandidateLimit    int                          `json:"candidate_limit"`
 	LifecycleExcluded int                          `json:"lifecycle_excluded"`
 	BudgetOmitted     int                          `json:"budget_omitted"`
+	DuplicateOmitted  *int                         `json:"duplicate_omitted,omitempty"`
+	PackingPolicy     string                       `json:"packing_policy,omitempty"`
 	UsedBytes         uint64                       `json:"used_bytes"`
 	BudgetBytes       uint64                       `json:"budget_bytes"`
 	Evidence          []evidenceHit                `json:"evidence"`
@@ -510,14 +518,14 @@ type evidenceHit struct {
 }
 
 // runQuery runs one authorized query against one resolved source.
-func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64) error {
+func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	result, err := queryItems(ctx, store, source, query, policy, budgetBytes)
+	result, err := queryItems(ctx, store, source, query, policy, budgetBytes, packingPolicy)
 	if err != nil {
 		return err
 	}

@@ -270,6 +270,67 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     require([h["segment_id"] for h in restored["evidence"]] == [h["segment_id"] for h in located["evidence"]],
             "directory restoration changed canonical identities")
 
+    copies = [{"id": "copy-a", "text": "amber amber"},
+              {"id": "copy-b", "text": "amber amber"},
+              {"id": "repair", "text": "amber repair code ZX17"}]
+    originals = {record["id"]: record["text"].encode() for record in copies}
+    call("packing_peer_sync", "sync", "--source", "peer",
+         records=[{"id": "private-copy", "text": "amber amber"}])
+    call("packing_sync", "sync", "--source", "copies", records=copies)
+    plain = call("packing_default", "query", "--source", "copies", "--budget-bytes", "33", "amber")
+    exact_args = ("query", "--packing-policy", "exact-v1", "--source", "copies",
+                  "--budget-bytes", "33", "amber")
+    exact = call("packing_exact", *exact_args)
+    require(plain["used_bytes"] == 22 and plain["budget_omitted"] == 1, "default packing changed")
+    require(exact["used_bytes"] == 33 and exact["duplicate_omitted"] == 1
+            and exact["budget_omitted"] == 0, "duplicate displaced the repair passage")
+    require(exact["evidence"][0] == plain["evidence"][0]
+            and exact["evidence"][1]["item"] == "repair", "retention changed rank or provenance")
+    for hit in exact["evidence"]:
+        verify_evidence(hit, originals[hit["item"]])
+    history = call("packing_trail", "trail", "--source", "copies", exact["trail_id"])["historical"]
+    require(history["schema"] == "mousa.source_trail.v2"
+            and history["packing_policy"] == "exact-v1", "packing explanation lacks version")
+    selected = {row["segment_id"]: row for row in history["candidates"] if row["selected"]}
+    duplicate = [row for row in history["candidates"] if row.get("omission") == "duplicate"]
+    require(len(duplicate) == exact["duplicate_omitted"] and len(selected) == len(exact["evidence"]),
+            "query and trail counts disagree")
+    require(duplicate[0]["duplicate_of"] in selected
+            and duplicate[0]["segment_id"] not in selected, "invalid retained relationship")
+    require(exact["matched_candidates"] == len(selected) + len(duplicate)
+            + exact["budget_omitted"] + exact["lifecycle_excluded"], "candidate accounting lost rows")
+    peer = call("packing_peer_query", "query", "--packing-policy", "exact-v1",
+                "--source", "peer", "amber")
+    require([hit["item"] for hit in peer["evidence"]] == ["private-copy"]
+            and peer["duplicate_omitted"] == 0, "equal text merged source identities")
+    call("packing_cross_source", "trail", "--source", "peer", exact["trail_id"], expected_code=1)
+    call("packing_update", "sync", "--source", "copies",
+         records=[{"id": "copy-a", "text": "amber revised unique"}])
+    changed = call("packing_updated_query", *exact_args)
+    require(changed["duplicate_omitted"] == 0, "updated text was deduplicated as stale content")
+    call("packing_restore", "sync", "--source", "copies", records=copies)
+    restored = call("packing_restored_query", *exact_args)
+    require(restored["packet_id"] == exact["packet_id"], "restoration changed packet identity")
+    call("packing_policy_resync", "sync", "--segment-policy", other, "--source", "copies", records=copies)
+    changed_policy = call("packing_policy_query", *exact_args)
+    require(changed_policy["duplicate_omitted"] == 1 and changed_policy["used_bytes"] == 33,
+            "deduplication failed after policy resync")
+    retired = call("packing_retired_trail", "trail", "--source", "copies", exact["trail_id"])
+    require(all(not row["indexed_now"] for row in retired["historical"]["candidates"]),
+            "retired packing history changed activation")
+    call("packing_deny", "access", "--source", "copies", "deny")
+    denied = call("packing_denied_query", *exact_args)
+    denied_history = call("packing_denied_trail", "trail", "--source", "copies", exact["trail_id"])
+    require(not denied["evidence"] and denied["matched_candidates"] == 0
+            and "historical" not in denied_history, "duplicate relationship bypassed authorization")
+    for row in history["candidates"]:
+        require(row["segment_id"] not in json.dumps(denied_history), "denied duplicate metadata leaked")
+    call("packing_allow", "access", "--source", "copies", "allow")
+    call("packing_withdraw", "withdraw", "--source", "copies")
+    withdrawn = call("packing_withdrawn_query", *exact_args)
+    require(not withdrawn["evidence"] and withdrawn["outcome"] == "lifecycle_excluded",
+            "withdrawn duplicate evidence released")
+
 
 def comparison(runner, args, work):
     root = work / "corpus"
