@@ -16,4 +16,4 @@ docs/agents/
 
 # Optional local evaluation dependencies and bytecode
 /eval/local/qmd/node_modules/
-/eval/local/__pycache__/
+__pycache__/

@@ -40,6 +40,32 @@ to the named caller**; it is not an engine-generated answer or permission to run
 backup. Missing entries stay unassessed. Unsupported, partial and contradictory
 judgments remain visible. No majority vote establishes completeness.
 
+## Declared associated context
+
+The corpus maintainer declares one association between the two excerpts
+(`associations.json`): the backup examples use the connection as a transaction
+context manager, and the connection-context section documents that this
+context manager does not close the connection. The declaration
+names its author and basis; Mousa does not discover relationships, and a
+declaration is not an access grant. Retrieval without `--associations` is
+unchanged.
+
+```sh
+python3 examples/backup/backup.py --directory /tmp/backup-docs retrieve --case followup \
+  --associations examples/backup/associations.json > packet-assoc.json
+```
+
+The returned packet keeps every lexical passage unchanged and appends the
+declared target's passages with `origin: "association"`, each with its own
+segment identity, byte coordinates, content digest and the declaration that
+included it. Associated bytes share the declared budget after primary evidence
+and are recorded in the stored trail. Assessment verifies that an associated
+passage matches a declaration bound to the saved packet
+(`associations_sha256`); without that binding, assessment rejects the packet.
+This lets the demonstrated closure fact be supported from the initial packet
+without the caller already knowing which note to seek. The judgment remains a
+caller judgment, not an engine claim.
+
 ## One explicit follow-up
 
 When a fact remains unresolved, the caller may put this object in the assessment:

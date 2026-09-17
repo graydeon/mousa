@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -13,11 +14,13 @@ import (
 const maxTrailCandidates = 100
 
 // TracedLexicalResult is one decision-gated retrieval that has been traced: the immutable trail,
-// the verified candidates of the decision Source, and the packed selection.
+// the verified candidates of the decision Source, the packed selection, and the considered
+// associated passages aligned with the trail's associated rows.
 type TracedLexicalResult struct {
 	Decision   mousa.PolicyDecision
 	Trail      mousa.SourceTrail
 	Candidates []mousa.VerifiedLexicalCandidate
+	Associated []mousa.AssociatedPassage
 }
 
 // TraceEnforcedLexical verifies the exact stored decision for the request, reads the verified
@@ -26,19 +29,36 @@ type TracedLexicalResult struct {
 // one writer transaction. A stored deny decision is data, not an error: it produces a trail with no
 // candidates and an empty selection. Tracing writes, so a read-only store cannot trace.
 func (store *Store) TraceEnforcedLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string) (TracedLexicalResult, error) {
-	return store.traceLexical(ctx, request, expression, limit, budgetBytes, false, packingPolicy)
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, false, packingPolicy, nil)
 }
 
 // EvaluateAndTraceLexical evaluates current policy, retrieves and packs verified
 // candidates, and stores the decision and Source Trail in one writer transaction.
 // It requires a new request identity; it never reuses a historical decision.
 func (store *Store) EvaluateAndTraceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string) (TracedLexicalResult, error) {
-	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy)
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, nil)
 }
 
-func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool, packingPolicy string) (TracedLexicalResult, error) {
+// EvaluateAndTraceAssociatedLexical is EvaluateAndTraceLexical with an explicit opt-in: the caller
+// supplies author-declared item associations, and the target items of those whose declaring item
+// contributed selected primary evidence are read within the same transaction, packed into the
+// remaining budget, and recorded in the trail. Nothing is released when the declaration list is
+// empty or no declaration fires.
+func (store *Store) EvaluateAndTraceAssociatedLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string, associations []mousa.AssociationDeclaration) (TracedLexicalResult, error) {
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, associations)
+}
+
+func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool, packingPolicy string, associations []mousa.AssociationDeclaration) (TracedLexicalResult, error) {
 	if packingPolicy != mousa.PackingOriginal && packingPolicy != mousa.PackingExactV1 {
 		return TracedLexicalResult{}, wrap(CodeInvalidQuery, "trace enforced lexical", errors.New("packing policy must be original or exact-v1"))
+	}
+	if len(associations) > mousa.MaxAssociationDeclarations {
+		return TracedLexicalResult{}, wrap(CodeInvalidQuery, "trace enforced lexical", errors.New("too many association declarations"))
+	}
+	for index, declaration := range associations {
+		if err := declaration.Validate(); err != nil {
+			return TracedLexicalResult{}, wrap(CodeInvalidRecord, "trace enforced lexical", fmt.Errorf("associations[%d]: %w", index, err))
+		}
 	}
 	if err := store.requireWritable("trace enforced lexical"); err != nil {
 		return TracedLexicalResult{}, err
@@ -67,6 +87,18 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 		if err != nil {
 			return wrap(CodeInvalidRecord, "trace enforced lexical", err)
 		}
+		var associated []mousa.AssociatedPassage
+		if len(associations) > 0 && trail.Outcome == string(mousa.PolicyOutcomeAllow) {
+			considered, omissions, err := resolveAssociatedPassages(ctx, conn, request.SourceID, associations, enforced.Candidates, trail)
+			if err != nil {
+				return err
+			}
+			associated = considered
+			trail, err = mousa.AppendAssociatedPassages(trail, enforced.Candidates, associated, omissions)
+			if err != nil {
+				return wrap(CodeInvalidRecord, "trace enforced lexical", err)
+			}
+		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err
 		}
@@ -77,7 +109,7 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 		if !reflect.DeepEqual(written, trail) {
 			return integrity("trace enforced lexical", "exact read-back disagrees with write")
 		}
-		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates, Associated: associated}
 		return nil
 	})
 	if err != nil {
@@ -266,7 +298,7 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 	if err := rows.Close(); err != nil {
 		return mousa.SourceTrail{}, classify("get source trail candidates", err)
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV2 {
+	if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 {
 		if err := verifyExactTrailContent(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}

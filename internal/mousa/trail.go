@@ -11,11 +11,13 @@ import (
 )
 
 const (
-	ContextPacketSchema = "mousa.context_packet.v1"
-	SourceTrailSchema   = "mousa.source_trail.v1"
-	SourceTrailSchemaV2 = "mousa.source_trail.v2"
-	PackingOriginal     = "original"
-	PackingExactV1      = "exact-v1"
+	ContextPacketSchema   = "mousa.context_packet.v1"
+	ContextPacketSchemaV2 = "mousa.context_packet.v2"
+	SourceTrailSchema     = "mousa.source_trail.v1"
+	SourceTrailSchemaV2   = "mousa.source_trail.v2"
+	SourceTrailSchemaV3   = "mousa.source_trail.v3"
+	PackingOriginal       = "original"
+	PackingExactV1        = "exact-v1"
 )
 
 // PacketPlan is the deterministic outcome of the Pack stage for one verified candidate set: the
@@ -131,19 +133,23 @@ type TrailCandidate struct {
 
 // SourceTrail is one immutable record of how a context packet was produced: the enforced decision,
 // the search expression, the pack budget accounting, and every considered candidate with its
-// disposition and selection. Released text is never copied into the record.
+// disposition and selection. Released text is never copied into the record. A v3 trail additionally
+// records the association stage: considered associated passages and the declared relationships that
+// released nothing.
 type SourceTrail struct {
-	Schema        string           `json:"schema"`
-	ID            SourceTrailID    `json:"id"`
-	RequestID     string           `json:"request_id"`
-	DecisionID    string           `json:"decision_id"`
-	Outcome       string           `json:"outcome"`
-	Expression    string           `json:"expression"`
-	BudgetBytes   uint64           `json:"budget_bytes"`
-	UsedBytes     uint64           `json:"used_bytes"`
-	PacketID      string           `json:"packet_id"`
-	Candidates    []TrailCandidate `json:"candidates"`
-	PackingPolicy string           `json:"packing_policy,omitempty"`
+	Schema               string                `json:"schema"`
+	ID                   SourceTrailID         `json:"id"`
+	RequestID            string                `json:"request_id"`
+	DecisionID           string                `json:"decision_id"`
+	Outcome              string                `json:"outcome"`
+	Expression           string                `json:"expression"`
+	BudgetBytes          uint64                `json:"budget_bytes"`
+	UsedBytes            uint64                `json:"used_bytes"`
+	PacketID             string                `json:"packet_id"`
+	Candidates           []TrailCandidate      `json:"candidates"`
+	PackingPolicy        string                `json:"packing_policy,omitempty"`
+	Associated           []TrailAssociated     `json:"associated,omitempty"`
+	AssociationOmissions []AssociationOmission `json:"association_omissions,omitempty"`
 }
 
 // SourceTrailID binds the complete trail explanation and parent snapshot.
@@ -268,11 +274,16 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
-	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 {
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 && trail.Schema != SourceTrailSchemaV3 {
 		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
 	if err := trail.validatePacking(); err != nil {
 		return err
+	}
+	if trail.Schema == SourceTrailSchemaV3 {
+		if err := trail.validateAssociated(); err != nil {
+			return err
+		}
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {
 		return prefixValidationError(err, "request_id")
@@ -320,14 +331,19 @@ func (trail SourceTrail) Validate() error {
 			used += candidate.TextBytes
 		}
 	}
+	for _, row := range trail.Associated {
+		if row.Selected {
+			used += row.TextBytes
+		}
+	}
 	if used != trail.UsedBytes {
-		return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "disagrees with the selected candidates")
+		return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "disagrees with the selected passages")
 	}
 	selected := make([]bool, len(trail.Candidates))
 	for index, candidate := range trail.Candidates {
 		selected[index] = candidate.Selected
 	}
-	packetID, err := NewContextPacketID(trail.Candidates, trail.BudgetBytes, selected)
+	packetID, err := trail.packetIdentity()
 	if err != nil {
 		return err
 	}
@@ -344,13 +360,26 @@ func (trail SourceTrail) Validate() error {
 	return nil
 }
 
+// packetIdentity re-derives the packet identity of a validated trail: the v1 domain for
+// v1/v2 records, and the v2 domain that also binds associated rows for v3.
+func (trail SourceTrail) packetIdentity() (ContextPacketID, error) {
+	if trail.Schema == SourceTrailSchemaV3 {
+		return contextPacketIDV3(trail)
+	}
+	selected := make([]bool, len(trail.Candidates))
+	for index, candidate := range trail.Candidates {
+		selected[index] = candidate.Selected
+	}
+	return NewContextPacketID(trail.Candidates, trail.BudgetBytes, selected)
+}
+
 func itoa(value int) string {
 	return strconv.Itoa(value)
 }
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 {
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 && trail.Schema != SourceTrailSchemaV3 {
 		return SourceTrailID{}, newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
 	requestID, err := ParsePolicyEvaluationRequestID(trail.RequestID)
@@ -382,7 +411,7 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 		used[:],
 		packetID[:],
 	}
-	if trail.Schema == SourceTrailSchemaV2 {
+	if trail.Schema != SourceTrailSchema {
 		fields = append(fields, []byte(trail.PackingPolicy))
 	}
 	for index, candidate := range trail.Candidates {
@@ -409,6 +438,37 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 		}
 		fields = append(fields, []byte("end"))
 		_ = index
+	}
+	if trail.Schema == SourceTrailSchemaV3 {
+		for _, row := range trail.Associated {
+			var bytes, selected [8]byte
+			binary.BigEndian.PutUint64(bytes[:], row.TextBytes)
+			if row.Selected {
+				selected[0] = 1
+			}
+			fields = append(fields,
+				[]byte("associated"),
+				row.SegmentID[:],
+				row.ContentSHA256[:],
+				bytes[:],
+				selected[:],
+				[]byte(row.Omission),
+				[]byte(row.DuplicateOf),
+				[]byte(row.FromItem),
+				[]byte(row.ToItem),
+				[]byte(row.Basis),
+				[]byte(row.Author),
+				[]byte("end"),
+			)
+		}
+		for _, omission := range trail.AssociationOmissions {
+			fields = append(fields,
+				[]byte("omission"),
+				[]byte(omission.FromItem),
+				[]byte(omission.ToItem),
+				[]byte(omission.Reason),
+			)
+		}
 	}
 	writeTuple(digest, fields...)
 	return SourceTrailID(digest.Sum(nil)), nil
@@ -438,7 +498,24 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		UsedBytes     uint64          `json:"used_bytes"`
 		PacketID      string          `json:"packet_id"`
 		PackingPolicy json.RawMessage `json:"packing_policy"`
-		Candidates    []struct {
+		Associated    []struct {
+			SegmentID     string          `json:"segment_id"`
+			ContentSHA256 string          `json:"content_sha256"`
+			TextBytes     uint64          `json:"text_bytes"`
+			Selected      bool            `json:"selected"`
+			Omission      json.RawMessage `json:"omission"`
+			DuplicateOf   json.RawMessage `json:"duplicate_of"`
+			FromItem      string          `json:"from_item"`
+			ToItem        string          `json:"to_item"`
+			Basis         string          `json:"basis"`
+			Author        string          `json:"author"`
+		} `json:"associated"`
+		AssociationOmissions []struct {
+			FromItem string `json:"from_item"`
+			ToItem   string `json:"to_item"`
+			Reason   string `json:"reason"`
+		} `json:"association_omissions"`
+		Candidates []struct {
 			SegmentID     string          `json:"segment_id"`
 			ContentSHA256 string          `json:"content_sha256"`
 			FinalRank     int             `json:"final_rank"`
@@ -453,7 +530,7 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	if err := decodeJSONContract(data, &wire); err != nil {
 		return SourceTrail{}, err
 	}
-	if wire.Schema != SourceTrailSchema && wire.Schema != SourceTrailSchemaV2 {
+	if wire.Schema != SourceTrailSchema && wire.Schema != SourceTrailSchemaV2 && wire.Schema != SourceTrailSchemaV3 {
 		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
 	decodePackingField := func(field string, raw json.RawMessage) (string, error) {
@@ -468,6 +545,15 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 			return "", newValidationError(field, ValidationCodeInvalidValue, "must be a string", err)
 		}
 		return *value, nil
+	}
+	decodeAssociationField := func(field string, present bool) error {
+		if !present {
+			return nil
+		}
+		if wire.Schema != SourceTrailSchemaV3 {
+			return newValidationError(field, ValidationCodeInvalidSchema, "field requires source trail v3", nil)
+		}
+		return nil
 	}
 	packingPolicy, err := decodePackingField("packing_policy", wire.PackingPolicy)
 	if err != nil {
@@ -525,6 +611,54 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		}
 		entry.Selected = candidate.Selected
 		trail.Candidates[index] = entry
+	}
+	if err := decodeAssociationField("associated", len(wire.Associated) > 0); err != nil {
+		return SourceTrail{}, err
+	}
+	if len(wire.Associated) > 0 {
+		trail.Associated = make([]TrailAssociated, len(wire.Associated))
+	}
+	for index, row := range wire.Associated {
+		field := "associated"
+		segmentID, err := ParseSegmentID(row.SegmentID)
+		if err != nil {
+			return SourceTrail{}, validationErrorForField(prefixValidationError(err, field), field)
+		}
+		content, err := ParseSHA256(row.ContentSHA256)
+		if err != nil {
+			return SourceTrail{}, validationErrorForField(prefixValidationError(err, field), field)
+		}
+		omission, err := decodePackingField(field+".omission", row.Omission)
+		if err != nil {
+			return SourceTrail{}, err
+		}
+		duplicateOf, err := decodePackingField(field+".duplicate_of", row.DuplicateOf)
+		if err != nil {
+			return SourceTrail{}, err
+		}
+		trail.Associated[index] = TrailAssociated{
+			SegmentID:     segmentID,
+			ContentSHA256: content,
+			TextBytes:     row.TextBytes,
+			Selected:      row.Selected,
+			Omission:      omission,
+			DuplicateOf:   duplicateOf,
+			FromItem:      row.FromItem,
+			ToItem:        row.ToItem,
+			Basis:         row.Basis,
+			Author:        row.Author,
+		}
+	}
+	if err := decodeAssociationField("association_omissions", len(wire.AssociationOmissions) > 0); err != nil {
+		return SourceTrail{}, err
+	}
+	if len(wire.AssociationOmissions) > 0 {
+		trail.AssociationOmissions = make([]AssociationOmission, len(wire.AssociationOmissions))
+	}
+	for index, omission := range wire.AssociationOmissions {
+		trail.AssociationOmissions[index] = AssociationOmission{
+			FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason,
+		}
 	}
 	if err := trail.Validate(); err != nil {
 		return SourceTrail{}, err

@@ -472,3 +472,48 @@ Directory identities remain usable by `query`, `status`, `trail`, `access`, and
 existing directory. Stored activation is not a claim about current filesystem
 contents. Integrity checks, authorization, current activation, and factual
 correctness are separate properties; none substitutes for the others.
+
+### Declared associated context
+
+`query --associations <file>` opts a caller into declared associated context.
+The file is one strict JSON document, schema
+`mousa.association_declarations.v1`, listing up to 32 declarations. Each
+declaration names a `from_item` and `to_item` (item paths of the queried
+source), a non-empty `basis`, and a non-empty `author`. Duplicate
+`(from_item, to_item)` pairs and self-references are rejected. Mousa never
+infers relationships and never treats a declaration as discovery; the author
+and basis remain attached to every passage the declaration releases.
+
+A declaration is honored only when the declaring item contributed selected
+primary evidence to that packet, so an unrelated query releases nothing.
+Depth is one: the target's passages are never followed by further
+declarations. At most four distinct target items are read per query; repeated
+targets and declarations beyond the cap are recorded as omissions
+(`duplicate_target`, `fan_out`), as are unknown targets (`target_unknown`) and
+inactive or deleted ones (`target_inactive`). A relationship is not an access
+grant: resolution stays inside the one allowed source decision and only reads
+the current active revision of the target. Equal text does not transfer
+permissions between items.
+
+Associated passages pack into the remaining byte budget after primary
+evidence, in declaration order and selector order. Primary evidence keeps its
+existing selection and priority; an associated passage never displaces it.
+Each associated passage keeps its own item, segment identity, representation
+digest, byte coordinates, content digest and text, and is returned with
+`origin: "association"` plus the declaration; lexical hits carry
+`origin: "lexical"` and no declaration. Associated passages have no lexical
+rank or BM25 score. A passage that does not fit is omitted with reason
+`budget`; byte-equal duplicates are omitted with `duplicate` and a reference to
+the released passage under exact-v1 packing. Small budgets therefore expose
+omission without claiming completeness.
+
+A trail that records an association stage is a `mousa.source_trail.v3` record
+with `associated` rows and `association_omissions`, and its packet identity
+uses a v2 domain that binds every released byte. Its inspected view adds
+`associated` and `association_omissions`. V1 and v2 encoding, decoding and
+validation are unchanged; a v3 record appears only when the association stage
+has something to record, so an unfired declaration reproduces the unassociated
+trail exactly. Older executables that understand only v1/v2 reject v3 records
+rather than misreading them. As with all trail records, identities are
+text-free explanations, not signatures, and inspection still requires fresh
+source authorization.

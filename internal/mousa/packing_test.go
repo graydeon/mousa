@@ -105,7 +105,7 @@ func TestExactTrailRejectsInvalidRelationships(t *testing.T) {
 		"unknown policy":     func(x *SourceTrail) { x.PackingPolicy = "semantic" },
 		"v1 policy":          func(x *SourceTrail) { x.Schema = SourceTrailSchema },
 		"v2 original":        func(x *SourceTrail) { x.PackingPolicy = PackingOriginal },
-		"unknown version":    func(x *SourceTrail) { x.Schema = "mousa.source_trail.v3" },
+		"unknown version":    func(x *SourceTrail) { x.Schema = "mousa.source_trail.v4" },
 		"denied candidates":  func(x *SourceTrail) { x.Outcome = string(PolicyOutcomeDeny) },
 	} {
 		t.Run(name, func(t *testing.T) {

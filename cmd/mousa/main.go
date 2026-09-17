@@ -87,6 +87,11 @@ query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --packing-policy original|exact-v1
                             exact-v1 omits byte-equal copies of selected passages
+  --associations <file>      opt-in declared-association JSON file
+                            (schema mousa.association_declarations.v1); honors author-declared
+                            item relationships within the queried source; depth 1, at most 4
+                            applied targets; associated passages share the byte budget and carry
+                            their own identity plus the declaration that included them
 
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
@@ -176,8 +181,20 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	policy := flags.String("policy", "original", "query-term policy: original or dedup")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
+	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	var declarations []mousa.AssociationDeclaration
+	if *associations != "" {
+		raw, err := os.ReadFile(*associations)
+		if err != nil {
+			return err
+		}
+		declarations, err = mousa.DecodeAssociationDeclarations(raw)
+		if err != nil {
+			return err
+		}
 	}
 	if *policy != "original" && *policy != "dedup" {
 		return usageError{"query policy must be original or dedup"}
@@ -196,7 +213,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget, *packing)
+	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget, *packing, declarations)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -478,54 +495,74 @@ type statusResult struct {
 	NeedsRecovery   bool   `json:"needs_recovery"`
 }
 type evidenceResult struct {
-	Query             string                       `json:"query"`
-	Source            string                       `json:"source"`
-	QueryPolicy       string                       `json:"query_policy"`
-	Expression        string                       `json:"expression"`
-	RequestID         string                       `json:"request_id"`
-	DecisionID        string                       `json:"decision_id"`
-	DecisionOutcome   string                       `json:"decision_outcome"`
-	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
-	EvaluatedAtUsec   int64                        `json:"evaluated_at_usec"`
-	TrailID           string                       `json:"trail_id"`
-	PacketID          string                       `json:"packet_id"`
-	Outcome           string                       `json:"outcome"`
-	MatchedCandidates int                          `json:"matched_candidates"`
-	CandidateLimit    int                          `json:"candidate_limit"`
-	LifecycleExcluded int                          `json:"lifecycle_excluded"`
-	BudgetOmitted     int                          `json:"budget_omitted"`
-	DuplicateOmitted  *int                         `json:"duplicate_omitted,omitempty"`
-	PackingPolicy     string                       `json:"packing_policy,omitempty"`
-	UsedBytes         uint64                       `json:"used_bytes"`
-	BudgetBytes       uint64                       `json:"budget_bytes"`
-	Evidence          []evidenceHit                `json:"evidence"`
-	LatencyMicros     int64                        `json:"latency_micros"`
+	Query                string                       `json:"query"`
+	Source               string                       `json:"source"`
+	QueryPolicy          string                       `json:"query_policy"`
+	Expression           string                       `json:"expression"`
+	RequestID            string                       `json:"request_id"`
+	DecisionID           string                       `json:"decision_id"`
+	DecisionOutcome      string                       `json:"decision_outcome"`
+	DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	EvaluatedAtUsec      int64                        `json:"evaluated_at_usec"`
+	TrailID              string                       `json:"trail_id"`
+	PacketID             string                       `json:"packet_id"`
+	Outcome              string                       `json:"outcome"`
+	MatchedCandidates    int                          `json:"matched_candidates"`
+	CandidateLimit       int                          `json:"candidate_limit"`
+	LifecycleExcluded    int                          `json:"lifecycle_excluded"`
+	BudgetOmitted        int                          `json:"budget_omitted"`
+	DuplicateOmitted     *int                         `json:"duplicate_omitted,omitempty"`
+	PackingPolicy        string                       `json:"packing_policy,omitempty"`
+	UsedBytes            uint64                       `json:"used_bytes"`
+	BudgetBytes          uint64                       `json:"budget_bytes"`
+	AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
+	Evidence             []evidenceHit                `json:"evidence"`
+	LatencyMicros        int64                        `json:"latency_micros"`
 }
 
 type evidenceHit struct {
-	Item                 string  `json:"item"`
-	SegmentID            string  `json:"segment_id"`
-	ContentSHA256        string  `json:"content_sha256"`
-	RepresentationID     string  `json:"representation_id"`
-	RepresentationSHA256 string  `json:"representation_sha256"`
-	ByteStart            uint64  `json:"byte_start"`
-	ByteEnd              uint64  `json:"byte_end"`
-	SegmentPolicy        string  `json:"segment_policy"`
-	Rank                 int     `json:"rank"`
-	Score                float64 `json:"bm25_score"`
-	ByteLength           int     `json:"byte_length"`
-	Text                 string  `json:"text"`
+	Item                 string             `json:"item"`
+	SegmentID            string             `json:"segment_id"`
+	ContentSHA256        string             `json:"content_sha256"`
+	RepresentationID     string             `json:"representation_id"`
+	RepresentationSHA256 string             `json:"representation_sha256"`
+	ByteStart            uint64             `json:"byte_start"`
+	ByteEnd              uint64             `json:"byte_end"`
+	SegmentPolicy        string             `json:"segment_policy"`
+	Rank                 int                `json:"rank,omitempty"`
+	Score                float64            `json:"bm25_score,omitempty"`
+	ByteLength           int                `json:"byte_length"`
+	Text                 string             `json:"text"`
+	Origin               string             `json:"origin,omitempty"`
+	Association          *associationReason `json:"association,omitempty"`
+}
+
+// associationReason carries the declaration that included an associated passage: the declaring
+// item, the target, and the author-attributed basis. Lexical evidence omits it.
+type associationReason struct {
+	FromItem string `json:"from_item"`
+	ToItem   string `json:"to_item"`
+	Basis    string `json:"basis"`
+	Author   string `json:"author"`
+}
+
+// associationOmission reports one declared relationship or passage that released nothing, and why.
+type associationOmission struct {
+	FromItem  string `json:"from_item"`
+	ToItem    string `json:"to_item"`
+	Reason    string `json:"reason"`
+	SegmentID string `json:"segment_id,omitempty"`
 }
 
 // runQuery runs one authorized query against one resolved source.
-func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string) error {
+func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	result, err := queryItems(ctx, store, source, query, policy, budgetBytes, packingPolicy)
+	result, err := queryItems(ctx, store, source, query, policy, budgetBytes, packingPolicy, declarations)
 	if err != nil {
 		return err
 	}

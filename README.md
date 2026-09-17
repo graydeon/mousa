@@ -126,6 +126,29 @@ nothing. Each duplicate keeps its own provenance and references the retained
 segment in the trail. Equal text is not independent corroboration or shared
 authorization. Default `--packing-policy original` retains repeated passages.
 
+`--associations <file>` opts a query into declared associated context:
+
+```sh
+./mousa -store local.sqlite query --associations associations.json --budget-bytes 4096 ./documents 'harbor inspection'
+```
+
+The file declares author-attributed relationships between items of the queried
+source, for example that a procedure item is incomplete for its declared use
+without the qualification documented in another item. Mousa never infers these
+relationships; the author and basis stay attached to every passage the
+declaration releases. A declaration is honored only when the declaring item
+contributed selected primary evidence, so an unrelated query releases nothing.
+Depth is one and at most four distinct targets are read per query. Associated
+passages pack into the remaining budget after primary evidence, keep their own
+item, segment identity, byte coordinates and content digest, and carry the
+declaration that included them. A missing, inactive or unfired declaration is
+recorded as a visible omission, never a silent gap or a completeness claim. A
+relationship is not an access grant: resolution stays inside the one allowed
+source decision and only reaches the current active revision. The stored trail
+records the complete association stage; decoding stays strict across trail
+versions. See the
+[associated context contract](docs/CAPABILITIES.md#declared-associated-context).
+
 ### CLI client example
 
 For a persistent, usable documentation lookup, see the

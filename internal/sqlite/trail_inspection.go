@@ -8,6 +8,22 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
+// SourceTrailAssociatedView describes one historically considered associated passage with the
+// declaration that included it. No evidence text is released.
+type SourceTrailAssociatedView struct {
+	SegmentID     mousa.SegmentID `json:"segment_id"`
+	ContentSHA256 mousa.SHA256    `json:"content_sha256"`
+	TextBytes     uint64          `json:"text_bytes"`
+	Selected      bool            `json:"selected"`
+	IndexedNow    bool            `json:"indexed_now"`
+	Omission      string          `json:"omission,omitempty"`
+	DuplicateOf   string          `json:"duplicate_of,omitempty"`
+	FromItem      string          `json:"from_item"`
+	ToItem        string          `json:"to_item"`
+	Basis         string          `json:"basis"`
+	Author        string          `json:"author"`
+}
+
 // TrailInspection releases a historical projection only after a fresh source
 // authorization. It contains no evidence text or rejected candidate identities.
 type TrailInspection struct {
@@ -20,19 +36,21 @@ type TrailInspection struct {
 // SourceTrailView is a filtered explanation, not a canonical SourceTrail record.
 // Accepted metadata describes the historical packet, not a new text release.
 type SourceTrailView struct {
-	ID                mousa.SourceTrailID          `json:"id"`
-	RequestID         string                       `json:"request_id"`
-	DecisionID        string                       `json:"decision_id"`
-	DecisionOutcome   string                       `json:"decision_outcome"`
-	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
-	Expression        string                       `json:"expression"`
-	BudgetBytes       uint64                       `json:"budget_bytes"`
-	UsedBytes         uint64                       `json:"used_bytes"`
-	PacketID          string                       `json:"packet_id"`
-	LifecycleExcluded int                          `json:"lifecycle_excluded"`
-	Candidates        []SourceTrailCandidateView   `json:"candidates"`
-	Schema            string                       `json:"schema,omitempty"`
-	PackingPolicy     string                       `json:"packing_policy,omitempty"`
+	ID                   mousa.SourceTrailID          `json:"id"`
+	RequestID            string                       `json:"request_id"`
+	DecisionID           string                       `json:"decision_id"`
+	DecisionOutcome      string                       `json:"decision_outcome"`
+	DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	Expression           string                       `json:"expression"`
+	BudgetBytes          uint64                       `json:"budget_bytes"`
+	UsedBytes            uint64                       `json:"used_bytes"`
+	PacketID             string                       `json:"packet_id"`
+	LifecycleExcluded    int                          `json:"lifecycle_excluded"`
+	Candidates           []SourceTrailCandidateView   `json:"candidates"`
+	Schema               string                       `json:"schema,omitempty"`
+	PackingPolicy        string                       `json:"packing_policy,omitempty"`
+	Associated           []SourceTrailAssociatedView  `json:"associated,omitempty"`
+	AssociationOmissions []mousa.AssociationOmission  `json:"association_omissions,omitempty"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -105,7 +123,7 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV2 {
+		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 		}
@@ -145,6 +163,21 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 				Selected: candidate.Selected, IndexedNow: indexed,
 				Omission: candidate.Omission, DuplicateOf: candidate.DuplicateOf,
 			})
+		}
+		if trail.Schema == mousa.SourceTrailSchemaV3 {
+			for _, row := range trail.Associated {
+				var indexed bool
+				if err := conn.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`, row.SegmentID[:]).Scan(&indexed); err != nil {
+					return classify("inspect associated activation", err)
+				}
+				view.Associated = append(view.Associated, SourceTrailAssociatedView{
+					SegmentID: row.SegmentID, ContentSHA256: row.ContentSHA256,
+					TextBytes: row.TextBytes, Selected: row.Selected, IndexedNow: indexed,
+					Omission: row.Omission, DuplicateOf: row.DuplicateOf,
+					FromItem: row.FromItem, ToItem: row.ToItem, Basis: row.Basis, Author: row.Author,
+				})
+			}
+			view.AssociationOmissions = trail.AssociationOmissions
 		}
 		result.Historical = view
 		return nil

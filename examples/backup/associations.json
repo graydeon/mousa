@@ -1,0 +1,11 @@
+{
+  "schema": "mousa.association_declarations.v1",
+  "associations": [
+    {
+      "from_item": "backup.rst",
+      "to_item": "context.rst",
+      "basis": "The backup examples use the connection as a transaction context manager; the note that this context manager does not close the connection is documented in the connection-context section.",
+      "author": "examples/backup corpus maintainer"
+    }
+  ]
+}

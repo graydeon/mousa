@@ -13,7 +13,9 @@ import (
 
 // queryItems uses the canonical evaluation, retrieval, packing, and tracing
 // transaction. Only selected, accepted text is released from that snapshot.
-func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
+// Declarations opt the caller into associated context: without them the
+// retrieval is the established unassociated path.
+func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) (*evidenceResult, error) {
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -30,7 +32,7 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 	if err != nil {
 		return nil, err
 	}
-	traced, err := store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
+	traced, err := store.EvaluateAndTraceAssociatedLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +62,7 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 			continue
 		}
 		if !traced.Trail.Candidates[index].Selected {
-			if traced.Trail.Candidates[index].Omission == "duplicate" {
+			if traced.Trail.Candidates[index].Omission == "duplicate" && result.DuplicateOmitted != nil {
 				*result.DuplicateOmitted++
 			} else {
 				result.BudgetOmitted++
@@ -103,7 +105,67 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 			ContentSHA256: candidate.Segment.ContentSHA256.String(),
 			Rank:          candidate.FinalRank, Score: candidate.BM25,
 			ByteLength: len(candidate.Text), Text: candidate.Text,
+			Origin: "lexical",
 		})
+	}
+	if declarations != nil {
+		// Associated evidence is rendered after the primary evidence, in trail row order, so the
+		// caller sees the declaration behind every additional passage and every non-delivery.
+		for index, row := range traced.Trail.Associated {
+			if row.Selected {
+				passage := traced.Associated[index]
+				segment := passage.Segment
+				location, exists := locations[segment.RepresentationID]
+				if !exists {
+					representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
+					if err != nil {
+						return nil, err
+					}
+					if representation.ProcessorID != mousa.UTF8TextProcessorID {
+						return nil, fmt.Errorf("selected associated evidence is not normalized UTF-8 text")
+					}
+					segmentPolicy, err := mousa.TextSegmentationPolicy(representation)
+					if err != nil {
+						return nil, err
+					}
+					location = representationLocation{record: representation, item: passage.Item, policy: segmentPolicy}
+					locations[segment.RepresentationID] = location
+				}
+				if err := segment.ValidateAgainst(location.record); err != nil {
+					return nil, err
+				}
+				byteRange, ok := segment.Selector.TextByteRange()
+				if !ok || byteRange.End-byteRange.Start != uint64(len(passage.Text)) {
+					return nil, fmt.Errorf("selected associated range disagrees with released text")
+				}
+				declaration := row
+				result.Evidence = append(result.Evidence, evidenceHit{
+					Item: location.item, SegmentID: segment.ID.String(),
+					RepresentationID:     segment.RepresentationID.String(),
+					RepresentationSHA256: location.record.ContentSHA256.String(),
+					ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: location.policy,
+					ContentSHA256: segment.ContentSHA256.String(),
+					ByteLength:    len(passage.Text), Text: passage.Text,
+					Origin: "association",
+					Association: &associationReason{
+						FromItem: declaration.FromItem, ToItem: declaration.ToItem,
+						Basis: declaration.Basis, Author: declaration.Author,
+					},
+				})
+				continue
+			}
+			switch row.Omission {
+			case "budget", "duplicate":
+				result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
+					FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
+				})
+			}
+		}
+		for _, omission := range traced.Trail.AssociationOmissions {
+			result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
+				FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason,
+			})
+		}
 	}
 	switch {
 	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:
