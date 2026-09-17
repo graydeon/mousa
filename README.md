@@ -133,6 +133,12 @@ For a persistent, usable documentation lookup, see the
 pinned public manuals and returns bounded passages with verified byte ranges,
 normalized line locations and upstream links. It does not generate answers.
 
+For an explicit caller decision over those retrieval contracts, see the
+[SQLite backup checklist](examples/backup/README.md). It verifies saved passages
+from pinned Python documentation, accepts caller-authored fact judgments, and
+reports coverage, unresolved facts, or one requested follow-up retrieval.
+Citation consistency is separate from the caller's assessment of semantic support.
+
 Run the maintained Python standard-library example against the built CLI:
 
 ```sh
@@ -191,11 +197,11 @@ python3 eval/local/workflow_test.py --mousa ./mousa
 
 The command requires an explicit readable executable and runs the actual CLI
 workflow plus nonzero-exit, malformed-JSON, wrong-shaped-output, and timeout
-consumer tests. It also runs the versioned documentation consumer's correctness
-suite. It exits nonzero on a failed test, unmet prerequisite, or skipped test.
+consumer tests. It also runs the versioned documentation and caller-reviewed
+backup consumer suites. It exits nonzero on a failed test, unmet prerequisite, or skipped test.
 Failures include captured workflow output for diagnosis. Each run uses temporary
 stores; the original workflow's CLI calls have five-second deadlines (0.2 seconds
-for the intentional timeout), documentation calls have 30-second deadlines, and
+for the intentional timeout), documentation and backup calls have 30-second deadlines, and
 each workflow subprocess has a 120-second deadline.
 The suite does not run comparisons or benchmarks. Ad hoc `unittest` discovery
 may still skip the real-CLI test when `MOUSA_EXECUTABLE` is unset; it is not a

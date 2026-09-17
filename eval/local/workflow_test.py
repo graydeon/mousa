@@ -74,6 +74,11 @@ class ClientWorkflowTest(unittest.TestCase):
              "--mousa", os.environ["MOUSA_EXECUTABLE"]],
             120, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.assertEqual(code, 0, stderr + stdout)
+        code, stdout, stderr = run_process(
+            [sys.executable, str(Path(__file__).resolve().parents[2] / "examples/backup/backup_test.py"),
+             "--mousa", os.environ["MOUSA_EXECUTABLE"]],
+            120, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(code, 0, stderr + stdout)
 
 
 class RequiredClientResult(unittest.TextTestResult):

@@ -45,9 +45,9 @@ def load_corpus(directory):
     return manifest, documents, hashlib.sha256(manifest_bytes).hexdigest()
 
 
-def prepare(directory):
+def prepare(directory, archive_path=None):
     # Only unpack the bundled, bounded regular-file archive into a new directory.
-    with tarfile.open(Path(__file__).with_name("git-docs.tar.xz"), "r:xz") as archive:
+    with tarfile.open(archive_path or Path(__file__).with_name("git-docs.tar.xz"), "r:xz") as archive:
         members = archive.getmembers()
         if len({m.name for m in members}) != len(members) or sum(m.size for m in members) > 1_000_000:
             raise ValueError("invalid bundled corpus size or duplicate member")
