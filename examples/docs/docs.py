@@ -98,9 +98,9 @@ def sync(binary, store, directory, timeout):
             "manifest_sha256": digest, "response": response}
 
 
-def ask(binary, store, directory, question, budget, timeout):
+def ask(binary, store, directory, question, budget, timeout, arguments=()):
     manifest, documents, digest = load_corpus(directory)
-    response = invoke(binary, store, ["query", "--budget-bytes", str(budget),
+    response = invoke(binary, store, ["query", "--budget-bytes", str(budget), *arguments,
                       str(directory), question], timeout)
     if response["source"] != str(directory) or response["query"] != question:
         raise ValueError("query source or question mismatch")

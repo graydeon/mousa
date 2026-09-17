@@ -41,6 +41,14 @@ func (trail SourceTrail) validatePacking() error {
 	invalid := func(message string) error {
 		return retrievalValidationError("packing", ValidationCodeInvalidValue, message)
 	}
+	if trail.Schema == SourceTrailSchemaV3 {
+		// v3 continues in validateAssociated, which owns the packing-policy gate and the
+		// packet-identity recheck for associated rows.
+		if trail.Outcome == string(PolicyOutcomeDeny) && len(trail.Candidates) != 0 {
+			return invalid("deny cannot carry candidates")
+		}
+		return nil
+	}
 	if trail.Schema == SourceTrailSchema {
 		if trail.PackingPolicy != "" {
 			return invalid("v1 cannot specify a packing policy")

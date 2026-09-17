@@ -81,7 +81,7 @@ func verifyExactTrailContent(ctx context.Context, q queryer, trail mousa.SourceT
 				return integrity("verify exact trail", "duplicate relationship disagrees with verified bytes")
 			}
 		}
-		if candidate.Selected {
+		if candidate.Selected && candidate.Omission == "" {
 			retained[candidate.ContentSHA256] = append(retained[candidate.ContentSHA256], retainedText{candidate.SegmentID.String(), text, available})
 		}
 	}

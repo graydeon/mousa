@@ -65,6 +65,75 @@ class BackupConsumerTest(unittest.TestCase):
         path.write_text(json.dumps(value))
         self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
 
+
+    def test_associated_context_releases_qualification_without_followup(self):
+        """The declared association delivers the closure note without a caller follow-up."""
+        declarations = Path(__file__).with_name("associations.json")
+        # The bundled declaration targets the documentation corpus names; the boundary fixture
+        # uses its own names, so write the equivalent declaration for the fixture.
+        fixture_declarations = self.root / "associations.json"
+        fixture_declarations.write_text(json.dumps({
+            "schema": "mousa.association_declarations.v1",
+            "associations": [{"from_item": "backup.rst", "to_item": "context.rst",
+                              "basis": "fixture declaration", "author": "test maintainer"}]}))
+        result = self.call("retrieve", "--case", "followup", "--associations", str(fixture_declarations))
+        response = result["packet"]["response"]
+        associated = [hit for hit in response["evidence"] or [] if hit.get("origin") == "association"]
+        self.assertTrue(associated, "no associated passage was released")
+        for hit in associated:
+            self.assertEqual(hit["item"], "context.rst")
+            self.assertEqual(hit["association"]["from_item"], "backup.rst")
+            self.assertEqual(hit["association"]["author"], "test maintainer")
+            self.assertIn("byte_start", hit)
+        self.assertGreater(response["used_bytes"], 0)
+        packet = self.root / "packet-associated.json"
+        packet.write_text(json.dumps(result))
+
+    def test_assessment_rejects_associated_passage_without_declaration(self):
+        """An associated hit whose declaration is not supplied fails assessment."""
+        declarations = self.root / "associations.json"
+        declarations.write_text(json.dumps({
+            "schema": "mousa.association_declarations.v1",
+            "associations": [{"from_item": "backup.rst", "to_item": "context.rst",
+                              "basis": "fixture declaration", "author": "test maintainer"}]}))
+        result = self.call("retrieve", "--case", "followup", "--associations", str(declarations))
+        packet = self.root / "packet-associated.json"
+        packet.write_text(json.dumps(result))
+        value = self.call("template", "--packet", str(packet), "--caller", "test reviewer",
+                          "--associations", str(declarations))
+        path = self.root / "assessment-associated.json"
+        path.write_text(json.dumps(value))
+        # Without --associations the consumer cannot bind the declaration: rejected.
+        self.call("assess", "--packet", str(packet), "--assessment", str(path), expected=1)
+        # With a declaration file whose content disagrees with the saved binding: rejected.
+        declarations.write_text(json.dumps({
+            "schema": "mousa.association_declarations.v1",
+            "associations": [{"from_item": "backup.rst", "to_item": "context.rst",
+                              "basis": "changed declaration", "author": "test maintainer"}]}))
+        self.call("assess", "--packet", str(packet), "--assessment", str(path),
+                  "--associations", str(declarations), expected=1)
+        # With the exact bound declaration file: accepted.
+        declarations.write_text(json.dumps({
+            "schema": "mousa.association_declarations.v1",
+            "associations": [{"from_item": "backup.rst", "to_item": "context.rst",
+                              "basis": "fixture declaration", "author": "test maintainer"}]}))
+        self.call("assess", "--packet", str(packet), "--assessment", str(path),
+                  "--associations", str(declarations))
+
+    def test_unrelated_query_with_declaration_is_unchanged(self):
+        declarations = self.root / "associations.json"
+        declarations.write_text(json.dumps({
+            "schema": "mousa.association_declarations.v1",
+            "associations": [{"from_item": "backup.rst", "to_item": "context.rst",
+                              "basis": "fixture declaration", "author": "test maintainer"}]}))
+        plain = self.call("retrieve", "--case", "complete")
+        declared = self.call("retrieve", "--case", "complete", "--associations", str(declarations))
+        # The complete case lexically reaches both documents; its selection must be identical.
+        plain_hits = [(h["item"], h["byte_start"], h["byte_end"]) for h in plain["packet"]["response"]["evidence"]]
+        declared_hits = [(h["item"], h["byte_start"], h["byte_end"], h.get("origin")) for h in declared["packet"]["response"]["evidence"]]
+        self.assertEqual([(i, s, e) for i, s, e, _ in declared_hits], plain_hits)
+        self.assertTrue(all(origin == "lexical" for *_, origin in declared_hits))
+
     def test_changed_packet_revision_digest_and_range_refuse(self):
         value, path = self.assessment()
         original = self.packet.read_bytes()

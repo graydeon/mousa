@@ -38,7 +38,36 @@ def case_named(name):
     return next(case for case in CASES["cases"] if case["id"] == name)
 
 
-def verify_packet(packet, directory):
+def load_declarations(path):
+    """Read one declared-association file; the consumer passes it through to the CLI."""
+    if path is None:
+        return None
+    raw = path.read_bytes()
+    declarations = {"sha256": digest(raw)}
+    declarations.update(load_json(raw))
+    require(declarations.get("schema") == "mousa.association_declarations.v1",
+            "declaration file schema mismatch")
+    entries = declarations.get("associations")
+    require(isinstance(entries, list) and entries, "declaration file must declare associations")
+    for entry in entries:
+        require(set(entry) == {"from_item", "to_item", "basis", "author"}, "invalid declaration fields")
+        require(entry["from_item"] != entry["to_item"], "declaration self reference")
+        for field in ("basis", "author"):
+            require(isinstance(entry[field], str) and entry[field].strip(), "declaration needs " + field)
+    return declarations
+
+
+def association_matches(hit, declarations):
+    for entry in declarations["associations"]:
+        if (hit["association"]["from_item"] == entry["from_item"]
+                and hit["association"]["to_item"] == entry["to_item"]
+                and hit["association"]["basis"] == entry["basis"]
+                and hit["association"]["author"] == entry["author"]):
+            return True
+    return False
+
+
+def verify_packet(packet, directory, declarations=None):
     manifest, documents, manifest_digest = docs.load_corpus(directory)
     expected = {key: manifest[key] for key in ("name", "version", "revision", "attribution")}
     expected["manifest_sha256"] = manifest_digest
@@ -53,6 +82,11 @@ def verify_packet(packet, directory):
     used = 0
     for hit in evidence:
         require(hit["item"] in documents, "evidence outside the corpus")
+        if hit.get("origin") == "association":
+            require(declarations is not None and association_matches(hit, declarations),
+                    "associated passage without a matching declared association")
+        else:
+            require("association" not in hit, "lexical passage carries association metadata")
         selected = docs.verify_evidence(hit, documents[hit["item"]])
         normalized = documents[hit["item"]].removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         expected_location = {"path": hit["item"], "line_start": normalized[:hit["byte_start"]].count(b"\n") + 1,
@@ -70,14 +104,14 @@ def verify_packet(packet, directory):
     return references
 
 
-def inspect(raw, directory):
+def inspect(raw, directory, declarations=None):
     saved = load_json(raw)
     if "original" in saved:
         require(set(saved) == {"original", "assessment", "packet"}, "invalid follow-up file")
         original_raw = saved["original"].encode("utf-8")
         original = load_json(original_raw)
         require("original" not in original, "follow-up budget exhausted")
-        prior = assess(original_raw, saved["assessment"], directory)
+        prior = assess(original_raw, saved["assessment"], directory, declarations)
         require(prior["decision"] == "retrieve", "follow-up was not requested by the original assessment")
         choice = saved["assessment"]["next_retrieval"]
         require(saved["packet"]["response"]["query"] == choice["question"] and
@@ -86,35 +120,44 @@ def inspect(raw, directory):
         require(saved["packet"]["response"]["source"] == original["packet"]["response"]["source"],
                 "follow-up source changed")
         packets = [original["packet"], saved["packet"]]
+        original_wrapper = original
     else:
-        original = saved
+        original_wrapper = saved
         packets = [saved["packet"]]
-    require(set(original) == {"case", "requirements", "packet"}, "invalid initial packet file")
+    require(set(original_wrapper) in ({"case", "requirements", "packet"},
+                                      {"case", "requirements", "packet", "associations_sha256"}),
+            "invalid initial packet file")
+    original = {"case": original_wrapper["case"], "requirements": original_wrapper["requirements"],
+                "packet": original_wrapper["packet"]}
+    if "associations_sha256" in original_wrapper:
+        require(declarations is not None, "packet declares associations; pass --associations")
+        require(original_wrapper["associations_sha256"] == declarations["sha256"],
+                "declaration file does not match the saved packet")
     case = case_named(original["case"])
     requirements = {key: CASES["facts"][key] for key in case["facts"]}
     require(original["requirements"] == requirements, "task requirements changed")
     references = {}
     for packet in packets:
-        for key, hit in verify_packet(packet, directory).items():
+        for key, hit in verify_packet(packet, directory, declarations).items():
             require(key not in references or references[key] == hit, "same reference has inconsistent evidence")
             references[key] = hit
     return original, packets, references
 
 
-def template(raw, directory, caller):
-    original, _, _ = inspect(raw, directory)
+def template(raw, directory, caller, declarations=None):
+    original, _, _ = inspect(raw, directory, declarations)
     require(isinstance(caller, str) and caller.strip(), "caller identity is required")
     return {"packet_file_sha256": digest(raw), "caller": caller,
             "facts": [{"id": key, "judgment": "unassessed", "reason": "", "references": []}
                       for key in original["requirements"]], "next_retrieval": None}
 
 
-def assess(raw, assessment, directory):
+def assess(raw, assessment, directory, declarations=None):
     require(set(assessment) == {"packet_file_sha256", "caller", "facts", "next_retrieval"},
             "unexpected or missing assessment fields")
     require(assessment["packet_file_sha256"] == digest(raw), "assessment does not bind this exact packet file")
     require(isinstance(assessment["caller"], str) and assessment["caller"].strip(), "caller identity is required")
-    original, packets, references = inspect(raw, directory)
+    original, packets, references = inspect(raw, directory, declarations)
     coverage = {key: {"judgment": "unassessed", "reason": "No caller judgment supplied", "references": []}
                 for key in original["requirements"]}
     require(isinstance(assessment["facts"], list), "facts must be a list")
@@ -171,9 +214,11 @@ def main():
     retrieve.add_argument("--case", choices=[case["id"] for case in CASES["cases"]], default="complete")
     retrieve.add_argument("--question", help="explicit initial query override")
     retrieve.add_argument("--budget-bytes", type=int)
+    retrieve.add_argument("--associations", type=Path, help="declared-association JSON file for opt-in associated context")
     for name in ("template", "assess", "followup"):
         command = commands.add_parser(name)
         command.add_argument("--packet", type=Path, required=True)
+        command.add_argument("--associations", type=Path, help="declaration file bound to the packet, for associated evidence")
         if name == "template":
             command.add_argument("--caller", required=True)
         else:
@@ -183,6 +228,7 @@ def main():
     try:
         require(args.timeout > 0, "timeout must be positive")
         directory = args.directory.absolute()
+        declarations = load_declarations(getattr(args, "associations", None) or None)
         if args.operation == "prepare":
             result = docs.prepare(directory, Path(__file__).with_name("python-docs.tar.xz"))
         elif args.operation == "sync":
@@ -193,23 +239,29 @@ def main():
             require(0 < budget <= 65536, "byte budget must be between 1 and 65536")
             question = case["question"] if args.question is None else args.question
             require(question.strip(), "query is required")
+            response = docs.ask(args.mousa.resolve(strict=True), args.store, directory, question, budget, args.timeout,
+                                arguments=["--associations", str(args.associations.resolve(strict=True))] if declarations else [])
             result = {"case": args.case, "requirements": {key: CASES["facts"][key] for key in case["facts"]},
-                      "packet": docs.ask(args.mousa.resolve(strict=True), args.store, directory, question, budget, args.timeout)}
+                      "packet": response}
+            if declarations:
+                result["associations_sha256"] = declarations["sha256"]
         else:
             raw = args.packet.read_bytes()
             if args.operation == "template":
-                result = template(raw, directory, args.caller)
+                result = template(raw, directory, args.caller, declarations)
             else:
                 assessment = load_json(args.assessment.read_bytes())
-                result = assess(raw, assessment, directory)
+                result = assess(raw, assessment, directory, declarations)
                 if args.operation == "followup":
                     require(result["decision"] == "retrieve", "no available caller-requested follow-up")
-                    original, _, _ = inspect(raw, directory)
+                    original, _, _ = inspect(raw, directory, declarations)
                     require(original["packet"]["response"]["source"] == str(directory), "follow-up requires the original source path")
                     choice = assessment["next_retrieval"]
+                    response = docs.ask(args.mousa.resolve(strict=True), args.store, directory,
+                                        choice["question"], choice["budget_bytes"], args.timeout,
+                                        arguments=["--associations", str(args.associations.resolve(strict=True))] if declarations else [])
                     result = {"original": raw.decode("utf-8"), "assessment": assessment,
-                              "packet": docs.ask(args.mousa.resolve(strict=True), args.store, directory,
-                                                 choice["question"], choice["budget_bytes"], args.timeout)}
+                              "packet": response}
                 else:
                     result["elapsed_ms"] = (time.perf_counter_ns() - started) / 1e6
         print(json.dumps(result, ensure_ascii=False, indent=2))
