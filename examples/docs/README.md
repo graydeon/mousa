@@ -3,11 +3,16 @@
 This example is for a developer or local application looking up Git working-tree
 operations. It returns a JSON packet of source passages, not a generated answer.
 The bundled corpus contains the Git 2.51.0 `git-restore` and `git-switch` AsciiDoc
-manual sources at commit `c44beea485f0f2feaf460e2ac87fdd5608d63cf0`.
-Git contributors retain copyright; the unmodified upstream `COPYING` file is
-included under GPL-2.0-only. This is a documentation aggregate, not Git code
-incorporated into Mousa. Includes and linked manuals are not expanded, so this
-corpus is not the complete rendered Git manual.
+manual sources and their three direct include files at commit
+`c44beea485f0f2feaf460e2ac87fdd5608d63cf0`: `diff-context-options.adoc`,
+`includes/cmd-config-section-all.adoc` and `config/checkout.adoc`, all under
+`Documentation/`. Git contributors retain copyright; the unmodified upstream
+`COPYING` file is included under GPL-2.0-only. This is a documentation aggregate,
+not Git code incorporated into Mousa. Fragments are separate attributed documents,
+not expanded into parent coordinates. This is not complete AsciiDoc rendering.
+The manifest records direct include relationships and unresolved linked manuals:
+git, git-add, git-branch, git-checkout, git-config, git-reset, git-submodule,
+git-worktree and gitglossary. No further include dependencies occur in this subset.
 
 ## Run
 
@@ -30,11 +35,16 @@ select a binary and store. The default store is `docs.sqlite`.
 
 `prepare` unpacks the bundled archive into a **new** directory and refuses to
 overwrite an existing directory. `corpus.json` pins each source file's SHA-256,
-upstream URL, version and revision. `sync` checks the manifest and imports only
-its declared documents with `passage-v1`. The directory's absolute path identifies
-the source; moving it creates a different source. Keep the directory and store at
-stable locations. Use one writer for this example; corpus files and manifest are
-trusted local inputs and must not change during a command.
+upstream URL, version and revision. Before opening the store, `sync` previews
+selection with the same options and requires exact equality with the manifest's
+document set. A nested basename collision or a declared file excluded by the CLI
+causes refusal without changing the store. The CLI's default hidden/generated,
+`.git`, symlink/nonregular, UTF-8, entry and byte limits still apply.
+Successful synchronization imports the declared set with `passage-v1`.
+The directory's absolute path identifies the source; moving it creates a different
+source. Keep the directory and store at stable locations. Use one writer;
+trusted corpus files and the manifest must remain stable throughout the command.
+Preview followed by synchronization is not an atomic filesystem snapshot.
 
 ## Read the packet
 
@@ -73,6 +83,16 @@ selected items, even if an excluded file still exists on disk. The manifest is
 provenance supplied by the corpus maintainer, not an authenticity signature.
 A matching hash alone does not establish authorship or authorization.
 
+To remove the final document, set `documents` to `[]`, remove its entry from
+`files`, and run `sync`. Empty synchronization explicitly excludes every directory
+entry; it never treats missing includes as permission to ingest everything.
+It deactivates this source's current items without withdrawing the source or
+changing other sources. Repeating it is safe. To repopulate, restore reviewed
+document entries and hashes and run `sync` again. After an interrupted sync,
+keep the intended manifest stable and retry; do not assume the whole multi-item
+operation is atomic. Historical observations and text-free trails remain, as do
+saved packets. Empty synchronization is not secure erasure.
+
 Use the existing CLI for access and lifecycle operations:
 
 ```sh
@@ -88,6 +108,8 @@ matching corpus revision if you need to verify a saved packet's coordinates;
 text-free historical trails cannot reconstruct retired text. Equal text in another
 source does not transfer permission or provenance. Filesystem permissions remain
 necessary for the store, corpus and saved packets.
+Separate files and URLs provide document attribution, not separate authorization
+domains: all documents in this directory belong to the same source.
 
 ## Acceptance and limited evaluation
 
@@ -105,8 +127,25 @@ five questions without resetting history or tuning keywords. Its `result: PASS`
 means execution completed; `support_covered` records usefulness separately and can
 be false. Each packet and latency is retained, including misses.
 
+A [matched-corpus comparison](https://github.com/graydeon/mousa-benchmarks/tree/7292ebd385a9a7430dd457048f9016c3305b01b1/results/2026-09-17-corpus-boundaries)
+retains those five cases and six prospectively fixed development cases. Adding
+the three include files made four questions fully covered by their declared
+supporting excerpts: restore context defaults, interactive restore with nearby
+hunks, checkout worker count and the parallel checkout threshold. The interactive
+case retrieves both parent applicability and the separately attributed fragment.
+Two realistic unsupported questions still return lexical passages without the
+requested support; `evidence_available` is not answerability.
+
+The 44-query comparison uses fresh history per query and matched configuration,
+not the accumulating-history loop above. Original/expanded median outer query
+times were 145.17/156.39 ms on a shared worker. Document bytes grew from 15,969 to
+18,615; each ask hashes 34,734/37,380 file bytes including COPYING. These are
+small-run observations, not general quality or performance guarantees.
+
 This small study cannot establish general answer quality, semantic retrieval or
 universal performance. The lexical CLI can miss a supporting passage that exists
 in the corpus. Queries durably record trails, and opening the growing store checks
-its history; repeated use can become more expensive. Do not treat a small byte
-budget as a bound on startup cost.
+its history; repeated use can become more expensive. Every `ask` also reads and
+hashes every manifest file, including non-document license files, and retains
+document bytes for range verification. A small output budget does not bound
+corpus reads, memory, startup cost or total query work. No validity cache is used.

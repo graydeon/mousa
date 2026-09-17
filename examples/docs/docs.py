@@ -27,7 +27,7 @@ def relative_path(name):
 def load_corpus(directory):
     manifest_bytes = (directory / "corpus.json").read_bytes()
     manifest = json.loads(manifest_bytes)
-    if not manifest["documents"] or len(set(manifest["documents"])) != len(manifest["documents"]):
+    if len(set(manifest["documents"])) != len(manifest["documents"]):
         raise ValueError("corpus needs distinct documents")
     documents = {}
     for name, metadata in manifest["files"].items():
@@ -81,10 +81,18 @@ def sync(binary, store, directory, timeout):
     manifest, documents, digest = load_corpus(directory)
     arguments = ["sync", "--segment-policy", "passage-v1"]
     for name in documents:
-        # Each include is a literal corpus filename; reject glob syntax.
+        # Slash-free CLI includes also match nested basenames; preview checks membership.
         if any(c in name for c in "*?[]\\"):
             raise ValueError("corpus document names cannot contain glob characters")
         arguments.extend(["--include", name])
+    if not documents:
+        arguments.extend(["--exclude", "*"])
+    preview = invoke(binary, store, [*arguments, "--preview", str(directory)], timeout)
+    selected = {item["item"] for item in preview["selected"]}
+    if selected != set(documents):
+        raise ValueError("directory selection differs from corpus documents: "
+                         + json.dumps({"extra": sorted(selected - documents.keys()),
+                                       "missing": sorted(documents.keys() - selected)}))
     response = invoke(binary, store, [*arguments, str(directory)], timeout)
     return {"outcome": "synced", "version": manifest["version"],
             "manifest_sha256": digest, "response": response}
