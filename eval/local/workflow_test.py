@@ -69,6 +69,11 @@ class ClientWorkflowTest(unittest.TestCase):
                 self.assertEqual(rows["cross_source_trail"]["exit_code"], 1)
                 for stage in ("query", "directory_query", "policy_restored_query", "directory_restored_query"):
                     self.assertTrue(all(hit["segment_policy"] == policy for hit in rows[stage]["response"]["evidence"]))
+        code, stdout, stderr = run_process(
+            [sys.executable, str(Path(__file__).resolve().parents[2] / "examples/docs/docs_test.py"),
+             "--mousa", os.environ["MOUSA_EXECUTABLE"]],
+            120, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(code, 0, stderr + stdout)
 
 
 class RequiredClientResult(unittest.TextTestResult):

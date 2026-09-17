@@ -1,0 +1,12 @@
+{
+  "scope": "Two Git 2.51.0 AsciiDoc source manuals; lexical passage retrieval, not answer generation. Frozen before first retrieval. No held-out evaluation or general quality claim.",
+  "budget_bytes": 4096,
+  "development": [
+    {"id": "restore-default", "question": "Where does git restore get contents by default?", "item": "Documentation/git-restore.adoc", "support": ["By default, if `--staged` is given, the contents are restored from `HEAD`,\notherwise from the index."]},
+    {"id": "restore-overlay", "question": "What does restore overlay mode do?", "item": "Documentation/git-restore.adoc", "support": ["In overlay mode, never remove files when restoring.", "The default\n\tis no-overlay mode."]},
+    {"id": "switch-detach", "question": "How do I switch to a commit for inspection and discardable experiments?", "item": "Documentation/git-switch.adoc", "support": ["`--detach`::", "Switch to a commit for inspection and discardable\n\texperiments."]},
+    {"id": "switch-orphan", "question": "What happens to tracked files with switch orphan?", "item": "Documentation/git-switch.adoc", "support": ["Create a new unborn branch", "tracked files are removed."]},
+    {"id": "uncovered", "question": "frobnicatequantum", "support": [], "expected_outcome": "insufficient_evidence"}
+  ],
+  "measurement": "One original pass, then four additional passes of the same five questions (25 queries total), no sample extension or keyword tuning. Report each result, evidence coverage and latency by pass; history accumulates naturally. Synthetic lifecycle checks are separate from these real-document observations."
+}
