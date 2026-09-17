@@ -128,6 +128,11 @@ authorization. Default `--packing-policy original` retains repeated passages.
 
 ### CLI client example
 
+For a persistent, usable documentation lookup, see the
+[versioned Git documentation example](examples/docs/README.md). It imports two
+pinned public manuals and returns bounded passages with verified byte ranges,
+normalized line locations and upstream links. It does not generate answers.
+
 Run the maintained Python standard-library example against the built CLI:
 
 ```sh
@@ -186,10 +191,12 @@ python3 eval/local/workflow_test.py --mousa ./mousa
 
 The command requires an explicit readable executable and runs the actual CLI
 workflow plus nonzero-exit, malformed-JSON, wrong-shaped-output, and timeout
-consumer tests. It exits nonzero on a failed test, unmet prerequisite, or skipped
-test. Failures include captured workflow output for diagnosis. Each run uses
-temporary stores; CLI calls have five-second deadlines (0.2 seconds for the
-intentional timeout), and each workflow subprocess has a 120-second deadline.
+consumer tests. It also runs the versioned documentation consumer's correctness
+suite. It exits nonzero on a failed test, unmet prerequisite, or skipped test.
+Failures include captured workflow output for diagnosis. Each run uses temporary
+stores; the original workflow's CLI calls have five-second deadlines (0.2 seconds
+for the intentional timeout), documentation calls have 30-second deadlines, and
+each workflow subprocess has a 120-second deadline.
 The suite does not run comparisons or benchmarks. Ad hoc `unittest` discovery
 may still skip the real-CLI test when `MOUSA_EXECUTABLE` is unset; it is not a
 substitute for this required command.
