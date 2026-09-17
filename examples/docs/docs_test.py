@@ -106,6 +106,87 @@ class DocumentationConsumerTest(unittest.TestCase):
         (self.directory / "manual.txt").symlink_to(peer / "peer.txt")
         self.example("sync", expected=1)
 
+    def test_manifest_collision_refuses_before_store_changes(self):
+        self.corpus("Cedar previously valid procedure.\n", "one", second=False)
+        self.example("sync")
+        before = self.store.read_bytes()
+        self.corpus("Cedar replacement procedure.\n", "two", second=False)
+        nested = self.directory / "extra"
+        nested.mkdir()
+        (nested / "manual.txt").write_text("Undeclared quasarneedle.\n")
+        self.example("sync", expected=1)
+        self.assertEqual(self.store.read_bytes(), before)
+        self.assertFalse(self.cli("query", str(self.directory), "quasarneedle")["evidence"])
+        hits = self.cli("query", str(self.directory), "cedar")["evidence"]
+        self.assertEqual([h["text"] for h in hits], ["Cedar previously valid procedure.\n"])
+        (nested / "manual.txt").unlink()
+        self.example("sync")
+        self.assertEqual(self.example("ask", "cedar")["response"]["evidence"][0]["text"],
+                         "Cedar replacement procedure.\n")
+
+    def test_excluded_declared_document_preserves_store(self):
+        self.corpus("Cedar valid procedure.\n", "one", second=False)
+        self.example("sync")
+        before = self.store.read_bytes()
+        hidden = self.directory / ".hidden.txt"
+        hidden.write_text("Hidden declared procedure.\n")
+        manifest = json.loads((self.directory / "corpus.json").read_text())
+        manifest["documents"].append(hidden.name)
+        manifest["files"][hidden.name] = {
+            "sha256": hashlib.sha256(hidden.read_bytes()).hexdigest(), "url": None}
+        (self.directory / "corpus.json").write_text(json.dumps(manifest))
+        self.example("sync", expected=1)
+        self.assertEqual(self.store.read_bytes(), before)
+        self.assertEqual(self.cli("status", str(self.directory))["active_items"], 1)
+
+    def test_empty_corpus_removes_final_item_and_can_repopulate(self):
+        self.corpus("Cedar final procedure.\n", "one", second=False)
+        self.example("sync")
+        saved = self.example("ask", "cedar")
+        peer = self.root / "peer"
+        peer.mkdir()
+        (peer / "peer.txt").write_text("Cedar unrelated procedure.\n")
+        self.cli("sync", str(peer))
+        manifest = json.loads((self.directory / "corpus.json").read_text())
+        manifest["documents"] = []
+        manifest["files"] = {}
+        (self.directory / "corpus.json").write_text(json.dumps(manifest))
+        self.example("sync")
+        self.example("sync")
+        self.assertFalse(self.example("ask", "cedar")["response"]["evidence"])
+        self.assertEqual(self.cli("status", str(self.directory))["active_items"], 0)
+        self.assertTrue(self.cli("query", str(peer), "cedar")["evidence"])
+        self.assertEqual(saved["response"]["evidence"][0]["text"], "Cedar final procedure.\n")
+        self.assertTrue(self.cli("trail", str(self.directory), saved["response"]["trail_id"])["historical"])
+        self.corpus("Cedar restored procedure.\n", "two", second=False)
+        self.example("sync")
+        self.assertEqual(self.example("ask", "cedar")["response"]["evidence"][0]["text"],
+                         "Cedar restored procedure.\n")
+
+    def test_referenced_passages_keep_separate_attribution(self):
+        self.directory.rmdir()
+        self.example("prepare")
+        self.example("sync")
+        packet = self.example(
+            "ask", "When interactively selecting hunks with git restore, how can I show "
+            "the context between nearby hunks, and what is the default?")
+        by_item = {}
+        for hit in packet["response"]["evidence"]:
+            by_item.setdefault(hit["item"], []).append(hit["text"])
+            self.assertEqual(hit["location"]["path"], hit["item"])
+            self.assertTrue(hit["location"]["url"].endswith("/" + hit["item"]))
+        self.assertIn("Interactively select hunks", "\n".join(by_item["Documentation/git-restore.adoc"]))
+        fragment = "\n".join(by_item["Documentation/diff-context-options.adoc"])
+        self.assertIn("`--inter-hunk-context=<n>`", fragment)
+        self.assertIn("Defaults to `diff.interHunkContext` or 0", fragment)
+        workers = self.example(
+            "ask", "How many parallel workers does checkout use by default, and what "
+            "happens if the worker count is less than one?")
+        text = "\n".join(hit["text"] for hit in workers["response"]["evidence"]
+                         if hit["item"] == "Documentation/config/checkout.adoc")
+        self.assertIn("The default is one", text)
+        self.assertIn("number of logical cores", text)
+
     def test_bundled_corpus_and_insufficient_evidence(self):
         self.directory.rmdir()
         self.example("prepare")
