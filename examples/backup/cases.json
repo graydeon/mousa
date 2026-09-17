@@ -1,0 +1,95 @@
+{
+  "label": "Prospectively fixed development cases, not held-out evaluation",
+  "caller": "Python 3.13.7 SQLite backup checklist author",
+  "facts": {
+    "concurrency": "Connection.backup works during access by other clients or the same connection.",
+    "pages": "pages bounds pages per step; zero or negative copies the entire database in one step.",
+    "progress": "A callback receives integer status, remaining pages and total pages each iteration.",
+    "closure": "The connection context manager commits/rolls back but does not close; close connections explicitly.",
+    "deadline": "A documented maximum completion time for an arbitrary backup under concurrent writes."
+  },
+  "cases": [
+    {
+      "id": "complete",
+      "question": "backup pages progress context manager closes connection",
+      "facts": [
+        "concurrency",
+        "pages",
+        "progress",
+        "closure"
+      ],
+      "budget": 8192,
+      "expected": "covered",
+      "category": null
+    },
+    {
+      "id": "partial",
+      "question": "number pages copy at a time",
+      "facts": [
+        "pages",
+        "closure"
+      ],
+      "budget": 180,
+      "expected": "unresolved",
+      "category": "applicability_context_missing"
+    },
+    {
+      "id": "followup",
+      "question": "backup",
+      "facts": [
+        "concurrency",
+        "pages",
+        "progress",
+        "closure"
+      ],
+      "budget": 4096,
+      "expected": "retrieve",
+      "followup": {
+        "fact": "closure",
+        "query": "context manager neither closes connection",
+        "budget": 4096,
+        "expected": "covered"
+      },
+      "category": "present_not_retrieved"
+    },
+    {
+      "id": "absent",
+      "question": "backup maximum completion time concurrent writes",
+      "facts": [
+        "deadline"
+      ],
+      "budget": 4096,
+      "expected": "unresolved",
+      "category": "absent_from_bounded_corpus"
+    },
+    {
+      "id": "absence_followup",
+      "question": "backup maximum completion time",
+      "facts": [
+        "deadline"
+      ],
+      "budget": 4096,
+      "expected": "retrieve",
+      "followup": {
+        "fact": "deadline",
+        "query": "sleep seconds backup remaining pages",
+        "budget": 4096,
+        "expected": "unresolved"
+      },
+      "category": "absent_from_bounded_corpus"
+    },
+    {
+      "id": "budget",
+      "question": "backup pages progress context manager closes connection",
+      "facts": [
+        "concurrency",
+        "pages",
+        "progress",
+        "closure"
+      ],
+      "budget": 1,
+      "expected": "unresolved",
+      "category": "byte_budget_omission"
+    }
+  ]
+}
