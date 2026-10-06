@@ -117,6 +117,23 @@ var requiredObjectsV11 = append(append([]string(nil), requiredObjectsV10...),
 	"index:local_items_active_representation_idx",
 )
 
+// Version 12 adds immutable supersession declarations. The table carries no index because no
+// listing query reads it yet: every read is by declaration identity.
+var requiredObjectsV12 = append(append([]string(nil), requiredObjectsV11...),
+	"table:supersession_declarations",
+)
+
+// Version 13 adds the supersession activation history and its source-keyed current projection.
+// It also adds the composite parent-key index the declaration table needs for the same-source
+// activation references, which is why version 13 has one more index on that table than version 12.
+var requiredObjectsV13 = append(append([]string(nil), requiredObjectsV12...),
+	"index:supersession_activations_predecessor_idx",
+	"index:supersession_activations_root_idx",
+	"index:supersession_declarations_id_source_idx",
+	"table:supersession_activation_state",
+	"table:supersession_activations",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -309,6 +326,10 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV10
 	} else if wantVersion == 11 {
 		requiredObjects = requiredObjectsV11
+	} else if wantVersion == 12 {
+		requiredObjects = requiredObjectsV12
+	} else if wantVersion == 13 {
+		requiredObjects = requiredObjectsV13
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -387,6 +408,16 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	}
 	if wantVersion >= 10 {
 		if err := verifyLocalItemRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 12 {
+		if err := verifySupersessionDeclarationRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 13 {
+		if err := verifySupersessionActivationRecords(ctx, db); err != nil {
 			return err
 		}
 	}

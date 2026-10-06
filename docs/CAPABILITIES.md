@@ -28,6 +28,8 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
+| Revision-pinned supersession declarations | Yes | No administration command | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures | None; declarations do not filter retrieval or establish factual truth |
+| Supersession activation history | Yes | No administration command | Explicit single-declaration activation/replacement/deactivation, stale-write rejection, concurrent transitions, verified history/state and corruption rejection | None; activation does not move item pointers or enforce query selection |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -43,6 +45,19 @@ keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
+
+## Supersession core boundary
+
+The internal Go API stores source-local declarations pinned to exact predecessor
+and successor item revisions. Separate immutable activation events select at most
+one declaration per source, with an explicit expected predecessor and a verified
+current-state projection. Deactivation retains its event in history. Actor, time
+and reason are recorded labels, not authenticated authorship.
+
+These APIs do not change item activation, lexical retrieval, ranking, packing or
+existing Source Trails. Supersession enforcement and CLI/MCP administration are
+not implemented. Historical revision pins remain readable after item updates or
+deletion; canonical existence does not prove a revision was ever activated.
 
 ## Local stdio MCP
 

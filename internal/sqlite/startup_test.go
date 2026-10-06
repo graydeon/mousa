@@ -34,7 +34,7 @@ func TestActiveRepresentationMigrationPreservesRevisionsAndBackup(t *testing.T) 
 	if len(before) != 1 || before[0].Segment.RepresentationID != current.ID {
 		t.Fatalf("fixture did not select only the current revision: %#v", before)
 	}
-	if _, err := store.db.ExecContext(ctx, `DROP INDEX IF EXISTS local_items_active_representation_idx; DELETE FROM schema_migrations WHERE version > 10`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP TABLE supersession_declarations; DROP INDEX IF EXISTS local_items_active_representation_idx; DELETE FROM schema_migrations WHERE version > 10`); err != nil {
 		t.Fatal(err)
 	}
 	migrations, err := loadMigrations(migrationFiles)
