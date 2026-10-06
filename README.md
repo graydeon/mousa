@@ -323,7 +323,11 @@ The store enforces the transition semantics inside one writer transaction: a fir
 activation must be a root, a replacement or deactivation must name the exact current
 event, a transition that would not change the active declaration is refused, an exact
 retry succeeds only while its event is still current, and a stale or competing
-expectation is a conflict. Rejections append no event and change no stored row.
+expectation is a conflict. A rejected transition transaction appends no event and
+changes no activation, declaration or canonical record. Writable open may still
+create an absent store or upgrade an older supported store before target validation
+rejects the transition; rejection does not undo that creation or migration. Malformed
+or oversized input is rejected before the store opens.
 `get` opens the store read-only and keeps historical reads: an event stays readable
 after later transitions, while a retry of that event is rejected. Activation is
 recorded local administration only; it filters no query, grants no access, moves no

@@ -114,8 +114,11 @@ declaration; a replacement or deactivation must name the exact current event; a
 transition that would not change the active declaration is refused; an exact retry
 succeeds only while its event is still current; a stale expectation, a competing
 branch, a foreign-source declaration, a missing declaration and a missing source are
-rejected with a storage classification. Rejections append no event and change no
-stored row, declaration or canonical record.
+rejected with a storage classification. A rejected transition transaction appends
+no event and changes no activation, declaration or canonical record. Writable open
+may still create an absent store or upgrade an older supported store before target
+validation; rejection does not undo that creation or migration. Malformed or oversized
+input is rejected before the store opens.
 
 `supersession activation get <activation-id>` opens the store read-only, prints the
 same canonical event JSON, and keeps historical reads: an event stays readable after

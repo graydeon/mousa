@@ -555,7 +555,7 @@ func TestSupersessionActivationApplyRejectsInvalidTargetsAndExpectations(t *test
 	}{
 		{"actor change", activationJSON(t, sourceIdentity, &initialID, &secondDeclaration, "example.other", "console/1.0", 1759622400000007, nil)},
 		{"time change", activationJSON(t, sourceIdentity, &initialID, &secondDeclaration, "example.operator", "console/1.0", 1759622409999999, nil)},
-		{"reason change", activationJSON(t, sourceIdentity, &initialID, &secondDeclaration, "example.operator", "console/1.0", 1759622400007, activationReason("different reason"))},
+		{"reason change", activationJSON(t, sourceIdentity, &initialID, &secondDeclaration, "example.operator", "console/1.0", 1759622400000007, activationReason("different reason"))},
 	} {
 		t.Run("replay with "+replayed.name, func(t *testing.T) {
 			if got := activationIdentity(t, replayed.canonical); got != competitorID {
