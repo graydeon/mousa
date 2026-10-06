@@ -62,7 +62,10 @@ reachable as trusted local administration through `supersession declaration put`
 `supersession activation state <source-id>` in `cmd/mousa`, where the state command
 is a read-only projection of the verified current state. MCP declaration surfaces,
 activation listing or history commands, and supersession query enforcement remain
-unimplemented. Historical
+unimplemented. A proposed opt-in enforcement contract is recorded in
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): it is not implemented,
+it changes no default behavior, and no trail or packet version exists for it yet.
+Historical
 revision pins remain readable after item updates or deletion; canonical existence
 does not prove a revision was ever activated.
 

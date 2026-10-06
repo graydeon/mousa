@@ -32,7 +32,11 @@ does not filter queries, move item pointers or create supersession omissions in
 Source Trails. Separately identified current items remain
 independent: a newer correcting item does not automatically suppress an older item.
 Actor, time and reason labels do not authenticate authorship or establish factual
-truth. See the [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
+truth. A proposed contract for opt-in query enforcement — exact revision matching,
+selection and trail versioning, failure handling and a future acceptance matrix — is
+recorded in [opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and is
+not implemented. See the
+[supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
 and [contract evidence](docs/RESEARCH.md#supersession-contract-evidence).
 
 ## The nine-stage retrieval backbone
@@ -62,7 +66,9 @@ dispositions. Opt-in exact-content packing writes v2, which also binds
 duplicate omissions and retained-segment relationships. Queries that record
 a declared-association stage write v3, binding associated passages and
 omissions. Older trail bytes and identities remain unchanged. Ranking-stage
-explanations, transforms and supersession decisions remain planned. A
+explanations, transforms and supersession decisions remain planned; the proposed
+selection and trail-version contract for opt-in supersession enforcement is recorded in
+[docs/SUPERSESSION_ENFORCEMENT.md](docs/SUPERSESSION_ENFORCEMENT.md). A
 consumer's token-limited rendering is not a stored Source Trail or a new
 canonical packet.
 
