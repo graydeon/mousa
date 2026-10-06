@@ -50,6 +50,8 @@ func main() {
 		err = accessCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
+	case "supersession":
+		err = supersessionCommand(ctx, *storePath, rest)
 	case "mcp":
 		err = mcpCommand(ctx, *storePath, rest)
 	case "plugin":
@@ -85,6 +87,10 @@ commands:
   access --source <id> allow|deny
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
+  supersession declaration put
+                            append one strict revision-pinned declaration read from stdin (JSON)
+  supersession declaration get <declaration-id>
+                            read one stored declaration; read-only, never creates a store (JSON)
   mcp --caller <id> --source <id>
                             serve configured JSONL sources over stdio MCP
                             --openai-extensions enables evidence mentions/resources

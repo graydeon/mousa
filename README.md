@@ -22,15 +22,15 @@ complete context window.
 
 The internal Go core now stores source-local supersession declarations pinned to
 exact predecessor and successor item revisions, plus immutable activation history
-and a verified current-state projection. It supports replacement, deactivation,
-exact retries and stale-write rejection without rewriting history.
+and a verified current-state projection. Declaration ingress is reachable natively
+through `supersession declaration put` and `supersession declaration get`.
 
-There is no CLI or MCP administration interface for these records yet, and
-activation does not filter queries, move item pointers or create supersession
-omissions in Source Trails. Separately identified current items remain independent:
-a newer correcting item does not automatically suppress an older item. Actor,
-time and reason labels do not authenticate authorship or establish factual truth.
-See the [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
+Activation administration, MCP declaration surfaces and query enforcement remain
+absent: activation does not filter queries, move item pointers or create
+supersession omissions in Source Trails. Separately identified current items remain
+independent: a newer correcting item does not automatically suppress an older item.
+Actor, time and reason labels do not authenticate authorship or establish factual
+truth. See the [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
 and [contract evidence](docs/RESEARCH.md#supersession-contract-evidence).
 
 ## The nine-stage retrieval backbone
@@ -45,7 +45,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; internal supersession declaration/activation storage. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration storage with a native put/get ingress and internal activation history. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -273,6 +273,33 @@ it is not a substitute for this required command.
 `--source <id>`. `withdraw ./documents` changes source lifecycle state: policy allow
 does not undo withdrawal, and the CLI has no resume command. These controls are not
 secure erasure or a replacement for filesystem access controls.
+
+`supersession declaration put` appends one strict revision-pinned declaration read
+from stdin, and `supersession declaration get <declaration-id>` reads one stored
+declaration back. Both print the canonical stored declaration JSON:
+
+```sh
+./mousa -store local.sqlite supersession declaration put < declaration.json
+./mousa -store local.sqlite supersession declaration get DECLARATION_ID
+```
+
+A declaration names its source plus the exact predecessor and successor item and
+representation revisions, so item labels alone cannot pin a revision. It is
+immutable history, not an activation pointer and not an access grant: storing one
+does not filter queries, suppress the predecessor or authorize anything. The input
+is one `mousa.supersession_declaration.v1` object limited to 64 KiB before decoding;
+the codec rejects unknown or duplicate fields, trailing values, malformed identities
+and an identity that disagrees with its content. The declared source and both pinned revisions must already exist; the command
+does not create or retarget sources, items or revisions, or repair records.
+Writable open may create an absent store or upgrade an older supported store
+before target validation rejects a declaration. Such a rejection appends no
+declaration; it does not undo store creation or migration. An exact retry is idempotent; a reused identity with different
+content is a conflict. `get` opens the store read-only, so an invalid identity, a
+missing record, an absent store and a corrupt stored record all fail without
+creating, migrating or repairing anything. Both commands are trusted local store
+administration, and neither claims to authenticate the recorded author. Activation
+administration is not implemented. See the
+[supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary).
 
 Integrity checks, authorization, current activation, and factual truth are separate
 properties. Classification records are not automatic categorization or
@@ -523,7 +550,7 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declarations and activation history are internal APIs; supersession query enforcement, factual freshness, and semantic conflicts deferred);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; activation history remains an internal API; supersession query enforcement, factual freshness, and semantic conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);

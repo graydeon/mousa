@@ -28,7 +28,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
-| Revision-pinned supersession declarations | Yes | No administration command | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures | None; declarations do not filter retrieval or establish factual truth |
+| Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation history | Yes | No administration command | Explicit single-declaration activation/replacement/deactivation, stale-write rejection, concurrent transitions, verified history/state and corruption rejection | None; activation does not move item pointers or enforce query selection |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
@@ -55,9 +55,39 @@ current-state projection. Deactivation retains its event in history. Actor, time
 and reason are recorded labels, not authenticated authorship.
 
 These APIs do not change item activation, lexical retrieval, ranking, packing or
-existing Source Trails. Supersession enforcement and CLI/MCP administration are
-not implemented. Historical revision pins remain readable after item updates or
+existing Source Trails. Declaration ingress is reachable as trusted local
+administration through `supersession declaration put` and
+`supersession declaration get <declaration-id>` in `cmd/mousa`. Activation
+administration, MCP declaration surfaces and supersession query enforcement remain
+unimplemented. Historical revision pins remain readable after item updates or
 deletion; canonical existence does not prove a revision was ever activated.
+
+### Declaration administration
+
+`supersession declaration put` reads exactly one
+`mousa.supersession_declaration.v1` object from stdin. Input above 64 KiB is rejected
+before decoding, and the strict codec refuses unknown, duplicate or missing fields,
+trailing values, malformed identities and an identity that disagrees with its
+content. The command opens the store named by `-store` writable, appends the
+declaration through the immutable store path, and prints the canonical stored
+declaration JSON. The declared source and both pinned revisions must already exist; the command
+does not create or retarget sources, items or revisions, or repair records. An exact
+retry is idempotent, and a reused identity with different content is a conflict.
+A rejected declaration transaction appends no declaration and changes no canonical
+records. Writable open may nevertheless create an absent store or upgrade an older
+supported store before target validation; rejection does not undo that creation or
+migration. Malformed or oversized input is rejected before the store opens.
+
+`supersession declaration get <declaration-id>` opens the same store read-only and
+prints the same canonical JSON. A missing record or absent store exits 1 with a
+storage error, an unparsable identity exits 2 as an invalid invocation, and a corrupt
+stored record fails integrity verification without repair. Reads never create or
+migrate a store, and a read changes no stored byte.
+
+Both commands are trusted local store administration over the store the operator
+names with `-store`. They grant no retrieval permission, change no grant, policy or
+authentication state, expose no document text, and establish nothing about who
+authored a declaration or whether its labels are true.
 
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable
@@ -75,8 +105,9 @@ remain conflicts.
 
 [Published contract checks](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
 cover the pinned historical implementation, not arbitrary later revisions. Current
-product regression tests cover the later integrity and source-index corrections.
-No CLI-origin supersession administration, query enforcement, semantic evaluation
+product regression tests cover the later integrity and source-index corrections
+plus native declaration put/get CLI administration.
+No activation administration, supersession query enforcement, semantic evaluation
 or full-window memory acceptance has been demonstrated.
 
 ## Local stdio MCP
