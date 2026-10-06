@@ -428,7 +428,7 @@ func TestSupersessionDeclarationGetExitsForMissingInvalidAndAbsentStore(t *testi
 		{"uppercase identity", []string{"supersession", "declaration", "get", strings.ToUpper(declarationID.String())}},
 		{"no identity", []string{"supersession", "declaration", "get"}},
 		{"two identities", []string{"supersession", "declaration", "get", declarationID.String(), declarationID.String()}},
-		{"unknown supersession subcommand", []string{"supersession", "activation", "get"}},
+		{"unknown supersession subcommand", []string{"supersession", "activation-state", "get"}},
 		{"unknown declaration subcommand", []string{"supersession", "declaration", "list"}},
 		{"put with an argument", []string{"supersession", "declaration", "put", declarationID.String()}},
 	} {
