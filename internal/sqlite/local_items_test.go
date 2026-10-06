@@ -215,7 +215,7 @@ func TestLocalItemMigrationRequiresReplayAndPreservesHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The legacy fixture contains exactly the first nine schema versions.
-	if _, err := store.db.Exec(`DROP TABLE local_items; DROP TABLE local_recovery_sources; DELETE FROM schema_migrations WHERE version >= 10`); err != nil {
+	if _, err := store.db.Exec(`DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP TABLE supersession_declarations; DROP TABLE local_items; DROP TABLE local_recovery_sources; DELETE FROM schema_migrations WHERE version >= 10`); err != nil {
 		t.Fatal(err)
 	}
 	migrations, err := loadMigrations(migrationFiles)
