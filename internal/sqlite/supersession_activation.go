@@ -93,6 +93,12 @@ func applySupersessionActivation(ctx context.Context, conn *sql.Conn, activation
 		return stateErr
 	}
 	if IsCode(stateErr, CodeNotFound) {
+		var exists int
+		if checkErr := conn.QueryRowContext(ctx, `SELECT 1 FROM supersession_activations WHERE source_id = ? LIMIT 1`, activation.SourceID[:]).Scan(&exists); checkErr == nil {
+			return integrity("apply supersession activation", "activation history has no current projection")
+		} else if !errors.Is(checkErr, sql.ErrNoRows) {
+			return classify("get supersession activation history", checkErr)
+		}
 		if activation.ExpectedPreviousActivationID != nil {
 			return wrap(CodeConflict, "apply supersession activation", errors.New("expected previous activation does not exist"))
 		}
@@ -346,8 +352,7 @@ func verifySupersessionActivation(ctx context.Context, q queryer, want mousa.Sup
 	if state.CurrentActivationID != want.ID || !supersessionDeclarationPointersEqual(state.ActiveDeclarationID, want.DeclarationID) {
 		return integrity("verify supersession activation", "current projection disagrees with transition")
 	}
-	err = walkSupersessionActivationChain(ctx, q, map[mousa.SupersessionActivationID]bool{}, got)
-	return err
+	return verifySupersessionStateAgainstTip(ctx, q, want.SourceID, state, got, map[mousa.SupersessionActivationID]bool{})
 }
 
 // findSupersessionActivation reads one stored event and its raw payload by identity, so a retry
