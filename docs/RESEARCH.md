@@ -21,7 +21,8 @@ comparison.
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
 opt-in declared associations; internal revision-pinned supersession storage and
-activation history). Native declaration and activation put/get administration is
+activation history). Native declaration and activation put/get administration and a
+read-only current-activation-state inspection command are
 implemented; MCP declaration surfaces and supersession query
 enforcement remain absent. The Git documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
@@ -62,7 +63,10 @@ The pinned capture checks the internal supersession storage/activation APIs, not
 the later native declaration or activation commands. Current product CLI regressions
 exercise those commands against real temporary stores, including initial selection,
 replacement, deactivation, reactivation, exact retry, stale rejection, rejected
-input and damaged-store rejection. MCP declaration surfaces and query suppression
+input, damaged-store rejection, and the read-only current-state view (its three-field
+JSON projection, deactivation as an explicit null, per-source isolation, usage and
+missing-history exits, refusal to create or migrate a store, and failure without
+repair over a damaged projection). MCP declaration surfaces and query suppression
 remain absent. This evidence does
 not demonstrate
 semantic contradiction resolution, authenticated authorship, native-host agent

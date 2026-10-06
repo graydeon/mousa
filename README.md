@@ -24,7 +24,8 @@ The internal Go core now stores source-local supersession declarations pinned to
 exact predecessor and successor item revisions, plus immutable activation history
 and a verified current-state projection. Declaration and activation-event
 administration are reachable natively through `supersession declaration put|get`
-and `supersession activation put|get`.
+and `supersession activation put|get`, and the verified current state for one source
+is inspectable read-only through `supersession activation state <source-id>`.
 
 MCP declaration surfaces and query enforcement remain absent: a recorded activation
 does not filter queries, move item pointers or create supersession omissions in
@@ -46,7 +47,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration through native put/get commands. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -301,11 +302,14 @@ creating, migrating or repairing anything.
 
 `supersession activation put` applies one strict activation transition read from
 stdin, and `supersession activation get <activation-id>` reads one stored event
-back. Both print the canonical stored event JSON:
+back. Both print the canonical stored event JSON, and
+`supersession activation state <source-id>` reports the verified current state for
+one source as a projection object:
 
 ```sh
 ./mousa -store local.sqlite supersession activation put < activation.json
 ./mousa -store local.sqlite supersession activation get ACTIVATION_ID
+./mousa -store local.sqlite supersession activation state SOURCE_ID
 ```
 
 The input is one `mousa.supersession_activation.v1` object limited to 64 KiB before
@@ -333,8 +337,21 @@ after later transitions, while a retry of that event is rejected. Activation is
 recorded local administration only; it filters no query, grants no access, moves no
 item pointer and mutates no declaration.
 
-Both command groups are trusted local store administration, and neither claims to
-authenticate the recorded actor or author. See the
+`state` opens the store read-only and prints one JSON object with exactly
+`source_id`, `current_activation_id` and `active_declaration_id`. The identity
+strings are the same canonical lowercase hexadecimal values the event and declaration
+records carry, and a deactivated source reports an explicit JSON null declaration.
+The object is a current-state projection: it carries no identity, schema or hash of
+its own and is not stored. A source with no activation history reports the store's
+`not_found` error, while history whose current projection is missing or inconsistent
+with the event it names fails integrity verification and is never rebuilt or repaired
+by the read. The state is a verified snapshot rather than a reservation: a caller that
+transitions next still states its own expected predecessor and can still conflict if
+another caller wins first. Current state is the only inspection offered here; there is
+no activation listing or per-source history command and no supersession MCP surface.
+
+The declaration and activation command groups are trusted local store administration,
+and none of them claims to authenticate a recorded actor or author. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary).
 
 Integrity checks, authorization, current activation, and factual truth are separate
@@ -586,7 +603,7 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; immutable activation events and current-state projection with native `put`/`get` CLI administration; supersession query enforcement, factual freshness, and semantic conflicts deferred);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; immutable activation events and a verified current-state projection with native `put`/`get`/`state` CLI administration; supersession query enforcement, factual freshness, and semantic conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
