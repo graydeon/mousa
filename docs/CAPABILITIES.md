@@ -157,9 +157,9 @@ read-only open refuses to migrate it. The reported state is a verified snapshot 
 than a reservation: `supersession activation put` still requires the caller's explicit
 expected predecessor and can still conflict if another transition wins first.
 
-Current state is the only inspection command in this group. There is no activation
-listing or per-source history command, no source alias or name lookup, and no
-supersession MCP tool.
+The `state` command inspects the current projection; `get <activation-id>` reads one
+historical event. There is no activation listing or per-source history command, no
+source alias or name lookup, and no supersession MCP tool.
 
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable

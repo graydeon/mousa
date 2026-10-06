@@ -347,7 +347,7 @@ its own and is not stored. A source with no activation history reports the store
 with the event it names fails integrity verification and is never rebuilt or repaired
 by the read. The state is a verified snapshot rather than a reservation: a caller that
 transitions next still states its own expected predecessor and can still conflict if
-another caller wins first. Current state is the only inspection offered here; there is
+another caller wins first. Use `state` for the current projection and `get` for one historical event. There is
 no activation listing or per-source history command and no supersession MCP surface.
 
 The declaration and activation command groups are trusted local store administration,
