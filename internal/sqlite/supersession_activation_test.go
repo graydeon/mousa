@@ -569,15 +569,14 @@ func TestSupersessionActivationReadOnlyCancelledAndRolledBackWrites(t *testing.T
 		t.Fatalf("write after cancellation: %v", err)
 	}
 
-	// A write that fails after it passed the expectation checks must leave neither the event nor
-	// the projection behind. Dropping the current projection makes the next initial transition pass
-	// the state check and then collide with the stored root.
+	// Missing current state with retained history is corruption. Reject a new root without
+	// appending an event or reconstructing the projection.
 	if _, err := store.db.ExecContext(ctx, `DELETE FROM supersession_activation_state`); err != nil {
 		t.Fatal(err)
 	}
 	forked := activationTestTransition(t, source.ID, mousa.SupersessionActivationID{}, second.ID, "second root", activationBaseUsec+2)
-	if err := store.ApplySupersessionActivation(ctx, forked); !IsCode(err, CodeConflict) {
-		t.Fatalf("second root = %v, want %s", err, CodeConflict)
+	if err := store.ApplySupersessionActivation(ctx, forked); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("second root with missing state = %v, want %s", err, CodeIntegrity)
 	}
 	if count := activationRowCount(t, store); count != 1 {
 		t.Fatalf("rolled-back write left %d activations, want 1", count)
@@ -994,5 +993,70 @@ func TestSupersessionActivationMissingStateIsIntegrityFailure(t *testing.T) {
 	}
 	if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("state read with orphan activation history = %v, want %s", err, CodeIntegrity)
+	}
+}
+
+func TestSupersessionActivationMissingStateRejectsNewTransitions(t *testing.T) {
+	for _, root := range []bool{false, true} {
+		name := "replacement"
+		if root {
+			name = "root"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store, source, chain := activatedChain(t)
+			defer store.Close()
+			if _, err := store.db.ExecContext(ctx, `DELETE FROM supersession_activation_state WHERE source_id = ?`, source.ID[:]); err != nil {
+				t.Fatal(err)
+			}
+			expected := chain.replacement.ID
+			selected := mousa.SupersessionDeclarationID{}
+			if root {
+				expected = mousa.SupersessionActivationID{}
+				selected = chain.declaration.Second.ID
+			}
+			transition := activationTestTransition(t, source.ID, expected, selected, "new transition", activationBaseUsec+2)
+			if err := store.ApplySupersessionActivation(ctx, transition); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("transition with orphan history = %v, want %s", err, CodeIntegrity)
+			}
+			if activationRowCount(t, store) != 2 || activationStateRowCount(t, store) != 0 {
+				t.Fatal("rejected transition changed history or repaired the missing state")
+			}
+			for _, want := range []mousa.SupersessionActivation{chain.initial, chain.replacement} {
+				if got, err := store.GetSupersessionActivation(ctx, want.ID); err != nil || !reflect.DeepEqual(got, want) {
+					t.Fatalf("history after rejection = %#v, %v; want %#v", got, err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestSupersessionActivationExactRetryRejectsHistoricalProjection(t *testing.T) {
+	ctx := context.Background()
+	store, source, chain := activatedChain(t)
+	defer store.Close()
+	if _, err := store.db.ExecContext(ctx, `UPDATE supersession_activation_state SET current_activation_id = ?, active_declaration_id = ? WHERE source_id = ?`, chain.initial.ID[:], chain.declaration.First.ID[:], source.ID[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("read of historical projection = %v, want %s", err, CodeIntegrity)
+	}
+	if err := store.ApplySupersessionActivation(ctx, chain.initial); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("exact retry over historical projection = %v, want %s", err, CodeIntegrity)
+	}
+	if activationRowCount(t, store) != 2 || activationStateRowCount(t, store) != 1 {
+		t.Fatal("rejected retry changed history or state count")
+	}
+	var current, selected []byte
+	if err := store.db.QueryRowContext(ctx, `SELECT current_activation_id, active_declaration_id FROM supersession_activation_state WHERE source_id = ?`, source.ID[:]).Scan(&current, &selected); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(current, chain.initial.ID[:]) || !bytes.Equal(selected, chain.declaration.First.ID[:]) {
+		t.Fatal("rejected retry repaired the historical projection")
+	}
+	for _, want := range []mousa.SupersessionActivation{chain.initial, chain.replacement} {
+		if got, err := store.GetSupersessionActivation(ctx, want.ID); err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("history after rejection = %#v, %v; want %#v", got, err, want)
+		}
 	}
 }
