@@ -43,15 +43,19 @@ func declarationCommand(ctx context.Context, storePath string, args []string) er
 	}
 }
 
+// activationCommand dispatches activation administration: put and get administer the immutable
+// events, and state inspects the verified current projection.
 func activationCommand(ctx context.Context, storePath string, args []string) error {
 	if len(args) == 0 {
-		return usageError{"supersession activation requires put or get"}
+		return usageError{"supersession activation requires put, get or state"}
 	}
 	switch args[0] {
 	case "put":
 		return activationPutCommand(ctx, storePath, args[1:])
 	case "get":
 		return activationGetCommand(ctx, storePath, args[1:])
+	case "state":
+		return activationStateCommand(ctx, storePath, args[1:])
 	default:
 		return usageError{fmt.Sprintf("unknown supersession activation subcommand %q", args[0])}
 	}
@@ -183,6 +187,42 @@ func activationGetCommand(ctx context.Context, storePath string, args []string) 
 	return emitActivation(activation)
 }
 
+// activationStateCommand reports the verified current activation state for one source: the event in
+// effect and the declaration it selects, or an explicit null declaration when that source is
+// deactivated. The store opens read-only, so the read never creates, migrates or repairs a store,
+// and a source with no activation history is the store's not_found error rather than an empty
+// success. The store verifies the current projection, the latest event's canonical bytes and the
+// whole predecessor chain in one read snapshot, so damaged or missing state fails as an integrity
+// error and is never rebuilt here.
+//
+// The output is a projection view over those verified records, not a canonical record with its own
+// identity. It is also a snapshot rather than a reservation: a caller that transitions next must
+// still state its own expected predecessor and can still conflict if another caller wins first.
+func activationStateCommand(ctx context.Context, storePath string, args []string) error {
+	flags := newCommandFlags("supersession activation state")
+	if err := flags.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	positional := flags.Args()
+	if len(positional) != 1 {
+		return usageError{"supersession activation state takes one source ID"}
+	}
+	sourceID, err := mousa.ParseSourceID(positional[0])
+	if err != nil {
+		return usageError{err.Error()}
+	}
+	store, err := sqlite.OpenReadOnly(ctx, storePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	state, err := store.GetSupersessionActivationState(ctx, sourceID)
+	if err != nil {
+		return err
+	}
+	return emitActivationState(state)
+}
+
 // readBoundedInput reads one bounded stdin payload for the named record kind. Reading at most one
 // byte past the limit rejects an oversized stream before decoding and without buffering it.
 func readBoundedInput(r io.Reader, limit int, kind string) ([]byte, error) {
@@ -216,4 +256,28 @@ func emitActivation(activation mousa.SupersessionActivation) error {
 	}
 	_, err = os.Stdout.Write(data)
 	return err
+}
+
+// activationStateResponse is the CLI projection of one source's verified current activation state.
+// It is a view over stored records rather than a canonical record: the identity strings are the
+// same lowercase hexadecimal values the event and declaration records carry, and a null
+// active_declaration_id states that the source is deactivated rather than that the field is absent.
+type activationStateResponse struct {
+	SourceID            string  `json:"source_id"`
+	CurrentActivationID string  `json:"current_activation_id"`
+	ActiveDeclarationID *string `json:"active_declaration_id"`
+}
+
+// emitActivationState writes one deterministic JSON object for a verified current state, using the
+// same report-view encoder as the other inspection commands.
+func emitActivationState(state mousa.SupersessionActivationState) error {
+	response := activationStateResponse{
+		SourceID:            state.SourceID.String(),
+		CurrentActivationID: state.CurrentActivationID.String(),
+	}
+	if state.ActiveDeclarationID != nil {
+		declarationID := state.ActiveDeclarationID.String()
+		response.ActiveDeclarationID = &declarationID
+	}
+	return emit(response)
 }

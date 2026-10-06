@@ -29,7 +29,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
-| Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
+| Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -57,9 +57,12 @@ and reason are recorded labels, not authenticated authorship.
 These APIs do not change item activation, lexical retrieval, ranking, packing or
 existing Source Trails. Declaration and activation-event administration are
 reachable as trusted local administration through `supersession declaration put`,
-`supersession declaration get <declaration-id>`, `supersession activation put` and
-`supersession activation get <activation-id>` in `cmd/mousa`. MCP declaration
-surfaces and supersession query enforcement remain unimplemented. Historical
+`supersession declaration get <declaration-id>`, `supersession activation put`,
+`supersession activation get <activation-id>` and
+`supersession activation state <source-id>` in `cmd/mousa`, where the state command
+is a read-only projection of the verified current state. MCP declaration surfaces,
+activation listing or history commands, and supersession query enforcement remain
+unimplemented. Historical
 revision pins remain readable after item updates or deletion; canonical existence
 does not prove a revision was ever activated.
 
@@ -128,10 +131,35 @@ a storage error, an unparsable identity exits 2 as an invalid invocation, and a
 corrupt event or current projection fails integrity verification without repair.
 Reads never create or migrate a store, and a read changes no stored byte.
 
-Both activation commands are trusted local store administration over the store the
+The activation commands are trusted local store administration over the store the
 operator names with `-store`. They record which declaration is active for one source
 and grant no retrieval permission, filter no query, move no item pointer, mutate no
 declaration and expose no document text.
+
+### Current activation state
+
+`supersession activation state <source-id>` opens the store read-only and prints one
+JSON object with exactly `source_id`, `current_activation_id` and
+`active_declaration_id`. The identity strings are the canonical lowercase hexadecimal
+values the event and declaration records carry, and a deactivated source prints an
+explicit JSON null declaration rather than omitting the field. The object is a
+projection view over verified stored records, not a canonical record: it has no
+identity, schema, hash or event of its own and is never stored.
+
+The command parses the source identity before opening the store, so an unparsable
+identity, a missing argument and an extra argument all exit 2 as invalid invocations,
+while a store failure exits 1 with empty stdout. A source with no activation history
+reports the store's `not_found` error, exactly as a missing event does; history whose
+current projection is missing, stale or inconsistent with the event it names fails
+integrity verification and is not rebuilt, repaired or migrated by the read. The read
+never creates a store, and an older supported store stays at its own version because
+read-only open refuses to migrate it. The reported state is a verified snapshot rather
+than a reservation: `supersession activation put` still requires the caller's explicit
+expected predecessor and can still conflict if another transition wins first.
+
+The `state` command inspects the current projection; `get <activation-id>` reads one
+historical event. There is no activation listing or per-source history command, no
+source alias or name lookup, and no supersession MCP tool.
 
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable
@@ -140,8 +168,9 @@ read-only open never upgrades. Older migration bytes and canonical record
 identities are unchanged. The source index avoids scanning unrelated activation
 history for that lookup; it is not a measured latency or startup-cost claim.
 
-Missing current state with retained history is an integrity failure on reads and
-new-transition writes. An exact retry succeeds only while its event is the verified
+Missing, stale or inconsistent current state with retained history is an integrity
+failure for the state read and for new-transition writes, and neither reconstructs it.
+An exact retry succeeds only while its event is the verified
 latest tip; a projection naming an event with a successor is corrupt, not a valid
 retry. Rejected operations neither append events nor reconstruct damaged state.
 Ordinary stale expectations and historical retries against valid current state
@@ -150,7 +179,8 @@ remain conflicts.
 [Published contract checks](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
 cover the pinned historical implementation, not arbitrary later revisions. Current
 product regression tests cover the later integrity and source-index corrections
-plus native declaration and activation put/get CLI administration.
+plus native declaration and activation put/get CLI administration and the read-only
+current-state command.
 Supersession query enforcement, semantic evaluation or full-window memory
 acceptance has not been demonstrated.
 
