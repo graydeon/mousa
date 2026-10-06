@@ -91,6 +91,11 @@ commands:
                             append one strict revision-pinned declaration read from stdin (JSON)
   supersession declaration get <declaration-id>
                             read one stored declaration; read-only, never creates a store (JSON)
+  supersession activation put
+                            apply one strict single-declaration activation transition read from
+                            stdin (JSON); the caller states the expected predecessor and selection
+  supersession activation get <activation-id>
+                            read one stored activation event; read-only, never creates a store (JSON)
   mcp --caller <id> --source <id>
                             serve configured JSONL sources over stdio MCP
                             --openai-extensions enables evidence mentions/resources

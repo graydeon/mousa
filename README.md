@@ -22,12 +22,13 @@ complete context window.
 
 The internal Go core now stores source-local supersession declarations pinned to
 exact predecessor and successor item revisions, plus immutable activation history
-and a verified current-state projection. Declaration ingress is reachable natively
-through `supersession declaration put` and `supersession declaration get`.
+and a verified current-state projection. Declaration and activation-event
+administration are reachable natively through `supersession declaration put|get`
+and `supersession activation put|get`.
 
-Activation administration, MCP declaration surfaces and query enforcement remain
-absent: activation does not filter queries, move item pointers or create
-supersession omissions in Source Trails. Separately identified current items remain
+MCP declaration surfaces and query enforcement remain absent: a recorded activation
+does not filter queries, move item pointers or create supersession omissions in
+Source Trails. Separately identified current items remain
 independent: a newer correcting item does not automatically suppress an older item.
 Actor, time and reason labels do not authenticate authorship or establish factual
 truth. See the [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
@@ -45,7 +46,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration storage with a native put/get ingress and internal activation history. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration through native put/get commands. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -296,9 +297,40 @@ before target validation rejects a declaration. Such a rejection appends no
 declaration; it does not undo store creation or migration. An exact retry is idempotent; a reused identity with different
 content is a conflict. `get` opens the store read-only, so an invalid identity, a
 missing record, an absent store and a corrupt stored record all fail without
-creating, migrating or repairing anything. Both commands are trusted local store
-administration, and neither claims to authenticate the recorded author. Activation
-administration is not implemented. See the
+creating, migrating or repairing anything.
+
+`supersession activation put` applies one strict activation transition read from
+stdin, and `supersession activation get <activation-id>` reads one stored event
+back. Both print the canonical stored event JSON:
+
+```sh
+./mousa -store local.sqlite supersession activation put < activation.json
+./mousa -store local.sqlite supersession activation get ACTIVATION_ID
+```
+
+The input is one `mousa.supersession_activation.v1` object limited to 64 KiB before
+decoding, with the same strict codec rules. The caller states the transition: the
+event identity, the nullable expected predecessor event and the nullable selected
+declaration. A null predecessor with a declaration is a first activation, a named
+predecessor with a declaration is a replacement or reactivation, and a named
+predecessor with a null declaration is a deactivation. Nothing infers the current
+predecessor or invents a transition. The transition identity covers only the source,
+expected predecessor and selected declaration, so actor, time and reason are
+recorded labels: replaying an identity with different metadata is a conflict, not an
+exact retry, and recording them authenticates nothing.
+
+The store enforces the transition semantics inside one writer transaction: a first
+activation must be a root, a replacement or deactivation must name the exact current
+event, a transition that would not change the active declaration is refused, an exact
+retry succeeds only while its event is still current, and a stale or competing
+expectation is a conflict. Rejections append no event and change no stored row.
+`get` opens the store read-only and keeps historical reads: an event stays readable
+after later transitions, while a retry of that event is rejected. Activation is
+recorded local administration only; it filters no query, grants no access, moves no
+item pointer and mutates no declaration.
+
+Both command groups are trusted local store administration, and neither claims to
+authenticate the recorded actor or author. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary).
 
 Integrity checks, authorization, current activation, and factual truth are separate
@@ -550,7 +582,7 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; activation history remains an internal API; supersession query enforcement, factual freshness, and semantic conflicts deferred);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; immutable activation events and current-state projection with native `put`/`get` CLI administration; supersession query enforcement, factual freshness, and semantic conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);

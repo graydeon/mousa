@@ -29,7 +29,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
-| Supersession activation history | Yes | No administration command | Explicit single-declaration activation/replacement/deactivation, stale-write rejection, concurrent transitions, verified history/state and corruption rejection | None; activation does not move item pointers or enforce query selection |
+| Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -55,12 +55,13 @@ current-state projection. Deactivation retains its event in history. Actor, time
 and reason are recorded labels, not authenticated authorship.
 
 These APIs do not change item activation, lexical retrieval, ranking, packing or
-existing Source Trails. Declaration ingress is reachable as trusted local
-administration through `supersession declaration put` and
-`supersession declaration get <declaration-id>` in `cmd/mousa`. Activation
-administration, MCP declaration surfaces and supersession query enforcement remain
-unimplemented. Historical revision pins remain readable after item updates or
-deletion; canonical existence does not prove a revision was ever activated.
+existing Source Trails. Declaration and activation-event administration are
+reachable as trusted local administration through `supersession declaration put`,
+`supersession declaration get <declaration-id>`, `supersession activation put` and
+`supersession activation get <activation-id>` in `cmd/mousa`. MCP declaration
+surfaces and supersession query enforcement remain unimplemented. Historical
+revision pins remain readable after item updates or deletion; canonical existence
+does not prove a revision was ever activated.
 
 ### Declaration administration
 
@@ -89,6 +90,46 @@ names with `-store`. They grant no retrieval permission, change no grant, policy
 authentication state, expose no document text, and establish nothing about who
 authored a declaration or whether its labels are true.
 
+### Activation administration
+
+`supersession activation put` reads exactly one `mousa.supersession_activation.v1`
+object from stdin. Input above 64 KiB is rejected before decoding, with the same
+strict codec rules and the same refusal of malformed, duplicate, unknown, missing or
+trailing content. Every nullable field must be present as either null or a value, so
+an absent key is never read as an explicit null. The command opens the store
+writable, applies the transition through the immutable store path, and prints the
+canonical stored event JSON.
+
+The caller states the transition rather than the command inferring it: the event
+identity, the nullable expected predecessor event and the nullable selected
+declaration. A null predecessor with a declaration is a root activation, a named
+predecessor with a declaration is a replacement or reactivation, and a named
+predecessor with a null declaration is a deactivation. The event identity covers the
+source, expected predecessor and selected declaration only, so actor, time and reason
+are recorded evidence: replaying an identity with different metadata is a conflict
+rather than an exact retry, and recording them authenticates nothing.
+
+The store enforces the semantics inside one writer transaction. A root must select a
+declaration; a replacement or deactivation must name the exact current event; a
+transition that would not change the active declaration is refused; an exact retry
+succeeds only while its event is still current; a stale expectation, a competing
+branch, a foreign-source declaration, a missing declaration and a missing source are
+rejected with a storage classification. Rejections append no event and change no
+stored row, declaration or canonical record.
+
+`supersession activation get <activation-id>` opens the store read-only, prints the
+same canonical event JSON, and keeps historical reads: an event stays readable after
+later transitions advance the current state, while applying that same event again
+after the state advanced is a conflict. A missing event or absent store exits 1 with
+a storage error, an unparsable identity exits 2 as an invalid invocation, and a
+corrupt event or current projection fails integrity verification without repair.
+Reads never create or migrate a store, and a read changes no stored byte.
+
+Both activation commands are trusted local store administration over the store the
+operator names with `-store`. They record which declaration is active for one source
+and grant no retrieval permission, filter no query, move no item pointer, mutate no
+declaration and expose no document text.
+
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable
 open upgrades older supported stores with verified per-migration backups;
@@ -106,9 +147,9 @@ remain conflicts.
 [Published contract checks](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
 cover the pinned historical implementation, not arbitrary later revisions. Current
 product regression tests cover the later integrity and source-index corrections
-plus native declaration put/get CLI administration.
-No activation administration, supersession query enforcement, semantic evaluation
-or full-window memory acceptance has been demonstrated.
+plus native declaration and activation put/get CLI administration.
+Supersession query enforcement, semantic evaluation or full-window memory
+acceptance has not been demonstrated.
 
 ## Local stdio MCP
 
