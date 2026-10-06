@@ -772,8 +772,8 @@ func TestSupersessionActivationMigrationExactBytesHashAndObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 13 {
-		t.Fatalf("embedded migrations = %d, want 13", len(migrations))
+	if len(migrations) != 14 {
+		t.Fatalf("embedded migrations = %d, want 14", len(migrations))
 	}
 	if migrations[12].version != 13 || migrations[12].name != "supersession_activations" {
 		t.Fatalf("migration 13 = %#v, want version 13 name supersession_activations", migrations[12])
@@ -1058,5 +1058,103 @@ func TestSupersessionActivationExactRetryRejectsHistoricalProjection(t *testing.
 		if got, err := store.GetSupersessionActivation(ctx, want.ID); err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("history after rejection = %#v, %v; want %#v", got, err, want)
 		}
+	}
+}
+
+func TestSupersessionActivationHistoryLookupUsesSourceIndex(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	var sourceID mousa.SourceID
+	sourceID[0] = 1
+	rows, err := store.db.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT 1 FROM supersession_activations WHERE source_id = ? LIMIT 1`, sourceID[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var indexed bool
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		t.Log(detail)
+		if strings.Contains(detail, "SEARCH") && strings.Contains(detail, "supersession_activations_source_idx") {
+			indexed = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !indexed {
+		t.Fatal("source-history lookup does not use an indexed source search")
+	}
+}
+
+func TestSupersessionActivationSourceIndexUpgradePreservesHistory(t *testing.T) {
+	ctx := context.Background()
+	store, source, chain := activatedChain(t)
+	path := store.path
+	migrations, err := loadMigrations(migrationFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetSupersessionActivationState(ctx, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, `DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version = 14`); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, store.db, migrations, 13, true, false); err != nil {
+		t.Fatalf("version-13 fixture: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if readOnly, err := OpenReadOnly(ctx, path); readOnly != nil || !IsCode(err, CodeReadOnly) {
+		if readOnly != nil {
+			readOnly.Close()
+		}
+		t.Fatalf("read-only version-13 open = %v, %v", readOnly, err)
+	}
+	store, err = Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if got, err := store.GetSupersessionActivationState(ctx, source.ID); err != nil || !reflect.DeepEqual(got, before) {
+		t.Fatalf("state after index upgrade = %#v, %v; want %#v", got, err, before)
+	}
+	for _, want := range []mousa.SupersessionActivation{chain.initial, chain.replacement} {
+		if got, err := store.GetSupersessionActivation(ctx, want.ID); err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("event after index upgrade = %#v, %v; want %#v", got, err, want)
+		}
+	}
+	for _, want := range []mousa.SupersessionDeclaration{chain.declaration.First, chain.declaration.Second} {
+		if got, err := store.GetSupersessionDeclaration(ctx, want.ID); err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("declaration after index upgrade = %#v, %v; want %#v", got, err, want)
+		}
+	}
+	if activationRowCount(t, store) != 2 || activationStateRowCount(t, store) != 1 {
+		t.Fatal("index upgrade changed history or projection counts")
+	}
+	var hash []byte
+	if err := store.db.QueryRowContext(ctx, `SELECT sha256 FROM schema_migrations WHERE version = 14`).Scan(&hash); err != nil || !bytes.Equal(hash, migrations[13].hash[:]) {
+		t.Fatalf("migration 14 hash = %x, %v", hash, err)
+	}
+	backup, err := connect(ctx, path+".pre-migrate-v13-to-v14.sqlite", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backup.Close()
+	if err := verifyVersion(ctx, backup, migrations, 13, false, true); err != nil {
+		t.Fatalf("version-13 backup verification: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `DROP INDEX supersession_activations_source_idx`); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyVersion(ctx, store.db, migrations, 14, true, false); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("missing index startup verification = %v, want %s", err, CodeIntegrity)
 	}
 }

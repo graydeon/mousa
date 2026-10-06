@@ -59,6 +59,26 @@ existing Source Trails. Supersession enforcement and CLI/MCP administration are
 not implemented. Historical revision pins remain readable after item updates or
 deletion; canonical existence does not prove a revision was ever activated.
 
+Declaration storage starts at schema 12; activation history/current state at
+schema 13. Schema 14 adds a source index for history-existence checks. Writable
+open upgrades older supported stores with verified per-migration backups;
+read-only open never upgrades. Older migration bytes and canonical record
+identities are unchanged. The source index avoids scanning unrelated activation
+history for that lookup; it is not a measured latency or startup-cost claim.
+
+Missing current state with retained history is an integrity failure on reads and
+new-transition writes. An exact retry succeeds only while its event is the verified
+latest tip; a projection naming an event with a successor is corrupt, not a valid
+retry. Rejected operations neither append events nor reconstruct damaged state.
+Ordinary stale expectations and historical retries against valid current state
+remain conflicts.
+
+[Published contract checks](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
+cover the pinned historical implementation, not arbitrary later revisions. Current
+product regression tests cover the later integrity and source-index corrections.
+No CLI-origin supersession administration, query enforcement, semantic evaluation
+or full-window memory acceptance has been demonstrated.
+
 ## Local stdio MCP
 
 `mousa -store STORE mcp --caller cli --source inspection-notes

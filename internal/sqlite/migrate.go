@@ -134,6 +134,10 @@ var requiredObjectsV13 = append(append([]string(nil), requiredObjectsV12...),
 	"table:supersession_activations",
 )
 
+var requiredObjectsV14 = append(append([]string(nil), requiredObjectsV13...),
+	"index:supersession_activations_source_idx",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -330,6 +334,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV12
 	} else if wantVersion == 13 {
 		requiredObjects = requiredObjectsV13
+	} else if wantVersion == 14 {
+		requiredObjects = requiredObjectsV14
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))

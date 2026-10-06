@@ -18,6 +18,21 @@ documentation example can optionally limit its rendered prompt content using
 a pinned tokenizer; this is not a token limit on CLI packets or a model's
 complete context window.
 
+## Current development boundary
+
+The internal Go core now stores source-local supersession declarations pinned to
+exact predecessor and successor item revisions, plus immutable activation history
+and a verified current-state projection. It supports replacement, deactivation,
+exact retries and stale-write rejection without rewriting history.
+
+There is no CLI or MCP administration interface for these records yet, and
+activation does not filter queries, move item pointers or create supersession
+omissions in Source Trails. Separately identified current items remain independent:
+a newer correcting item does not automatically suppress an older item. Actor,
+time and reason labels do not authenticate authorship or establish factual truth.
+See the [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
+and [contract evidence](docs/RESEARCH.md#supersession-contract-evidence).
+
 ## The nine-stage retrieval backbone
 
 Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are implemented in the Go core; stages 6–9 are implemented in narrower form and the deferred parts are listed:
@@ -30,7 +45,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; freshness, supersession, and conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; internal supersession declaration/activation storage. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -78,7 +93,7 @@ CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 ```
 
 Commands print JSON on stdout. Directory item identity is the
-relative POSIX path. Updates and reverts atomically replace current search evidence;
+relative POSIX path. Updates and reverts atomically replace current search evidence for the same item ID;
 deletion removes current evidence without deleting canonical history. Identical
 content restored after deletion becomes searchable again. `status` reports active
 items separately from historical observations.
@@ -508,14 +523,14 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; freshness, supersession, and conflicts deferred);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declarations and activation history are internal APIs; supersession query enforcement, factual freshness, and semantic conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented export formats that other tools can read without Mousa (planned).
 
-Items marked planned are design targets. They are not a release checklist or a statement of current functionality, and nothing in this document is a measured claim.
+Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs; the research record binds observations to their measured revisions and limitations.
 
 ## Contributing
 

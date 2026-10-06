@@ -20,12 +20,47 @@ comparison.
 
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
-opt-in declared associations). The Git documentation consumer optionally limits
+opt-in declared associations; internal revision-pinned supersession storage and
+activation history). Supersession query enforcement and client administration
+remain absent. The Git documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
 RAG/answer-quality benchmark is applicable. Memory benchmarks (LongMemEval,
 MemoryAgentBench) and FreshStack await the corresponding retrieval capabilities;
 see the [implemented and planned capabilities](../README.md#foundation).
+
+## Supersession contract evidence
+
+The [public contract capture](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
+pins Mousa source `47232cf9e7deec20b246590a5b77116a26865153`. It records 35
+top-level domain/SQLite tests and 170 nested subtests, including strict codecs,
+revision provenance, immutable storage, transitions, restart and tamper checks.
+These are product regression cases, not independent relevance samples. Raw Go
+elapsed times are incidental, not a performance comparison.
+
+Two preserved negative cases reverse only their production fixes: replacement
+over a damaged active-declaration projection, and reading absent current state
+with retained history. Both tests fail on that pre-fix implementation. Later
+product regressions additionally cover new transitions against missing state,
+exact retries against historical projections, and version-13-to-14 upgrade.
+The archived source identity and observations have not been relabelled as those
+later fixes or as current-main acceptance.
+
+The current source index changes the bundled SQLite driver's history-existence
+plan from a full covering-index scan to a covering source-index search. Tests
+verify preserved records, per-migration backup, read-only refusal to migrate and
+startup detection of a missing required index. No latency, startup scan cost,
+capacity or sustained-writer performance study accompanies this change.
+
+The archive's corrected reproduction runner forces `GOWORK=off` and records it in
+new observations. Its original observation did not record workspace configuration
+and does not prove environment isolation. Historical raw events and protocol are
+unchanged. The runner verifies the pinned checkout, not arbitrary current source.
+
+Supersession storage/activation are internal APIs. There is no native CLI/MCP
+administration or query suppression yet, and this evidence does not demonstrate
+semantic contradiction resolution, authenticated authorship, native-host agent
+acceptance or whole-model context-window safety.
 
 ## Startup verification at 16,384 documents
 
