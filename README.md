@@ -289,9 +289,11 @@ immutable history, not an activation pointer and not an access grant: storing on
 does not filter queries, suppress the predecessor or authorize anything. The input
 is one `mousa.supersession_declaration.v1` object limited to 64 KiB before decoding;
 the codec rejects unknown or duplicate fields, trailing values, malformed identities
-and an identity that disagrees with its content. The store must already hold the
-declared source and both pinned revisions, and nothing is created, retargeted or
-repaired implicitly. An exact retry is idempotent; a reused identity with different
+and an identity that disagrees with its content. The declared source and both pinned revisions must already exist; the command
+does not create or retarget sources, items or revisions, or repair records.
+Writable open may create an absent store or upgrade an older supported store
+before target validation rejects a declaration. Such a rejection appends no
+declaration; it does not undo store creation or migration. An exact retry is idempotent; a reused identity with different
 content is a conflict. `get` opens the store read-only, so an invalid identity, a
 missing record, an absent store and a corrupt stored record all fail without
 creating, migrating or repairing anything. Both commands are trusted local store

@@ -21,8 +21,9 @@ comparison.
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
 opt-in declared associations; internal revision-pinned supersession storage and
-activation history). Supersession query enforcement and client administration
-remain absent. The Git documentation consumer optionally limits
+activation history). Native declaration put/get administration is implemented;
+activation administration, MCP declaration surfaces and supersession query
+enforcement remain absent. The Git documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
 RAG/answer-quality benchmark is applicable. Memory benchmarks (LongMemEval,
@@ -57,8 +58,11 @@ new observations. Its original observation did not record workspace configuratio
 and does not prove environment isolation. Historical raw events and protocol are
 unchanged. The runner verifies the pinned checkout, not arbitrary current source.
 
-Supersession storage/activation are internal APIs. There is no native CLI/MCP
-administration or query suppression yet, and this evidence does not demonstrate
+The pinned capture checks the internal supersession storage/activation APIs, not
+the later native declaration put/get commands. Current product CLI regressions
+exercise those commands against real temporary stores. Activation administration,
+MCP declaration surfaces and query suppression remain absent. This evidence does
+not demonstrate
 semantic contradiction resolution, authenticated authorship, native-host agent
 acceptance or whole-model context-window safety.
 

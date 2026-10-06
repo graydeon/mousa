@@ -70,10 +70,13 @@ before decoding, and the strict codec refuses unknown, duplicate or missing fiel
 trailing values, malformed identities and an identity that disagrees with its
 content. The command opens the store named by `-store` writable, appends the
 declaration through the immutable store path, and prints the canonical stored
-declaration JSON. The declared source and both pinned revisions must already exist in
-that store; the command creates, retargets and repairs nothing. An exact retry is
-idempotent, a reused identity with different content is a conflict, and a rejected
-declaration leaves canonical rows and stored bytes unchanged.
+declaration JSON. The declared source and both pinned revisions must already exist; the command
+does not create or retarget sources, items or revisions, or repair records. An exact
+retry is idempotent, and a reused identity with different content is a conflict.
+A rejected declaration transaction appends no declaration and changes no canonical
+records. Writable open may nevertheless create an absent store or upgrade an older
+supported store before target validation; rejection does not undo that creation or
+migration. Malformed or oversized input is rejected before the store opens.
 
 `supersession declaration get <declaration-id>` opens the same store read-only and
 prints the same canonical JSON. A missing record or absent store exits 1 with a
