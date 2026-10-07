@@ -20,11 +20,13 @@ comparison.
 
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
-opt-in declared associations; internal revision-pinned supersession storage and
-activation history). Native declaration and activation put/get administration and a
+opt-in declared associations; internal revision-pinned supersession storage,
+activation history and a pure supersession selection API). Native declaration and
+activation put/get administration and a
 read-only current-activation-state inspection command are
 implemented; MCP declaration surfaces and supersession query
-enforcement remain absent. The Git documentation consumer optionally limits
+enforcement remain absent, and no retrieval path calls the selection API. The Git
+documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
 RAG/answer-quality benchmark is applicable. Memory benchmarks (LongMemEval,
@@ -67,13 +69,21 @@ input, damaged-store rejection, and the read-only current-state view (its three-
 JSON projection, deactivation as an explicit null, per-source isolation, usage and
 missing-history exits, refusal to create or migrate a store, and failure without
 repair over a damaged projection). MCP declaration surfaces and query suppression
-remain absent. This evidence does
+remain absent. Product regression cases in the current tree additionally cover the pure
+selection API: consultation shapes, exact predecessor-representation matching, multiple
+segments of the pinned representation, lifecycle-rejected and non-matching candidates, later
+revisions,
+byte-equal other items, ancestor representation pins, source isolation, malformed or
+cross-source administrative inputs, row order, and unchanged caller-owned inputs. These
+are structural cases over supplied records, not independent relevance samples or
+enforcement acceptance: nothing calls the API, no trail records it, and no query withholds
+evidence. This evidence does
 not demonstrate
 semantic contradiction resolution, authenticated authorship, native-host agent
 acceptance or whole-model context-window safety. A proposed contract for opt-in query
 enforcement, including its future acceptance matrix, is recorded in
-[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); it is not implemented and
-none of its future checks has been run.
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); only its selection API is
+implemented and none of its future checks has been run.
 
 ## Startup verification at 16,384 documents
 
