@@ -32,9 +32,13 @@ does not filter queries, move item pointers or create supersession omissions in
 Source Trails. Separately identified current items remain
 independent: a newer correcting item does not automatically suppress an older item.
 Actor, time and reason labels do not authenticate authorship or establish factual
-truth. A proposed contract for opt-in query enforcement — exact revision matching,
-selection and trail versioning, failure handling and a future acceptance matrix — is
-recorded in [opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and is
+truth. The first bounded half of the proposed opt-in enforcement contract — an
+internal pure selection API that derives consultation and withholding evidence from
+the decision source and outcome, already verified candidates and explicitly supplied
+verified activation and declaration records — is implemented; it is called by no
+retrieval path and withholds nothing. The rest of the contract, including trail
+versioning, transaction integration and query enforcement, is recorded in
+[opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and is
 not implemented. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
 and [contract evidence](docs/RESEARCH.md#supersession-contract-evidence).
@@ -51,7 +55,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands, and an internal pure supersession selection API that no retrieval path calls yet. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -66,8 +70,10 @@ dispositions. Opt-in exact-content packing writes v2, which also binds
 duplicate omissions and retained-segment relationships. Queries that record
 a declared-association stage write v3, binding associated passages and
 omissions. Older trail bytes and identities remain unchanged. Ranking-stage
-explanations, transforms and supersession decisions remain planned; the proposed
-selection and trail-version contract for opt-in supersession enforcement is recorded in
+explanations, transforms and supersession decisions remain planned: no trail version
+records a supersession selection, so an internal selection member is not written to any
+trail. The proposed selection and trail-version contract for opt-in supersession
+enforcement is recorded in
 [docs/SUPERSESSION_ENFORCEMENT.md](docs/SUPERSESSION_ENFORCEMENT.md). A
 consumer's token-limited rendering is not a stored Source Trail or a new
 canonical packet.
@@ -609,7 +615,7 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; immutable activation events and a verified current-state projection with native `put`/`get`/`state` CLI administration; supersession query enforcement, factual freshness, and semantic conflicts deferred);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; revision-pinned supersession declaration storage with native `put`/`get` CLI administration; immutable activation events and a verified current-state projection with native `put`/`get`/`state` CLI administration; an internal pure supersession selection API that no retrieval path calls yet; supersession query enforcement, factual freshness, and semantic conflicts deferred);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);

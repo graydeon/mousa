@@ -30,6 +30,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
+| Supersession selection contract | Yes | No command; internal Go API | Consultation/denial/deactivation shapes, exact predecessor-pin matching, source isolation, rejected and non-matching candidates, row order and copying, structural validation failures | None; the API is not called by retrieval and withholds nothing |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -63,11 +64,43 @@ reachable as trusted local administration through `supersession declaration put`
 is a read-only projection of the verified current state. MCP declaration surfaces,
 activation listing or history commands, and supersession query enforcement remain
 unimplemented. A proposed opt-in enforcement contract is recorded in
-[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): it is not implemented,
-it changes no default behavior, and no trail or packet version exists for it yet.
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): only its pure
+selection half is implemented, it changes no default behavior, and no trail or packet
+version exists for it yet.
 Historical
 revision pins remain readable after item updates or deletion; canonical existence
 does not prove a revision was ever activated.
+
+### Selection contract
+
+The internal Go API also carries the pure selection half of that contract, in
+`internal/mousa/supersession_selection.go`. `SupersessionSelection` is the
+consultation member: a boolean, a nullable activation and declaration identity, and a
+non-nullable disposition array. `SupersessionDisposition` is one typed row naming the
+withheld candidate's segment identity and content digest, the applied declaration and
+that declaration's exact predecessor and successor item and representation pins.
+`BuildSupersessionSelection` derives the member from the decision source and outcome,
+already verified lexical candidates and explicitly supplied verified activation and
+declaration records; `Validate` and `ValidateAgainst` re-check a member against those
+supplied inputs.
+
+A non-allow outcome is unconsulted: no activation identity, no declaration identity and
+no row, which asserts nothing about whether activation history exists. An allow outcome
+is consulted, where a nil activation state means the caller verified no history, a state
+naming no declaration is a deactivation, and an accepted candidate is withheld only when
+its own segment representation equals the selected declaration's predecessor
+representation and its verified ancestry names the decision source. Item labels, text
+equality, segment identity, a later revision, an ancestor representation pin, another
+source's candidates and lifecycle-rejected candidates never match, and rows follow the
+original accepted `final_rank` order.
+
+This API is structural and local: it reads no store, packs nothing, blanks no text,
+releases no packet and changes no candidate rank, disposition or canonical size, and it
+proves consistency with the supplied records only. Stored existence, pinned ancestry,
+authorization, successor currency and current state remain transaction-bound store
+responsibilities, so a hash never stands in for integrity or permission. No retrieval
+path calls it, no trail member or version records it, and nothing reachable from the CLI
+or MCP withholds evidence.
 
 ### Declaration administration
 

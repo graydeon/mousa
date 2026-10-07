@@ -1,12 +1,21 @@
 # Opt-in supersession enforcement
 
-**Status: proposed contract, not implemented.** No production code implements anything on
-this page: there is no query opt-in, no CLI flag, no MCP surface, no trail version and no
-packet version for supersession enforcement. This document settles the selection and trail
-contract *before* retrieval changes, so a later bounded implementation does not improvise
-semantics the current records cannot support. Until that implementation lands, a recorded
-activation still filters no query, and separately identified current items remain
-independent: a newer correcting item does not suppress an older item.
+**Status: contract defined; only the internal selection contract is implemented.** No query
+implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface, no
+trail version and no packet version for supersession enforcement, and nothing consults the
+implemented selection API. This document settles the selection and trail contract *before*
+retrieval changes, so a later bounded implementation does not improvise semantics the current
+records cannot support. Until that implementation lands, a recorded activation still filters
+no query, and separately identified current items remain independent: a newer correcting item
+does not suppress an older item.
+
+The pure domain half of the first slice is implemented as an internal Go API —
+`SupersessionSelection`, `SupersessionDisposition`, `BuildSupersessionSelection` and the
+`Validate`/`ValidateAgainst` checks in `internal/mousa/supersession_selection.go`. It derives
+selection evidence from the decision source and outcome, already verified lexical candidates
+and explicitly supplied verified activation/declaration records, and it withholds, packs and
+stores nothing. No retrieval caller invokes it, no trail or packet version records it, and no
+check in the acceptance matrix below has run.
 
 Declarations, activation history and the verified current-state projection are implemented;
 see the [supersession boundary](CAPABILITIES.md#supersession-core-boundary). This page only
@@ -387,7 +396,7 @@ Four bounded slices, each independently reviewable and testable:
    its strict codec/identity and survivor-aware packing. Keep the existing `NewSourceTrail`
    and packing APIs and legacy bytes unchanged; use a separate opt-in constructor rather than
    changing the signature all current callers use. No store, CLI, migration or MCP change.
-   *First implementable slice; exact scope below.*
+   *The pure selection half is implemented; the trail v4 half is not.*
 2. **Transaction-local verified state.** One extracted verification helper reused by the
    `state` command and by retrieval; the opt-in trace path inside the existing writer
    transaction; v4 content and startup verification. Real SQLite fixtures.
@@ -407,12 +416,39 @@ dependency or identity-codec edit in this first slice. The following domain PR a
 `SourceTrailSchemaV4`, the versioned member/identity/codec, opt-in construction and packing
 validation; each existing public function signature and legacy golden stays unchanged.
 
+**Implemented.** `internal/mousa/supersession_selection.go` and its test file now provide:
+
+- `SupersessionSelection` — the consultation member: `Consulted`, a nullable activation and
+  declaration identity, and a non-nullable, explicitly non-null disposition array.
+- `SupersessionDisposition` — one typed row naming the withheld candidate's segment identity and
+  content digest, the applied declaration and that declaration's exact predecessor/successor
+  item and representation pins.
+- `BuildSupersessionSelection(sourceID, outcome, candidates, activation, declaration)` — the pure
+  builder and matcher. A non-allow outcome is unconsulted with no identity and no row; an allow
+  outcome is consulted, where a nil activation state means the caller verified no history and a
+  state naming no declaration is a deactivation. It withholds accepted candidates whose own
+  segment representation equals the selected declaration's predecessor pin and whose verified
+  ancestry names the decision source, emits one row per withheld candidate in original
+  accepted `final_rank` order, copies identities instead of aliasing caller values, and reads no
+  store, successor state, text or budget.
+- `SupersessionSelection.Validate`, `SupersessionDisposition.Validate` and
+  `SupersessionSelection.ValidateAgainst` — structural and consistency checks that reject
+  contradictory consultation, invalid records, cross-source or mismatched identities, duplicate
+  or out-of-order rows, wrong pins and rows naming rejected or otherwise non-matching candidates.
+  They prove consistency with the supplied canonical and verified inputs only; they establish no
+  stored existence, authorization, pinned ancestry, integrity or current state.
+
+The function stays selection evidence, so it withholds nothing by itself: no caller releases or
+suppresses native query output, no trail records the member and no candidate text, rank, accepted
+disposition or canonical size changes.
+
 ## Limitations and non-goals
 
 This proposal does not implement, and does not claim: query enforcement; semantic
 contradiction detection; authenticated authorship; factual truth or freshness; transitive
 supersession chains or cycles; automatic or default enforcement; enforcement of non-item
 sources; associated-passage enforcement; or any change to ranking, authorization, item
-pointers, canonical declarations and activation history. It makes no performance claim: the
-selection stage's cost, including the reused chain verification, is unmeasured until a later
-slice measures it. No check in the acceptance matrix above has run.
+pointers, canonical declarations and activation history. Only the pure selection contract
+above is implemented, and no query, CLI or MCP surface reaches it. It makes no performance
+claim: the selection stage's cost, including the reused chain verification, is unmeasured
+until a later slice measures it. No check in the acceptance matrix above has run.
