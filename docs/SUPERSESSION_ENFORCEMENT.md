@@ -1,21 +1,27 @@
 # Opt-in supersession enforcement
 
-**Status: contract defined; only the internal selection contract is implemented.** No query
-implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface, no
-trail version and no packet version for supersession enforcement, and nothing consults the
-implemented selection API. This document settles the selection and trail contract *before*
+**Status: contract defined; both domain halves are implemented, nothing enforces it.**
+No query
+implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface and no
+packet version for supersession enforcement, and nothing consults the implemented selection API
+or builds the implemented v4 record. This document settles the selection and trail contract
+*before*
 retrieval changes, so a later bounded implementation does not improvise semantics the current
 records cannot support. Until that implementation lands, a recorded activation still filters
 no query, and separately identified current items remain independent: a newer correcting item
 does not suppress an older item.
 
-The pure domain half of the first slice is implemented as an internal Go API —
+The domain half of the first slice is implemented as internal Go APIs. The selection half —
 `SupersessionSelection`, `SupersessionDisposition`, `BuildSupersessionSelection` and the
-`Validate`/`ValidateAgainst` checks in `internal/mousa/supersession_selection.go`. It derives
+`Validate`/`ValidateAgainst` checks in `internal/mousa/supersession_selection.go` — derives
 selection evidence from the decision source and outcome, already verified lexical candidates
-and explicitly supplied verified activation/declaration records, and it withholds, packs and
-stores nothing. No retrieval caller invokes it, no trail or packet version records it, and no
-check in the acceptance matrix below has run.
+and explicitly supplied verified activation/declaration records. The trail half —
+`mousa.source_trail.v4`, the `NewSourceTrailWithSupersession` constructor, the versioned
+member codec and identity, and survivor-aware packing for both policies in
+`internal/mousa/trail.go` and `internal/mousa/packing.go` — records that evidence and packs
+only the surviving candidates. Both halves withhold, store and release nothing: no retrieval
+caller invokes either one, no store writes or content-verifies a v4 record, and no check in the
+acceptance matrix below has run.
 
 Declarations, activation history and the verified current-state projection are implemented;
 see the [supersession boundary](CAPABILITIES.md#supersession-core-boundary). This page only
@@ -213,7 +219,10 @@ or item pointers.
   with the recorded digest, every suppression names an accepted, unselected candidate of that
   trail, and every named declaration and activation event still exists and still pins exactly
   the recorded revisions. Deactivation, later revisions and deleted items do not invalidate
-  the record, because none of those facts is re-read for the decision.
+  the record, because none of those facts is re-read for the decision. **Not implemented yet:**
+  the store read path still content-verifies v2 and v3 records only, no store writes a v4
+  record, and the text-free codec validates structure and supplied-input consistency without
+  proving stored existence or canonical ancestry.
 - Read-time flags stay read-time facts. `indexed_now` continues to describe today's index, and
   a successor-currency diagnostic, if added, is computed when the trail is read.
 - v1, v2 and v3 readers, identity derivations and bytes are unchanged, as are packet v1 and
@@ -396,7 +405,7 @@ Four bounded slices, each independently reviewable and testable:
    its strict codec/identity and survivor-aware packing. Keep the existing `NewSourceTrail`
    and packing APIs and legacy bytes unchanged; use a separate opt-in constructor rather than
    changing the signature all current callers use. No store, CLI, migration or MCP change.
-   *The pure selection half is implemented; the trail v4 half is not.*
+   *Both domain halves are implemented; no store, CLI, MCP or enforcement work is.*
 2. **Transaction-local verified state.** One extracted verification helper reused by the
    `state` command and by retrieval; the opt-in trace path inside the existing writer
    transaction; v4 content and startup verification. Real SQLite fixtures.
@@ -412,11 +421,12 @@ canonical sizes, and return explicit suppression evidence without blanking text 
 Domain validation does not claim stored existence or canonical ancestry; transaction-local store
 verification remains the later integration's responsibility. Preserve nonmatching/rejected
 candidates and source isolation. No `trail.go`/`packing.go`, SQLite, CLI/MCP, migration,
-dependency or identity-codec edit in this first slice. The following domain PR adds
+dependency or identity-codec edit in that first slice. The second domain PR then added
 `SourceTrailSchemaV4`, the versioned member/identity/codec, opt-in construction and packing
-validation; each existing public function signature and legacy golden stays unchanged.
+validation; each existing public function signature and legacy golden stayed unchanged.
 
-**Implemented.** `internal/mousa/supersession_selection.go` and its test file now provide:
+**Implemented (selection half).** `internal/mousa/supersession_selection.go` and its test file
+provide:
 
 - `SupersessionSelection` — the consultation member: `Consulted`, a nullable activation and
   declaration identity, and a non-nullable, explicitly non-null disposition array.
@@ -442,13 +452,46 @@ The function stays selection evidence, so it withholds nothing by itself: no cal
 suppresses native query output, no trail records the member and no candidate text, rank, accepted
 disposition or canonical size changes.
 
+**Implemented (trail half).** `internal/mousa/trail.go` and `internal/mousa/packing.go` now
+provide:
+
+- `SourceTrailSchemaV4` (`mousa.source_trail.v4`) and the `SourceTrail.Supersession` member. A v4
+  record requires exactly one closed member and an explicit `original` or `exact-v1` packing
+  policy, carries no associated passages or association omissions, and every earlier version
+  rejects the member even when it is null.
+- `NewSourceTrailWithSupersession(request, decision, expression, candidates, budgetBytes,
+  packingPolicy, activation, declaration)` — the separate explicit opt-in constructor. It derives
+  the member through `BuildSupersessionSelection` (no second implementation of the exact-pin
+  match), requires the consultation flag to agree with the decision outcome, keeps an unchanged
+  released selection on the same packet identity, and adds the consulted activation, declaration
+  and every disposition row to the trail identity in a new version branch with length-delimited
+  empty fields. `NewSourceTrail`, every existing packing function signature and every legacy
+  golden are unchanged.
+- Survivor-aware packing: `packAcceptedCandidates` and `packExact` take an explicit suppression
+  mask, so `original` reproduces its greedy first-fit and `exact-v1` its duplicate displacement
+  over the surviving candidates only, mapped back onto the complete candidate list with original
+  ranks. A withheld candidate stays accepted and unselected with its canonical size and consumes
+  no budget; a suppressed copy can never be the retained exact-v1 duplicate.
+- `Validate` and `DecodeSourceTrail` version-aware strictness: mime-free structural checks of the
+  member, membership of each row in that trail's accepted unselected candidates with a matching
+  digest, positive size, no lifecycle reasons and no packing omission, unique rows ordered by the
+  withheld candidate's original `final_rank`, the recorded policy reproduced over survivors, and
+  rejection of missing, null, unknown, duplicate, mistyped or contradictory members.
+
+The trail half is equally structural: it reads no store, so it proves no stored existence,
+canonical ancestry, authorization or transaction-local current state. No retrieval path calls the
+constructor, no store writes or content-verifies a v4 record, and no CLI or MCP surface exposes
+one, so nothing withholds evidence.
+
 ## Limitations and non-goals
 
 This proposal does not implement, and does not claim: query enforcement; semantic
 contradiction detection; authenticated authorship; factual truth or freshness; transitive
 supersession chains or cycles; automatic or default enforcement; enforcement of non-item
 sources; associated-passage enforcement; or any change to ranking, authorization, item
-pointers, canonical declarations and activation history. Only the pure selection contract
-above is implemented, and no query, CLI or MCP surface reaches it. It makes no performance
+pointers, canonical declarations and activation history. Only the two domain contracts
+above are implemented, and no query, CLI or MCP surface reaches them, so no retrieval
+behavior changes. It makes no performance
 claim: the selection stage's cost, including the reused chain verification, is unmeasured
-until a later slice measures it. No check in the acceptance matrix above has run.
+until a later slice measures it. No check in the acceptance matrix above has run, and the
+store, CLI and MCP slices that would produce most of those observations do not exist yet.

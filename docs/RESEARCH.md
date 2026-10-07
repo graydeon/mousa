@@ -21,11 +21,13 @@ comparison.
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
 opt-in declared associations; internal revision-pinned supersession storage,
-activation history and a pure supersession selection API). Native declaration and
+activation history, a pure supersession selection API and a domain-only
+`mousa.source_trail.v4` record with survivor-aware packing). Native declaration and
 activation put/get administration and a
 read-only current-activation-state inspection command are
 implemented; MCP declaration surfaces and supersession query
-enforcement remain absent, and no retrieval path calls the selection API. The Git
+enforcement remain absent, and no retrieval path calls the selection API or builds a v4
+trail. The Git
 documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
@@ -82,8 +84,32 @@ not demonstrate
 semantic contradiction resolution, authenticated authorship, native-host agent
 acceptance or whole-model context-window safety. A proposed contract for opt-in query
 enforcement, including its future acceptance matrix, is recorded in
-[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); only its selection API is
-implemented and none of its future checks has been run.
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); both of its domain
+halves are implemented and none of its future checks has been run.
+
+The domain half of the v4 trail record and survivor packing is covered by product
+regression cases in `internal/mousa/trail_v4_test.go` and a pinned golden fixture in
+`internal/mousa/testdata/trail-v4.json`. The golden canonical bytes and trail identity
+were derived outside the package from the documented identity construction rather than
+read back from the implementation, which then reproduced them. Cases cover the version
+boundary (earlier versions reject the member, including a null one, and v4 requires its
+closed object), each consultation shape (active declaration, verified no-history,
+deactivation and denial), both packing policies including a surviving budget skip with
+no omission field and a withheld copy that must not become the retained exact-v1
+duplicate, row membership, digest and order, canonical size preservation, unchanged
+caller inputs, and mutations that must be rejected for a specific field rather than for
+the identity alone. Every earlier trail and packet golden still reproduces its recorded
+bytes and identity without regeneration. These are structural cases over supplied
+records: they are not independent relevance samples, they exercise no store read or
+write, and they are not enforcement acceptance.
+
+A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
+pins the observed behavior of the native declaration and activation administration
+commands against a synthetic store at that baseline, including its failed-boolean and
+injected-write controls. It records pinned administration behavior with unchanged
+uncurated query output and is separate from the domain regression cases above: it does
+not exercise a v4 record, survivor packing or any query enforcement, and none of its
+observations is relabelled as acceptance of them.
 
 ## Startup verification at 16,384 documents
 
