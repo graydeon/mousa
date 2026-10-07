@@ -476,7 +476,11 @@ provide:
   member, membership of each row in that trail's accepted unselected candidates with a matching
   digest, positive size, no lifecycle reasons and no packing omission, unique rows ordered by the
   withheld candidate's original `final_rank`, the recorded policy reproduced over survivors, and
-  rejection of missing, null, unknown, duplicate, mistyped or contradictory members.
+  rejection of missing, null, unknown, duplicate, mistyped or contradictory members. For a v4 record
+  the candidate invariants both policies share are checked before the packing policy is applied: a
+  segment is considered once, accepted candidates carry consecutive ranks from one with no lifecycle
+  reason, and a rejected candidate carries lifecycle reasons instead of a packing omission, so
+  `original` and `exact-v1` reject the same candidate set.
 
 The trail half is equally structural: it reads no store, so it proves no stored existence,
 canonical ancestry, authorization or transaction-local current state. No retrieval path calls the

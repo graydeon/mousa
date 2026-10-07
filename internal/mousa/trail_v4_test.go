@@ -110,7 +110,9 @@ func cloneV4Trail(trail SourceTrail) SourceTrail {
 			id := *trail.Supersession.DeclarationID
 			member.DeclarationID = &id
 		}
-		member.Dispositions = append([]SupersessionDisposition(nil), trail.Supersession.Dispositions...)
+		// A consulted member with no rows keeps an explicit empty array, so the clone must not turn
+		// it into a null the codec refuses.
+		member.Dispositions = append([]SupersessionDisposition{}, trail.Supersession.Dispositions...)
 		cloned.Supersession = &member
 	}
 	return cloned
@@ -754,6 +756,151 @@ func TestSourceTrailV4DoesNotMutateItsInputs(t *testing.T) {
 	}
 	if candidates[0].Segment.ID != candidatesBefore[0].Segment.ID {
 		t.Fatal("the member aliases a supplied candidate")
+	}
+}
+
+// rederiveV4Identities recomputes one mutated v4 record's packet and trail identities and encodes the
+// result, so a decode negative fails on the candidate invariant the record violates rather than on an
+// identity left behind by an earlier mutation.
+func rederiveV4Identities(t testing.TB, trail *SourceTrail) []byte {
+	t.Helper()
+	selected := make([]bool, len(trail.Candidates))
+	for index, candidate := range trail.Candidates {
+		selected[index] = candidate.Selected
+	}
+	packetID, err := NewContextPacketID(trail.Candidates, trail.BudgetBytes, selected)
+	if err != nil {
+		t.Fatalf("NewContextPacketID(): %v", err)
+	}
+	trail.PacketID = packetID.String()
+	id, err := NewSourceTrailID(*trail)
+	if err != nil {
+		t.Fatalf("NewSourceTrailID(): %v", err)
+	}
+	trail.ID = id
+	data, err := encodeJSONContract(*trail, "source trail")
+	if err != nil {
+		t.Fatalf("encodeJSONContract(): %v", err)
+	}
+	return data
+}
+
+// TestSourceTrailV4RejectsInvalidCandidatesUnderEveryPackingPolicy checks that a v4 record enforces the
+// candidate invariants every packing policy shares: a segment is considered once, accepted candidates
+// carry consecutive ranks and no lifecycle reason, and rejected candidates carry reasons instead of a
+// packing omission. Each invariant is violated on one unrelated survivor of a record that is otherwise
+// valid, under both packing policies and under verified no-history, deactivation and an active
+// declaration; the constructor and the decoder must both reject it, and the decoder rejects the record
+// after its packet and trail identities are recomputed, so the rejection proves the invariant rather
+// than a stale identity.
+func TestSourceTrailV4RejectsInvalidCandidatesUnderEveryPackingPolicy(t *testing.T) {
+	declaration := v4Declaration(t)
+	deactivation := v4DeactivationState(t, declaration.SourceID)
+	active := supersessionSelectionState(t, declaration)
+	request := v4Request(t, declaration.SourceID)
+	decision := trailDecision(t, request, PolicyOutcomeAllow)
+	// Rank 3 (index 2) is unrelated to the declaration's pinned predecessor, so it stays a survivor
+	// under every scenario. A rank of 4 keeps the recorded ranks ascending and unique, so the gap is
+	// only observable as a non-consecutive accepted rank.
+	invariants := []struct {
+		name      string
+		marker    string
+		mutate    func(candidates []VerifiedLexicalCandidate)
+		mutateRow func(rows []TrailCandidate)
+	}{
+		{
+			name:      "rank-gap",
+			marker:    "consecutive ranks",
+			mutate:    func(candidates []VerifiedLexicalCandidate) { candidates[2].FinalRank = 4 },
+			mutateRow: func(rows []TrailCandidate) { rows[2].FinalRank = 4 },
+		},
+		{
+			name:   "duplicate-segment",
+			marker: "segment occurs more than once",
+			mutate: func(candidates []VerifiedLexicalCandidate) {
+				candidates[2].Segment = candidates[1].Segment
+				candidates[2].Text = candidates[1].Text
+			},
+			mutateRow: func(rows []TrailCandidate) {
+				rows[2].SegmentID = rows[1].SegmentID
+				rows[2].ContentSHA256 = rows[1].ContentSHA256
+			},
+		},
+		{
+			name:   "accepted-reason",
+			marker: "no lifecycle reasons",
+			mutate: func(candidates []VerifiedLexicalCandidate) {
+				candidates[2].Reasons = []LifecycleReason{ReasonSourceWithdrawn}
+			},
+			mutateRow: func(rows []TrailCandidate) { rows[2].Reasons = []LifecycleReason{ReasonSourceWithdrawn} },
+		},
+	}
+	scenarios := []struct {
+		name        string
+		activation  *SupersessionActivationState
+		declaration *SupersessionDeclaration
+	}{
+		{name: "no-history"},
+		{name: "deactivation", activation: deactivation},
+		{name: "active-declaration", activation: &active, declaration: &declaration},
+	}
+	// The tight original budget keeps the withheld predecessor unselected, skips the oversized rank-2
+	// survivor without a packing omission and selects the rank-3 survivor; exact-v1 keeps every
+	// survivor, so the positive check below covers both an ordinary skip and full survival.
+	policies := []struct {
+		name   string
+		policy string
+		budget uint64
+	}{
+		{name: "original", policy: PackingOriginal, budget: 5},
+		{name: "exact-v1", policy: PackingExactV1, budget: 64},
+	}
+	for _, scenario := range scenarios {
+		for _, packing := range policies {
+			t.Run(scenario.name+"/"+packing.name, func(t *testing.T) {
+				base := mustV4Trail(t, request, decision, v4Candidates(t, declaration), packing.budget, packing.policy, scenario.activation, scenario.declaration)
+				unchanged := cloneV4Trail(base)
+				if _, err := DecodeSourceTrail(rederiveV4Identities(t, &unchanged)); err != nil {
+					t.Fatalf("the unmutated record must decode after recomputing its identities: %v", err)
+				}
+				if scenario.declaration != nil {
+					withheld := base.Candidates[0]
+					if withheld.Disposition != CandidateAccepted || withheld.Selected || withheld.TextBytes != 4 || withheld.Omission != "" {
+						t.Fatalf("withheld candidate = %+v", withheld)
+					}
+					if packing.policy == PackingOriginal {
+						skipped := base.Candidates[1]
+						if skipped.Selected || skipped.Omission != "" || skipped.TextBytes != 8 {
+							t.Fatalf("oversized survivor skip = %+v", skipped)
+						}
+					}
+				}
+				for _, invariant := range invariants {
+					t.Run("constructor/"+invariant.name, func(t *testing.T) {
+						candidates := v4Candidates(t, declaration)
+						invariant.mutate(candidates)
+						_, err := NewSourceTrailWithSupersession(request, decision, "mooring", candidates, packing.budget, packing.policy, scenario.activation, scenario.declaration)
+						if err == nil {
+							t.Fatalf("the constructor accepted %s", invariant.name)
+						}
+						if !strings.Contains(err.Error(), invariant.marker) {
+							t.Fatalf("%s rejected for the wrong reason: %v", invariant.name, err)
+						}
+					})
+					t.Run("decode/"+invariant.name, func(t *testing.T) {
+						changed := cloneV4Trail(base)
+						invariant.mutateRow(changed.Candidates)
+						_, err := DecodeSourceTrail(rederiveV4Identities(t, &changed))
+						if err == nil {
+							t.Fatalf("the decoder accepted %s", invariant.name)
+						}
+						if !strings.Contains(err.Error(), invariant.marker) {
+							t.Fatalf("%s rejected for the wrong reason: %v", invariant.name, err)
+						}
+					})
+				}
+			})
+		}
 	}
 }
 

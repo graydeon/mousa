@@ -96,7 +96,9 @@ boundary (earlier versions reject the member, including a null one, and v4 requi
 closed object), each consultation shape (active declaration, verified no-history,
 deactivation and denial), both packing policies including a surviving budget skip with
 no omission field and a withheld copy that must not become the retained exact-v1
-duplicate, row membership, digest and order, canonical size preservation, unchanged
+duplicate, the candidate invariants shared by both policies for a constructed and for a
+decoded record under no-history, deactivation and an active declaration, row membership,
+digest and order, canonical size preservation, unchanged
 caller inputs, and mutations that must be rejected for a specific field rather than for
 the identity alone. Every earlier trail and packet golden still reproduces its recorded
 bytes and identity without regeneration. These are structural cases over supplied

@@ -133,6 +133,38 @@ func suppressSupersededCandidates(candidates []TrailCandidate, selection *Supers
 	return mask, nil
 }
 
+// validateCandidateInvariants checks the candidate properties that hold under either packing policy:
+// a segment is considered once, an accepted candidate carries a consecutive rank from one and no
+// lifecycle reason, and a rejected candidate carries lifecycle reasons instead of a packing omission.
+// A v4 record is checked before its policy-specific packing validation, because the original policy
+// records no packing omission and would otherwise accept a candidate set the exact-v1 branch rejects.
+// The released v1-v3 records keep their recorded validation unchanged.
+func (trail SourceTrail) validateCandidateInvariants() error {
+	invalid := func(message string) error {
+		return retrievalValidationError("packing", ValidationCodeInvalidValue, message)
+	}
+	seen := make(map[SegmentID]struct{}, len(trail.Candidates))
+	rank := 0
+	for _, candidate := range trail.Candidates {
+		if _, exists := seen[candidate.SegmentID]; exists {
+			return invalid("segment occurs more than once")
+		}
+		seen[candidate.SegmentID] = struct{}{}
+		switch candidate.Disposition {
+		case CandidateRejected:
+			if candidate.Omission != "" || candidate.DuplicateOf != "" || len(candidate.Reasons) == 0 {
+				return invalid("rejected candidate must carry lifecycle reasons, not packing omissions")
+			}
+		case CandidateAccepted:
+			rank++
+			if candidate.FinalRank != rank || len(candidate.Reasons) != 0 {
+				return invalid("accepted candidates require stable consecutive ranks and no lifecycle reasons")
+			}
+		}
+	}
+	return nil
+}
+
 func (trail SourceTrail) validatePacking() error {
 	invalid := func(message string) error {
 		return retrievalValidationError("packing", ValidationCodeInvalidValue, message)
@@ -174,9 +206,10 @@ func (trail SourceTrail) validatePacking() error {
 // policy. Exact-v1 names the byte-equal duplicate it omitted; the original policy keeps every
 // accepted passage whose bytes fit and records no packing omission, so its selection must still be
 // the greedy first-fit result of that budget. A v4 trail first maps its recorded suppression rows
-// onto the candidate list, so both policies are reproduced over the surviving candidates only: a
-// withheld candidate stays accepted and unselected with no packing omission, and an ordinary budget
-// skip of a surviving candidate keeps its existing meaning.
+// onto the candidate list and checks the candidate invariants both policies share, so both policies
+// are reproduced over the surviving candidates only: a withheld candidate stays accepted and
+// unselected with no packing omission, and an ordinary budget skip of a surviving candidate keeps its
+// existing meaning.
 func (trail SourceTrail) validatePackedCandidates() error {
 	invalid := func(message string) error {
 		return retrievalValidationError("packing", ValidationCodeInvalidValue, message)
@@ -191,6 +224,11 @@ func (trail SourceTrail) validatePackedCandidates() error {
 			return err
 		}
 		suppressed = mask
+		// The shared candidate invariants are checked before the policy is selected, so both
+		// supported v4 policies validate the same candidate set.
+		if err := trail.validateCandidateInvariants(); err != nil {
+			return err
+		}
 	}
 	if trail.PackingPolicy == PackingOriginal {
 		if trail.BudgetBytes == 0 {
