@@ -21,13 +21,16 @@ comparison.
 Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
 lifecycle verification, policy decisions, Source Trails, byte-budget packets and
 opt-in declared associations; internal revision-pinned supersession storage,
-activation history, a pure supersession selection API and a domain-only
-`mousa.source_trail.v4` record with survivor-aware packing). Native declaration and
+activation history, a pure supersession selection API, a domain-only
+`mousa.source_trail.v4` record with survivor-aware packing, and a transaction-local
+reader that verifies the current activation state and the declaration it selects inside
+a caller's transaction). Native declaration and
 activation put/get administration and a
 read-only current-activation-state inspection command are
 implemented; MCP declaration surfaces and supersession query
-enforcement remain absent, and no retrieval path calls the selection API or builds a v4
-trail. The Git
+enforcement remain absent, no retrieval path calls the selection API, the consultation
+reader or builds a v4 trail, and a stored v4 record is not content-verified on read or
+startup. The Git
 documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
@@ -85,7 +88,8 @@ semantic contradiction resolution, authenticated authorship, native-host agent
 acceptance or whole-model context-window safety. A proposed contract for opt-in query
 enforcement, including its future acceptance matrix, is recorded in
 [opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); both of its domain
-halves are implemented and none of its future checks has been run.
+halves and the transaction-local verified-state consultation are implemented and none of
+its future checks has been run.
 
 The domain half of the v4 trail record and survivor packing is covered by product
 regression cases in `internal/mousa/trail_v4_test.go` and a pinned golden fixture in
@@ -104,6 +108,18 @@ the identity alone. Every earlier trail and packet golden still reproduces its r
 bytes and identity without regeneration. These are structural cases over supplied
 records: they are not independent relevance samples, they exercise no store read or
 write, and they are not enforcement acceptance.
+
+The transaction-local consultation is covered by focused product regression cases in
+`internal/sqlite/supersession_activation_test.go` over real temporary SQLite files: a source with no
+activation history is a verified absence that writes nothing, initial selection, replacement,
+deactivation and reactivation each return the verified state and the declaration it selects, a
+caller's open transaction keeps the state it read while another connection commits a replacement,
+and a missing projection with retained history, a projection naming an older event, a projection
+disagreeing with its event, a replaced event record, a missing current event, a missing selected
+declaration and missing pinned provenance are all refused without repairing or writing anything.
+The public state method's reported code and message for a source with no history were compared
+against the pre-change implementation rather than re-derived. These are regression cases on the
+store's own verification, not measurements and not enforcement acceptance.
 
 A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
 pins the observed behavior of the native declaration and activation administration

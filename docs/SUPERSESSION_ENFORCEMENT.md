@@ -1,7 +1,7 @@
 # Opt-in supersession enforcement
 
-**Status: contract defined; both domain halves are implemented, nothing enforces it.**
-No query
+**Status: contract defined; the domain halves and the transaction-local verified state are
+implemented, nothing enforces it.** No query
 implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface and no
 packet version for supersession enforcement, and nothing consults the implemented selection API
 or builds the implemented v4 record. This document settles the selection and trail contract
@@ -22,6 +22,14 @@ member codec and identity, and survivor-aware packing for both policies in
 only the surviving candidates. Both halves withhold, store and release nothing: no retrieval
 caller invokes either one, no store writes or content-verifies a v4 record, and no check in the
 acceptance matrix below has run.
+
+The store also carries the transaction-local consultation of that state, in
+`internal/sqlite/supersession_activation.go`: `readSupersessionConsultation` returns the verified
+current activation state and the declaration it selects, reading the state row, the event it names,
+the whole predecessor chain and the selected declaration through one supplied query handle. It
+opens no transaction and calls no public store method, so a caller that already holds a transaction
+consults exactly that snapshot. It has no caller yet: retrieval does not consult it, and the v4
+content and startup verification below are still absent.
 
 Declarations, activation history and the verified current-state projection are implemented;
 see the [supersession boundary](CAPABILITIES.md#supersession-core-boundary). This page only
@@ -340,12 +348,16 @@ request back, so a failed request leaves no decision, no trail and no omission r
 The active declaration must be read from **that same snapshot**. `supersession activation
 state` starts its own read transaction, so it must not be called from inside the retrieval
 transaction: a second transaction could observe a different current state than the candidates
-being filtered. The smallest correct reuse is the store's existing verification helpers, all
-of which already accept the current transaction handle: read the current-state row, read the
-event it names, verify the projection against that event including the full predecessor chain
-and the absence of a later successor, then read the declaration, which re-verifies both pins'
-canonical provenance. The `state` command should then call the same extracted helper from its
-own read transaction, so one verification exists with two callers.
+being filtered. The reuse is implemented in `internal/sqlite/supersession_activation.go`: the
+state command's verification is the extracted `verifySupersessionActivationState`, which reads
+the current-state row, the event it names, the projection against that event including the full
+predecessor chain and the absence of a later successor, all through a supplied query handle, and
+`readSupersessionConsultation` adds the declaration read, which re-verifies both pins' canonical
+provenance. `GetSupersessionActivationState` supplies the read transaction and the commit for its
+own callers and changes no reported code, message or projection; a caller inside the writer
+transaction consults the same verification through the consultation reader instead of a second
+transaction. A verified absence of activation history is reported as a nil state, so no error code
+is read as one, and a missing projection with retained history stays an integrity failure.
 
 Failure classes stay distinct:
 
@@ -409,6 +421,8 @@ Four bounded slices, each independently reviewable and testable:
 2. **Transaction-local verified state.** One extracted verification helper reused by the
    `state` command and by retrieval; the opt-in trace path inside the existing writer
    transaction; v4 content and startup verification. Real SQLite fixtures.
+   *The extracted helper and the consultation reader are implemented with real SQLite fixtures;
+   the opt-in trace path and the v4 content and startup verification are not.*
 3. **Native opt-in query surface.** An explicit boolean query opt-in, the added result count
    and outcome value, and an actual-CLI regression over a real store. MCP unchanged.
 4. **Client or benchmark work** only where the changed surface justifies it independently.
@@ -493,9 +507,13 @@ This proposal does not implement, and does not claim: query enforcement; semanti
 contradiction detection; authenticated authorship; factual truth or freshness; transitive
 supersession chains or cycles; automatic or default enforcement; enforcement of non-item
 sources; associated-passage enforcement; or any change to ranking, authorization, item
-pointers, canonical declarations and activation history. Only the two domain contracts
-above are implemented, and no query, CLI or MCP surface reaches them, so no retrieval
-behavior changes. It makes no performance
+pointers, canonical declarations and activation history. Only the two domain contracts and the
+transaction-local consultation reader above are implemented, and no query, CLI or MCP surface
+reaches them, so no retrieval
+behavior changes. The consultation reader's own focused SQLite checks run, including that an open
+transaction keeps the snapshot it read while another connection commits a transition; the opt-in
+trace path, v4 content and startup verification and every other acceptance-matrix check remain
+unimplemented. It makes no performance
 claim: the selection stage's cost, including the reused chain verification, is unmeasured
-until a later slice measures it. No check in the acceptance matrix above has run, and the
+until a later slice measures it. The
 store, CLI and MCP slices that would produce most of those observations do not exist yet.
