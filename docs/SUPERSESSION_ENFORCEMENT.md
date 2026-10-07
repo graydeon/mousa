@@ -75,8 +75,10 @@ factual truth.
 
 **Decision.** An active declaration suppresses its pinned predecessor revision regardless of
 whether the pinned successor revision is still the successor item's current revision, still
-indexed, still active, or still present. The successor's availability does not change the
-selection outcome. It is recorded as identity evidence (below) and reported by read-time
+indexed, still active, or still present. The successor item's availability does not change the
+selection outcome. Canonical pin records must still exist and pass provenance verification;
+a missing or corrupt canonical record is an integrity failure, not ordinary unavailability.
+Availability is recorded as identity evidence (below) and reported by read-time
 diagnostics, never by inventing a passage.
 
 | State of the successor pin | Selection effect | Why |
@@ -217,8 +219,10 @@ or item pointers.
 
 ## Recorded selection
 
-An opt-in query writes `mousa.source_trail.v4` instead of v1/v2/v3. It adds one closed
-member, present in every v4 record and rejected in earlier versions:
+An opt-in query writes `mousa.source_trail.v4` instead of v1/v2/v3. Its
+`packing_policy` is required and is either `original` or `exact-v1`, including a deny.
+It has no associated passages or association omissions. Legacy field presence is unchanged.
+It adds one closed member, present in every v4 record and rejected in earlier versions:
 
 ```json
 "supersession": {
@@ -275,15 +279,42 @@ member, present in every v4 record and rejected in earlier versions:
   a source with no active declaration, so a v4 record never means "default query" and a
   default query never means "enforcement was considered".
 
-A query result reports one added count for withheld released candidates and one added outcome
-value for the case where suppression left no evidence at all; existing outcome values and
-their precedence for requests without enforcement are unchanged.
+### Query response counts and outcome precedence
+
+Only opted-in query responses add `supersession_excluded`, an integer count of explicitly
+withheld accepted candidates. It is present even when zero, including a deny or no-history
+result; default responses omit it. `matched_candidates` still counts the considered primary
+candidates before suppression. Lifecycle-rejected candidates count only as
+`lifecycle_excluded`; suppressed candidates count only as `supersession_excluded`, never
+as budget or duplicate omissions. Budget/duplicate counts cover surviving accepted candidates.
+
+The new response `outcome` literal is `supersession_excluded`. This is a query-response
+summary, not a new policy-decision outcome or a change to trail `outcome: allow|deny`.
+Evaluate these branches in order:
+
+| Condition | Response outcome |
+|---|---|
+| Policy decision is not allow | Existing `policy_excluded` behavior, with its existing `lifecycle_excluded` override for missing/inactive collection state; do not consult supersession |
+| Any evidence was selected | `evidence` |
+| No evidence and surviving candidates were omitted for budget | `budget_omitted` |
+| No evidence, no budget omission, and supersession_excluded > 0 | `supersession_excluded` |
+| No evidence, no budget or supersession exclusion, and lifecycle_excluded > 0 | `lifecycle_excluded` |
+| Otherwise | `no_matches` |
+
+For an empty result with both suppression and budget skips, budget takes precedence because
+otherwise eligible surviving candidates failed to fit; both counts remain visible. Suppression
+plus lifecycle rejection, without a surviving budget skip, yields `supersession_excluded`:
+all otherwise eligible considered candidates were withheld. Lifecycle rejection alone keeps
+its existing outcome. Exact duplicates cannot by themselves produce an empty packet: a
+duplicate must refer to an earlier selected survivor. Default response values, field presence
+and precedence remain unchanged.
 
 ## Transaction, verification reuse and failure handling
 
 The enforcement stage runs inside the existing retrieval transaction, in this order:
 evaluate and store the authorization decision; read the decision snapshot and verify the
-source-scoped candidates; verify the active declaration and derive dispositions; build the
+source-scoped candidates; for an allow, verify the active declaration and derive dispositions,
+or for a deny record unconsulted state without any administrative lookup; build the
 trail from the surviving selection and pack it; insert the trail with its ordered candidate
 projection; read it back and compare byte-exactly; commit. Any failure rolls the whole
 request back, so a failed request leaves no decision, no trail and no omission row.
@@ -340,6 +371,7 @@ None of these checks has been run; they describe what a later implementation mus
 | Unrelated-source isolation | A declaration and activation in one source suppress nothing in another; a denial reveals no declaration identity |
 | Candidate limit and budget | A suppressed candidate frees budget for a later candidate; original budget skips stay distinct from suppression; recorded sizes and remaining ranks are preserved; an all-suppressed result is empty and labeled, not padded |
 | Denied opt-in with retained activation history | No history is consulted or revealed; the v4 record says consulted false, not no-history |
+| Empty mixed-cause response | Suppression plus a surviving budget skip yields budget_omitted; suppression plus lifecycle rejection without budget skips yields supersession_excluded; counts remain disjoint and defaults stay unchanged |
 | Restart determinism | Reopening the store and re-running the same inputs produces the same dispositions, selection, packet identity and trail bytes |
 | Historical trail readability | After later revisions, deletions and deactivation, the stored record still reads with current authorization and is not reinterpreted; v1–v3 reads are unchanged |
 | Association combination | An opt-in enforcement request with associations is rejected before any write; both packing policies work with enforcement |
