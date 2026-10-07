@@ -31,6 +31,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Supersession selection contract | Yes | No command; internal Go API | Consultation/denial/deactivation shapes, exact predecessor-pin matching, source isolation, rejected and non-matching candidates, row order and copying, structural validation failures | None; the API is not called by retrieval and withholds nothing |
+| Opt-in supersession trail and survivor packing | Yes | No command; internal Go API | `mousa.source_trail.v4` version boundary, required closed consultation member, strict member codec and identity binding, no-history/deactivation/active/denial records, survivor-aware `original` and `exact-v1` packing including an ordinary budget skip and a withheld duplicate copy, row membership/order/pins, canonical size and input ownership, shared candidate invariants under both policies, unchanged v1–v3 bytes and identities | None; no retrieval path builds one, no store writes or content-verifies one, and nothing withholds evidence |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -64,9 +65,9 @@ reachable as trusted local administration through `supersession declaration put`
 is a read-only projection of the verified current state. MCP declaration surfaces,
 activation listing or history commands, and supersession query enforcement remain
 unimplemented. A proposed opt-in enforcement contract is recorded in
-[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): only its pure
-selection half is implemented, it changes no default behavior, and no trail or packet
-version exists for it yet.
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): both of its domain
+halves are implemented, they change no default behavior, no retrieval path reaches
+either one, and no packet version exists for them.
 Historical
 revision pins remain readable after item updates or deletion; canonical existence
 does not prove a revision was ever activated.
@@ -101,6 +102,52 @@ authorization, successor currency and current state remain transaction-bound sto
 responsibilities, so a hash never stands in for integrity or permission. No retrieval
 path calls it, no trail member or version records it, and nothing reachable from the CLI
 or MCP withholds evidence.
+
+### Opt-in trail record and survivor packing
+
+The second domain half lives in `internal/mousa/trail.go` and
+`internal/mousa/packing.go`. `SourceTrailSchemaV4` is `mousa.source_trail.v4`, written
+only by the separate constructor `NewSourceTrailWithSupersession`; `NewSourceTrail` and
+every earlier public signature are unchanged, and v1, v2 and v3 bytes and identities are
+unchanged. A v4 record requires an explicit `original` or `exact-v1` packing policy,
+must carry exactly one closed `supersession` member and carries no associated passages
+or association omissions. Earlier versions reject the member even when it is null.
+
+The member is built by `BuildSupersessionSelection` from the request's source, the
+decision's outcome, the verified candidates and the caller's verified activation state
+and declaration, so the exact-pin match exists once rather than being reimplemented. An
+allowed decision records `consulted: true`, where a nil activation state is verified
+no-history, a state naming no declaration is a deactivation, and a selected declaration
+contributes one row per withheld candidate; a denial records `consulted: false` with
+null identities, an empty disposition array and no candidates. The consultation flag must
+agree with the outcome. Both identities are explicitly present as null or values, and the
+disposition array is required even when empty.
+
+A suppression row is explicit membership: it must name exactly one accepted candidate of
+that trail with a matching segment identity and content digest, a positive canonical
+size, no lifecycle reasons and no packing omission or duplicate reference, and rows must
+be unique and ordered by the withheld candidate's original `final_rank`. Before the
+policy is applied, every candidate is checked against the invariants both policies share:
+a segment is considered once, accepted candidates carry consecutive ranks from one with
+no lifecycle reason, and a rejected candidate carries lifecycle reasons instead of a
+packing omission, so `original` and `exact-v1` reject the same candidate set. Both packing
+policies are then reproduced over the surviving candidates only, in original order and
+with original ranks, and the result is mapped back onto the complete candidate list. A
+withheld candidate stays present, accepted and unselected, keeps its canonical size, and
+consumes no budget; a surviving candidate may still be an ordinary budget skip under
+`original` without any omission field, and under `exact-v1` a withheld copy can never be
+the retained duplicate. The v4 identity has its own version branch that binds the
+consultation, both nullable identities and every row with length-delimited empty fields;
+the packet identity keeps its existing construction and still binds only released bytes,
+so an unchanged released selection keeps its packet identity and a v4 record never
+shares the default trail's version or identity.
+
+Scope of the checks: they are structural and local. They read no store, so they prove no
+stored existence, canonical ancestry, authorization or transaction-local current state.
+No retrieval path calls the constructor, no store writes a v4 record, a stored v4 record
+is not content-verified on read or startup, and no CLI or MCP surface can request one,
+which is why no query withholds evidence. The trail's own decode is reachable through
+`DecodeSourceTrail` for any caller that can already present those bytes.
 
 ### Declaration administration
 
@@ -217,6 +264,10 @@ cover the pinned historical implementation, not arbitrary later revisions. Curre
 product regression tests cover the later integrity and source-index corrections
 plus native declaration and activation put/get CLI administration and the read-only
 current-state command.
+A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
+pins the administration commands' observed behavior against a synthetic store at that
+baseline; it is an administration-only record and does not exercise, accept or measure
+the opt-in domain records or survivor packing described on this page.
 Supersession query enforcement, semantic evaluation or full-window memory
 acceptance has not been demonstrated.
 

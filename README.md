@@ -32,13 +32,16 @@ does not filter queries, move item pointers or create supersession omissions in
 Source Trails. Separately identified current items remain
 independent: a newer correcting item does not automatically suppress an older item.
 Actor, time and reason labels do not authenticate authorship or establish factual
-truth. The first bounded half of the proposed opt-in enforcement contract — an
-internal pure selection API that derives consultation and withholding evidence from
-the decision source and outcome, already verified candidates and explicitly supplied
-verified activation and declaration records — is implemented; it is called by no
-retrieval path and withholds nothing. The rest of the contract, including trail
-versioning, transaction integration and query enforcement, is recorded in
-[opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and is
+truth. Both domain halves of the proposed opt-in enforcement contract are
+implemented: an internal pure selection API that derives consultation and withholding
+evidence from the decision source and outcome, already verified candidates and
+explicitly supplied verified activation and declaration records, plus the
+`mousa.source_trail.v4` record with its strict version-aware codec and identity, a
+separate explicit opt-in constructor and survivor-aware packing for both policies.
+Neither half is called by a retrieval path, no CLI or MCP surface exposes one, and
+nothing withholds evidence yet. Transaction-local verified state, store integration
+and query enforcement remain recorded in
+[opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and are
 not implemented. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
 and [contract evidence](docs/RESEARCH.md#supersession-contract-evidence).
@@ -55,7 +58,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands, and an internal pure supersession selection API that no retrieval path calls yet. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands, and the internal supersession domain contract (a pure selection API and a v4 trail record with survivor-aware packing) that no retrieval path calls yet. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -69,11 +72,20 @@ search expression, byte budget, packet identity, and ordered candidate
 dispositions. Opt-in exact-content packing writes v2, which also binds
 duplicate omissions and retained-segment relationships. Queries that record
 a declared-association stage write v3, binding associated passages and
-omissions. Older trail bytes and identities remain unchanged. Ranking-stage
-explanations, transforms and supersession decisions remain planned: no trail version
-records a supersession selection, so an internal selection member is not written to any
-trail. The proposed selection and trail-version contract for opt-in supersession
-enforcement is recorded in
+omissions. Older trail bytes and identities remain unchanged.
+
+The opt-in supersession record exists as a domain type without a caller. The separate
+explicit constructor `NewSourceTrailWithSupersession` writes `mousa.source_trail.v4`
+from an allow or deny decision, already verified candidates and explicitly supplied
+verified activation and declaration records: it requires one closed `supersession`
+member binding whether supersession was consulted, the nullable activation and
+declaration identities and every suppression row, requires an explicit packing policy,
+carries no associated passages, packs only the surviving candidates under that policy
+and keeps a withheld candidate's canonical size, rank and accepted disposition. No
+retrieval path, store write or CLI or MCP surface builds one yet, and store reads do not
+content-verify a v4 record. Transforms, ranking-stage explanations, transaction-local
+verified state and query enforcement remain planned. The selection and trail-version
+contract for opt-in supersession enforcement is recorded in
 [docs/SUPERSESSION_ENFORCEMENT.md](docs/SUPERSESSION_ENFORCEMENT.md). A
 consumer's token-limited rendering is not a stored Source Trail or a new
 canonical packet.
