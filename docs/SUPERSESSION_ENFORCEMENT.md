@@ -147,8 +147,9 @@ to the authorization/lifecycle disposition and not a packing omission.
   budget may be released. Selected counts, `used_bytes` and the packet identity follow from
   the surviving selection.
 - The withheld text is not returned to the caller or packed: a suppressed candidate's text is
-  blanked for the caller exactly as a lifecycle-rejected candidate's text already is, and the
-  trail records identities, sizes and reasons, never text.
+  blanked only in the returned payload after selection/trail construction. Its recorded
+  positive text size remains the verified canonical size; never derive it from a blanked
+  payload. The trail records identities, sizes and reasons, never text.
 
 **Reasons.** The authorization path must not be rewritten by an editorial skip, and
 `source_trail_candidates` constrains `disposition` to `accepted`/`rejected` — a new
@@ -221,6 +222,7 @@ member, present in every v4 record and rejected in earlier versions:
 
 ```json
 "supersession": {
+  "consulted": true,
   "activation_id": "…64 hex…",
   "declaration_id": "…64 hex…",
   "dispositions": [
@@ -238,21 +240,35 @@ member, present in every v4 record and rejected in earlier versions:
 }
 ```
 
-- `activation_id` is the verified current activation event that was consulted, or `null`
-  when the source has no activation history. `declaration_id` is the declaration that event
-  selects, or `null` when it is a deactivation. Both are required to be present as either
-  `null` or a value, so an absent field is never read as an explicit null.
+- `consulted` is a required boolean, never inferred from missing fields. An allow
+  outcome requires `true`; a deny requires `false`, null activation and declaration IDs,
+  an empty dispositions array, no candidates and zero used bytes. The unconsulted denial
+  asserts nothing about whether activation history exists and reads no such history.
+- When consulted, `activation_id` is the verified current event, or `null` only after
+  verifying no activation history. `declaration_id` is the selected declaration, or `null`
+  for no history or a deactivation. Both IDs must be explicitly present as null or values;
+  the dispositions array is required even when empty, and null is not an empty array.
 - A disposition row is self-contained evidence: which candidate was withheld, which
   declaration was applied, and which exact item and representation pins it names. Rows are
   ordered by the withheld candidate's `final_rank`. The row's `selection` value is the closed
   selection outcome; the candidate row's own `disposition` field keeps its
   authorization/lifecycle meaning.
-- Validation requires: a non-null `declaration_id` implies a non-null `activation_id`; every
-  disposition names exactly one accepted, unselected candidate row of the same trail that
-  carries no packing omission and no lifecycle reasons, and names the same declaration as the
-  member; every accepted, unselected candidate row without a packing omission is named by
-  exactly one disposition. `used_bytes` still equals the selected passages only.
-- The trail identity is derived with a new version branch that binds the member's fields and
+- Validation requires: a non-null `declaration_id` implies a non-null `activation_id`;
+  each unique disposition names one accepted, unselected candidate of the same trail with
+  positive canonical text size, no packing omission, no duplicate reference and no lifecycle
+  reasons, and uses the member's declaration. Dispositions are impossible without a selected
+  declaration. Full canonical-content verification checks exact source and representation
+  matching and completeness; a text-free codec alone cannot prove stored ancestry.
+- Packing validation treats only the explicitly named disposition rows as superseded.
+  It reproduces the recorded policy over surviving candidates in their original order and
+  with their original ranks, mapping the result back to the complete candidate list. Under
+  `original`, a survivor may be unselected for budget and still have no omission field:
+  that is not supersession. Under `exact-v1`, surviving budget/duplicate omissions keep
+  their usual meanings, and a duplicate must reference a prior selected survivor. Suppressed
+  candidates remain unselected and consume no bytes; `used_bytes` counts selection only.
+  For example, suppressing rank 1 of sizes [4, 8, 2] with budget 5 selects rank 3, while
+  rank 2 is an ordinary budget skip without a supersession row.
+- The trail identity is derived with a new version branch that binds the consultation boolean, the member's IDs and
   every disposition row in a fixed order, with a length-delimited empty field for each null,
   so absence and presence cannot collide. Earlier branches are untouched.
 - The version is the marker: an opt-in request always writes v4, including a deny outcome and
@@ -286,7 +302,8 @@ Failure classes stay distinct:
 
 | Recorded state | Behavior |
 |---|---|
-| No activation history for the source | No suppression; recorded as an opt-in query with a null activation |
+| Policy denial | No history lookup; recorded with consulted false, null IDs and no dispositions |
+| Allowed source with no activation history | No suppression; recorded with consulted true and a null activation |
 | Activation selects no declaration (deactivation) | No suppression; recorded with the consulted event and a null declaration |
 | Successor pin historical, deactivated or no longer indexed | Suppression still applies while the declaration is active (section 1) |
 | Missing current projection while history exists, broken chain, cycle, missing declaration, cross-source pointer, projection disagreeing with its tip | Integrity failure; the request fails closed with no packet and no committed decision or trail |
@@ -321,7 +338,8 @@ None of these checks has been run; they describe what a later implementation mus
 | Successor current but unmatched, over the limit or over budget | The predecessor is still suppressed and no successor text is inserted to fill the gap |
 | Same content, multiple ancestry paths | Only the pinned representation's segments are withheld; byte-equal content and unrelated/source-shared ancestry are untouched |
 | Unrelated-source isolation | A declaration and activation in one source suppress nothing in another; a denial reveals no declaration identity |
-| Candidate limit and budget | A suppressed candidate frees budget for a later candidate; remaining ranks and counts match the surviving selection; an all-suppressed result is empty and labeled, not padded |
+| Candidate limit and budget | A suppressed candidate frees budget for a later candidate; original budget skips stay distinct from suppression; recorded sizes and remaining ranks are preserved; an all-suppressed result is empty and labeled, not padded |
+| Denied opt-in with retained activation history | No history is consulted or revealed; the v4 record says consulted false, not no-history |
 | Restart determinism | Reopening the store and re-running the same inputs produces the same dispositions, selection, packet identity and trail bytes |
 | Historical trail readability | After later revisions, deletions and deactivation, the stored record still reads with current authorization and is not reinterpreted; v1–v3 reads are unchanged |
 | Association combination | An opt-in enforcement request with associations is rejected before any write; both packing policies work with enforcement |
@@ -332,10 +350,11 @@ None of these checks has been run; they describe what a later implementation mus
 
 Four bounded slices, each independently reviewable and testable:
 
-1. **Versioned selection and trail contract (domain only).** Trail v4: the selection member,
-   its strict codec, validation invariants, identity branch and packet-identity rule, plus the
-   pure match-and-apply function that turns verified candidates and a consulted declaration
-   into dispositions and a surviving selection. No store, CLI, migration or MCP change.
+1. **Domain contract in two bounded PRs.** First implement only the pure selection record,
+   validation and exact-match function; no trail/packing integration. Then implement trail v4,
+   its strict codec/identity and survivor-aware packing. Keep the existing `NewSourceTrail`
+   and packing APIs and legacy bytes unchanged; use a separate opt-in constructor rather than
+   changing the signature all current callers use. No store, CLI, migration or MCP change.
    *First implementable slice; exact scope below.*
 2. **Transaction-local verified state.** One extracted verification helper reused by the
    `state` command and by retrieval; the opt-in trace path inside the existing writer
@@ -344,14 +363,17 @@ Four bounded slices, each independently reviewable and testable:
    and outcome value, and an actual-CLI regression over a real store. MCP unchanged.
 4. **Client or benchmark work** only where the changed surface justifies it independently.
 
-**First slice: exact scope.** Files: `internal/mousa/supersession_selection.go` (new), its
-test file, and edits to `internal/mousa/trail.go` and `internal/mousa/packing.go`.
-Symbols: `SourceTrailSchemaV4`; a selection record type and its disposition row type; the
-match-and-apply function; `SourceTrail.Supersession`; `NewSourceTrail` extended with the
-selection input; `SourceTrail.Validate`, `packetIdentity`, `NewSourceTrailID`,
-`EncodeSourceTrail`, `DecodeSourceTrail`, `PackVerifiedLexicalCandidates`, `packExact` and
-`validatePackedCandidates` (suppressed set). Not in scope: any `internal/sqlite` edit, any
-CLI/MCP change, any migration, any dependency, any new canonical record or store schema.
+**First slice: exact scope.** Only `internal/mousa/supersession_selection.go` (new)
+and its test file: the selection member and disposition types, pure validation and the
+exact-match function over verified candidates and explicitly supplied consulted state/declaration.
+Bind consultation, event/declaration IDs and pins structurally, preserve input candidates and
+canonical sizes, and return explicit suppression evidence without blanking text or packing.
+Domain validation does not claim stored existence or canonical ancestry; transaction-local store
+verification remains the later integration's responsibility. Preserve nonmatching/rejected
+candidates and source isolation. No `trail.go`/`packing.go`, SQLite, CLI/MCP, migration,
+dependency or identity-codec edit in this first slice. The following domain PR adds
+`SourceTrailSchemaV4`, the versioned member/identity/codec, opt-in construction and packing
+validation; each existing public function signature and legacy golden stays unchanged.
 
 ## Limitations and non-goals
 
