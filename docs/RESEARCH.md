@@ -70,7 +70,10 @@ repair over a damaged projection). MCP declaration surfaces and query suppressio
 remain absent. This evidence does
 not demonstrate
 semantic contradiction resolution, authenticated authorship, native-host agent
-acceptance or whole-model context-window safety.
+acceptance or whole-model context-window safety. A proposed contract for opt-in query
+enforcement, including its future acceptance matrix, is recorded in
+[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); it is not implemented and
+none of its future checks has been run.
 
 ## Startup verification at 16,384 documents
 
