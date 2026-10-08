@@ -154,6 +154,11 @@ func applySupersessionActivation(ctx context.Context, conn *sql.Conn, activation
 // chain back to one root within a single read snapshot. The state is never reconstructed or
 // repaired, and the read exposes no document text.
 //
+// CodeNotFound means exactly one thing: the source has no activation history. A state projection that
+// names a missing event, a projection that disagrees with the event it names, a broken chain and a
+// missing declaration or pinned provenance are integrity failures, because recorded state that exists
+// cannot be reported as the absence of history.
+//
 // The method only supplies the read transaction and the commit: verifySupersessionActivationState
 // performs the verification, so a caller that already holds a transaction reaches the same checks
 // through readSupersessionConsultation instead of opening a second one.
@@ -188,7 +193,10 @@ func (store *Store) GetSupersessionActivationState(ctx context.Context, sourceID
 //
 // A source with no activation history reports hasHistory false with no error, so a caller that
 // records a verified absence reads no error code as one. Activation history whose current projection
-// is missing is an integrity failure instead, and no state is reconstructed or repaired.
+// is missing, or that names an event with no stored row, is an integrity failure instead: the event
+// not-found of this read is recorded corruption, never the absence of history, and no state is
+// reconstructed or repaired. A direct historical event read keeps its own not-found for an identity
+// that does not exist.
 func verifySupersessionActivationState(ctx context.Context, q queryer, sourceID mousa.SourceID) (mousa.SupersessionActivationState, bool, error) {
 	state, err := readSupersessionActivationStateRow(ctx, q, sourceID)
 	if err != nil {
@@ -205,6 +213,11 @@ func verifySupersessionActivationState(ctx context.Context, q queryer, sourceID 
 	}
 	tip, err := readSupersessionActivationRow(ctx, q, state.CurrentActivationID)
 	if err != nil {
+		// The projection exists, so its named event cannot be absent: this not-found is recorded
+		// corruption rather than the verified absence hasHistory false reports.
+		if IsCode(err, CodeNotFound) {
+			return mousa.SupersessionActivationState{}, true, integrity("get supersession activation state", "current activation event is missing")
+		}
 		return mousa.SupersessionActivationState{}, true, err
 	}
 	if err := verifySupersessionStateAgainstTip(ctx, q, sourceID, state, tip, map[mousa.SupersessionActivationID]bool{}); err != nil {

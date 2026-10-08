@@ -1425,7 +1425,7 @@ func TestSupersessionConsultationRejectsDamagedState(t *testing.T) {
 		},
 		{
 			name: "current event missing",
-			code: CodeNotFound,
+			code: CodeIntegrity,
 			damage: func(t *testing.T, store *Store, _ mousa.Source, chain activationChain) {
 				execDamagingStatement(t, store, `DELETE FROM supersession_activations WHERE id = ?`, chain.replacement.ID[:])
 			},
@@ -1466,5 +1466,41 @@ func TestSupersessionConsultationRejectsDamagedState(t *testing.T) {
 				t.Fatalf("public state read of damaged store = %v, want %s", err, testCase.code)
 			}
 		})
+	}
+}
+
+// TestSupersessionActivationMissingEventClassificationBoundary pins the boundary of the corruption
+// classification: a current projection whose named event is missing is an integrity failure for both
+// the public state read and a transaction-local consultation, while reading that event's identity
+// through the historical event reader is still the not-found of a missing row, and a surviving
+// historical event stays readable. Nothing is repaired or written.
+func TestSupersessionActivationMissingEventClassificationBoundary(t *testing.T) {
+	ctx := context.Background()
+	store, source, chain := activatedChain(t)
+	defer store.Close()
+	if _, err := store.GetSupersessionActivation(ctx, chain.initial.ID); err != nil {
+		t.Fatalf("historical read before the damage: %v", err)
+	}
+	execDamagingStatement(t, store, `DELETE FROM supersession_activations WHERE id = ?`, chain.replacement.ID[:])
+	events := activationRowCount(t, store)
+	states := activationStateRowCount(t, store)
+	current, active := rawActivationState(t, store, source.ID)
+
+	assertConsultationRejects(t, store, source.ID, CodeIntegrity)
+	if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("public state read of a projection naming a missing event = %v, want %s", err, CodeIntegrity)
+	}
+	if _, err := store.GetSupersessionActivation(ctx, chain.replacement.ID); !IsCode(err, CodeNotFound) {
+		t.Fatalf("historical read of a missing event identity = %v, want %s", err, CodeNotFound)
+	}
+	if got, err := store.GetSupersessionActivation(ctx, chain.initial.ID); err != nil || !reflect.DeepEqual(got, chain.initial) {
+		t.Fatalf("historical read of a surviving event = %#v, %v; want %#v", got, err, chain.initial)
+	}
+	if activationRowCount(t, store) != events || activationStateRowCount(t, store) != states {
+		t.Fatal("rejected state read changed stored rows")
+	}
+	afterCurrent, afterActive := rawActivationState(t, store, source.ID)
+	if !bytes.Equal(current, afterCurrent) || !bytes.Equal(active, afterActive) {
+		t.Fatal("rejected state read repaired the damaged projection")
 	}
 }

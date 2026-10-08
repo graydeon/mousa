@@ -117,6 +117,10 @@ caller's open transaction keeps the state it read while another connection commi
 and a missing projection with retained history, a projection naming an older event, a projection
 disagreeing with its event, a replaced event record, a missing current event, a missing selected
 declaration and missing pinned provenance are all refused without repairing or writing anything.
+A current projection whose named event no longer exists is classified as recorded corruption: both the
+public state read and a transaction-local consultation report an integrity failure, while a direct
+historical read of that identity is still the `not_found` of a missing row and a surviving historical
+event stays readable, so the corruption classification is not a global remapping of missing event IDs.
 The public state method's reported code and message for a source with no history were compared
 against the pre-change implementation rather than re-derived. These are regression cases on the
 store's own verification, not measurements and not enforcement acceptance.

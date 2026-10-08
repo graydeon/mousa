@@ -367,7 +367,7 @@ Failure classes stay distinct:
 | Allowed source with no activation history | No suppression; recorded with consulted true and a null activation |
 | Activation selects no declaration (deactivation) | No suppression; recorded with the consulted event and a null declaration |
 | Successor pin historical, deactivated or no longer indexed | Suppression still applies while the declaration is active (section 1) |
-| Missing current projection while history exists, broken chain, cycle, missing declaration, cross-source pointer, projection disagreeing with its tip | Integrity failure; the request fails closed with no packet and no committed decision or trail |
+| Missing current projection while history exists, projection naming a missing current event, broken chain, cycle, missing declaration, cross-source pointer, projection disagreeing with its tip | Integrity failure; the request fails closed with no packet and no committed decision or trail |
 
 The chain verification is linear in the number of activation transitions for the source;
 that cost is inside the writer transaction and must be measured by the implementation slice

@@ -45,9 +45,12 @@ current activation state and returns the declaration it selects, reading the sta
 projection, the event it names, the predecessor chain and the declaration through the
 query handle it is given, so a caller that already holds a transaction consults that
 transaction's snapshot instead of opening a second one, and a source with no history is
-reported as such rather than as damaged state. That reader changes no query, its
-`supersession activation state` callers report exactly the same codes, messages and
-projection, and v4 store integration and query enforcement remain recorded in
+reported as such rather than as damaged state. Recorded state that exists but cannot be verified
+fails as an integrity failure rather than as `not_found`: a current projection naming a missing event
+is classified as corruption, and only a source with no activation history reports `not_found` with an
+unchanged message. That reader changes no query, its
+`supersession activation state` callers keep their signature and projection JSON, and v4 store
+integration and query enforcement remain recorded in
 [opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and are
 not implemented. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)

@@ -30,7 +30,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
-| Transaction-local supersession consultation | Yes | No command; internal Go API | Verified current state and the declaration it selects read through one supplied query handle: no-history, initial selection, replacement, deactivation and reactivation, the caller's snapshot kept while another connection commits a transition, and missing projection/event/declaration or inconsistent source/provenance rejection with no repair or write | None; no caller consults it yet, retrieval still releases every candidate, and v4 content and startup verification are absent |
+| Transaction-local supersession consultation | Yes | No command; internal Go API | Verified current state and the declaration it selects read through one supplied query handle: no-history, initial selection, replacement, deactivation and reactivation, the caller's snapshot kept while another connection commits a transition, and missing projection, projection naming a missing current event or a missing selected declaration classified as an integrity failure (with the historical event reader still not-found for an unknown identity), all rejected with no repair or write | None; no caller consults it yet, retrieval still releases every candidate, and v4 content and startup verification are absent |
 | Supersession selection contract | Yes | No command; internal Go API | Consultation/denial/deactivation shapes, exact predecessor-pin matching, source isolation, rejected and non-matching candidates, row order and copying, structural validation failures | None; the API is not called by retrieval and withholds nothing |
 | Opt-in supersession trail and survivor packing | Yes | No command; internal Go API | `mousa.source_trail.v4` version boundary, required closed consultation member, strict member codec and identity binding, no-history/deactivation/active/denial records, survivor-aware `original` and `exact-v1` packing including an ordinary budget skip and a withheld duplicate copy, row membership/order/pins, canonical size and input ownership, shared candidate invariants under both policies, unchanged v1–v3 bytes and identities | None; no retrieval path builds one, no store writes or content-verifies one, and nothing withholds evidence |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
@@ -167,9 +167,11 @@ declaration's verified canonical record, in the shape `BuildSupersessionSelectio
 opens no transaction and calls no public store method: a caller that holds the writer transaction
 reads every provenance fact from that transaction's snapshot, so a transition another connection
 commits meanwhile cannot mix into the consultation, and a verified absence of history is a nil
-state rather than an error code. Missing history, a broken chain, a missing event or declaration,
-a cross-source pointer or a projection disagreeing with its event stays an integrity failure and
-is never repaired.
+state rather than an error code. Recorded state that exists but cannot be verified stays an
+integrity failure and is never repaired: a projection whose named event or selected declaration is
+missing, a broken chain, a cross-source pointer or a projection disagreeing with its event. A
+`not_found` code never leaves this reader as a successful absence, and a direct historical event read
+keeps its own `not_found` for an identity that does not exist.
 
 These checks are store verification, not enforcement. No retrieval path consults the reader, no
 command or MCP surface reaches it, a stored v4 record is still not content-verified on read or
@@ -258,16 +260,20 @@ identity, schema, hash or event of its own and is never stored.
 The command parses the source identity before opening the store, so an unparsable
 identity, a missing argument and an extra argument all exit 2 as invalid invocations,
 while a store failure exits 1 with empty stdout. A source with no activation history
-reports the store's `not_found` error, exactly as a missing event does; history whose
-current projection is missing, stale or inconsistent with the event it names fails
-integrity verification and is not rebuilt, repaired or migrated by the read. The read
-never creates a store, and an older supported store stays at its own version because
+reports the store's `not_found` error; recorded state that exists but cannot be verified
+reports an integrity failure instead and is not rebuilt, repaired or migrated by the read.
+That covers history whose current projection is missing, a projection naming a missing
+event or disagreeing with the event it names, a broken chain, and a missing declaration or
+pinned provenance, so `not_found` from this command means only that the source has no
+activation history. The read never creates a store, and an older supported store stays at
+its own version because
 read-only open refuses to migrate it. The reported state is a verified snapshot rather
 than a reservation: `supersession activation put` still requires the caller's explicit
 expected predecessor and can still conflict if another transition wins first. The
 verification itself is `verifySupersessionActivationState`, shared with the internal
 transaction-local consultation reader, so the command and a writer-transaction caller check the same
-records; the command's own signature, reported codes, messages and projection JSON are unchanged.
+records; the command keeps its signature and projection JSON, and its `not_found` code and message
+for a source with no history are unchanged.
 
 The `state` command inspects the current projection; `get <activation-id>` reads one
 historical event. There is no activation listing or per-source history command, no
