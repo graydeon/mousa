@@ -3,6 +3,8 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1156,5 +1158,349 @@ func TestSupersessionActivationSourceIndexUpgradePreservesHistory(t *testing.T) 
 	}
 	if err := verifyVersion(ctx, store.db, migrations, 14, true, false); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("missing index startup verification = %v, want %s", err, CodeIntegrity)
+	}
+}
+
+// readConsultationInWriterTransaction reads one supersession consultation through the store's single
+// writer transaction, which is the transaction a retrieval decision holds.
+func readConsultationInWriterTransaction(t *testing.T, store *Store, sourceID mousa.SourceID) supersessionConsultation {
+	t.Helper()
+	var consultation supersessionConsultation
+	err := store.writeImmediate(context.Background(), "consult supersession activation", func(conn *sql.Conn) error {
+		read, err := readSupersessionConsultation(context.Background(), conn, sourceID)
+		if err != nil {
+			return err
+		}
+		consultation = read
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("consult supersession activation in the writer transaction: %v", err)
+	}
+	return consultation
+}
+
+// assertConsultation requires one consultation to name exactly the expected verified records: no
+// state for a source with no activation history, a state without a declaration for a deactivation,
+// and a state with its selected declaration otherwise.
+func assertConsultation(t testing.TB, got supersessionConsultation, wantState *mousa.SupersessionActivationState, wantDeclaration *mousa.SupersessionDeclaration) {
+	t.Helper()
+	switch {
+	case wantState == nil:
+		if got.state != nil || got.declaration != nil {
+			t.Fatalf("consultation = %#v, want no state and no declaration", got)
+		}
+	case got.state == nil || !reflect.DeepEqual(*got.state, *wantState):
+		t.Fatalf("consultation state = %#v, want %#v", got.state, wantState)
+	case wantDeclaration == nil && got.declaration != nil:
+		t.Fatalf("consultation declaration = %#v, want none", got.declaration)
+	case wantDeclaration != nil && (got.declaration == nil || !reflect.DeepEqual(*got.declaration, *wantDeclaration)):
+		t.Fatalf("consultation declaration = %#v, want %#v", got.declaration, wantDeclaration)
+	}
+}
+
+// rawActivationState reads the stored current projection so a rejected read can be shown to leave
+// the damaged rows exactly as it found them.
+func rawActivationState(t testing.TB, store *Store, sourceID mousa.SourceID) (current, active []byte) {
+	t.Helper()
+	err := store.db.QueryRowContext(context.Background(), `SELECT current_activation_id, active_declaration_id FROM supersession_activation_state WHERE source_id = ?`, sourceID[:]).Scan(&current, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		t.Fatalf("read stored activation state: %v", err)
+	}
+	return current, active
+}
+
+// execDamagingStatement runs one statement that the projection still references, so foreign-key
+// enforcement is disabled first on the store's single pooled connection. Damaging a fixture this way
+// is the only way to reach the recorded-state failures a read must refuse.
+func execDamagingStatement(t *testing.T, store *Store, statement string, args ...any) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.db.ExecContext(ctx, statement, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		t.Fatalf("damaging statement affected %d rows, %v", affected, err)
+	}
+}
+
+// assertConsultationRejects requires one damaged store to fail the consultation inside the writer
+// transaction with the expected code instead of yielding a state or a verified absence of history.
+func assertConsultationRejects(t *testing.T, store *Store, sourceID mousa.SourceID, code Code) {
+	t.Helper()
+	var consultationErr error
+	writeErr := store.writeImmediate(context.Background(), "consult supersession activation", func(conn *sql.Conn) error {
+		_, consultationErr = readSupersessionConsultation(context.Background(), conn, sourceID)
+		return consultationErr
+	})
+	if consultationErr == nil {
+		t.Fatal("damaged activation state was accepted as a consultation")
+	}
+	if !IsCode(consultationErr, code) {
+		t.Fatalf("consultation of damaged state = %v, want %s", consultationErr, code)
+	}
+	if !IsCode(writeErr, code) {
+		t.Fatalf("writer transaction error = %v, want %s", writeErr, code)
+	}
+}
+
+func TestSupersessionConsultationFollowsActivationHistory(t *testing.T) {
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	defer store.Close()
+	source, first, second := activationFixture(t, store)
+	other := emptySourceID(t, store)
+
+	// A source with no activation history is a verified absence rather than a damaged projection,
+	// and consulting it writes nothing.
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, source.ID), nil, nil)
+	if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, CodeNotFound) {
+		t.Fatalf("state with no history = %v, want %s", err, CodeNotFound)
+	}
+	if activationRowCount(t, store) != 0 || activationStateRowCount(t, store) != 0 {
+		t.Fatal("consulting a source with no history wrote activation rows")
+	}
+
+	initial := activationTestTransition(t, source.ID, mousa.SupersessionActivationID{}, first.ID, "activate the declared successor", activationBaseUsec)
+	if err := store.ApplySupersessionActivation(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	want := mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: initial.ID, ActiveDeclarationID: &first.ID}
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, source.ID), &want, &first)
+
+	// The read-only transaction a state reader holds verifies the same records.
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly, err := readSupersessionConsultation(ctx, tx, source.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	assertConsultation(t, readOnly, &want, &first)
+
+	replacement := activationTestTransition(t, source.ID, initial.ID, second.ID, "amended revision replaces the successor", activationBaseUsec+1)
+	if err := store.ApplySupersessionActivation(ctx, replacement); err != nil {
+		t.Fatal(err)
+	}
+	want = mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: replacement.ID, ActiveDeclarationID: &second.ID}
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, source.ID), &want, &second)
+
+	deactivation := activationTestTransition(t, source.ID, replacement.ID, mousa.SupersessionDeclarationID{}, "withdraw the declaration", activationBaseUsec+2)
+	if err := store.ApplySupersessionActivation(ctx, deactivation); err != nil {
+		t.Fatal(err)
+	}
+	want = mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: deactivation.ID}
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, source.ID), &want, nil)
+
+	reactivation := activationTestTransition(t, source.ID, deactivation.ID, first.ID, "reactivate the first declaration", activationBaseUsec+3)
+	if err := store.ApplySupersessionActivation(ctx, reactivation); err != nil {
+		t.Fatal(err)
+	}
+	want = mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: reactivation.ID, ActiveDeclarationID: &first.ID}
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, source.ID), &want, &first)
+
+	// A source without history stays a verified absence while another source has history.
+	assertConsultation(t, readConsultationInWriterTransaction(t, store, other), nil, nil)
+	if count := activationRowCount(t, store); count != 4 {
+		t.Fatalf("stored activations = %d, want 4", count)
+	}
+}
+
+func TestSupersessionConsultationUsesSuppliedSnapshot(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "consultation-snapshot.sqlite")
+	left, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer left.Close()
+	source, first, second := activationFixture(t, left)
+	initial := activationTestTransition(t, source.ID, mousa.SupersessionActivationID{}, first.ID, "initial selection", activationBaseUsec)
+	replacement := activationTestTransition(t, source.ID, initial.ID, second.ID, "later replacement", activationBaseUsec+1)
+	if err := left.ApplySupersessionActivation(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	right, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer right.Close()
+
+	tx, err := left.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	want := mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: initial.ID, ActiveDeclarationID: &first.ID}
+	assertConsultation(t, mustConsult(t, tx, source.ID), &want, &first)
+
+	// Another connection commits a replacement while the caller's transaction stays open. The
+	// caller keeps the snapshot it already read, so the two states are never mixed: the sequence is
+	// ordered by the explicit transaction boundary rather than by a timing assumption.
+	if err := right.ApplySupersessionActivation(ctx, replacement); err != nil {
+		t.Fatal(err)
+	}
+	assertConsultation(t, mustConsult(t, tx, source.ID), &want, &first)
+
+	later := mousa.SupersessionActivationState{SourceID: source.ID, CurrentActivationID: replacement.ID, ActiveDeclarationID: &second.ID}
+	assertConsultation(t, mustConsult(t, right.db, source.ID), &later, &second)
+
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := left.GetSupersessionActivationState(ctx, source.ID); err != nil || !reflect.DeepEqual(got, later) {
+		t.Fatalf("state after the snapshot closed = %#v, %v; want %#v", got, err, later)
+	}
+}
+
+func mustConsult(t *testing.T, q queryer, sourceID mousa.SourceID) supersessionConsultation {
+	t.Helper()
+	consultation, err := readSupersessionConsultation(context.Background(), q, sourceID)
+	if err != nil {
+		t.Fatalf("read supersession consultation: %v", err)
+	}
+	return consultation
+}
+
+func TestSupersessionConsultationRejectsDamagedState(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name   string
+		code   Code
+		damage func(t *testing.T, store *Store, source mousa.Source, chain activationChain)
+	}{
+		{
+			name: "missing current projection with retained history",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, source mousa.Source, _ activationChain) {
+				if _, err := store.db.ExecContext(ctx, `DELETE FROM supersession_activation_state WHERE source_id = ?`, source.ID[:]); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "projection names an older event",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, source mousa.Source, chain activationChain) {
+				if _, err := store.db.ExecContext(ctx, `UPDATE supersession_activation_state SET current_activation_id = ?, active_declaration_id = ? WHERE source_id = ?`,
+					chain.initial.ID[:], chain.declaration.First.ID[:], source.ID[:]); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "projection disagrees with the latest event",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, source mousa.Source, chain activationChain) {
+				if _, err := store.db.ExecContext(ctx, `UPDATE supersession_activation_state SET active_declaration_id = ? WHERE source_id = ?`,
+					chain.declaration.First.ID[:], source.ID[:]); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "event record replaced",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, _ mousa.Source, chain activationChain) {
+				otherBytes, err := mousa.EncodeSupersessionActivation(chain.replacement)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := store.db.ExecContext(ctx, `UPDATE supersession_activations SET record_json = ? WHERE id = ?`, otherBytes, chain.initial.ID[:]); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "current event missing",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, _ mousa.Source, chain activationChain) {
+				execDamagingStatement(t, store, `DELETE FROM supersession_activations WHERE id = ?`, chain.replacement.ID[:])
+			},
+		},
+		{
+			name: "selected declaration missing",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, _ mousa.Source, chain activationChain) {
+				execDamagingStatement(t, store, `DELETE FROM supersession_declarations WHERE id = ?`, chain.declaration.Second.ID[:])
+			},
+		},
+		{
+			name: "pinned provenance missing",
+			code: CodeIntegrity,
+			damage: func(t *testing.T, store *Store, _ mousa.Source, chain activationChain) {
+				execDamagingStatement(t, store, `DELETE FROM representation_inputs WHERE representation_id = ?`, chain.declaration.Second.PredecessorRepresentationID[:])
+			},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store, source, chain := activatedChain(t)
+			defer store.Close()
+			testCase.damage(t, store, source, chain)
+			events := activationRowCount(t, store)
+			states := activationStateRowCount(t, store)
+			declarations := supersessionDeclarationRowCount(t, store)
+			damagedCurrent, damagedActive := rawActivationState(t, store, source.ID)
+			assertConsultationRejects(t, store, source.ID, testCase.code)
+			if activationRowCount(t, store) != events || activationStateRowCount(t, store) != states || supersessionDeclarationRowCount(t, store) != declarations {
+				t.Fatal("rejected consultation changed stored rows")
+			}
+			current, active := rawActivationState(t, store, source.ID)
+			if !bytes.Equal(current, damagedCurrent) || !bytes.Equal(active, damagedActive) {
+				t.Fatal("rejected consultation repaired the damaged projection")
+			}
+			if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, testCase.code) {
+				t.Fatalf("public state read of damaged store = %v, want %s", err, testCase.code)
+			}
+		})
+	}
+}
+
+// TestSupersessionActivationMissingEventClassificationBoundary pins the boundary of the corruption
+// classification: a current projection whose named event is missing is an integrity failure for both
+// the public state read and a transaction-local consultation, while reading that event's identity
+// through the historical event reader is still the not-found of a missing row, and a surviving
+// historical event stays readable. Nothing is repaired or written.
+func TestSupersessionActivationMissingEventClassificationBoundary(t *testing.T) {
+	ctx := context.Background()
+	store, source, chain := activatedChain(t)
+	defer store.Close()
+	if _, err := store.GetSupersessionActivation(ctx, chain.initial.ID); err != nil {
+		t.Fatalf("historical read before the damage: %v", err)
+	}
+	execDamagingStatement(t, store, `DELETE FROM supersession_activations WHERE id = ?`, chain.replacement.ID[:])
+	events := activationRowCount(t, store)
+	states := activationStateRowCount(t, store)
+	current, active := rawActivationState(t, store, source.ID)
+
+	assertConsultationRejects(t, store, source.ID, CodeIntegrity)
+	if _, err := store.GetSupersessionActivationState(ctx, source.ID); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("public state read of a projection naming a missing event = %v, want %s", err, CodeIntegrity)
+	}
+	if _, err := store.GetSupersessionActivation(ctx, chain.replacement.ID); !IsCode(err, CodeNotFound) {
+		t.Fatalf("historical read of a missing event identity = %v, want %s", err, CodeNotFound)
+	}
+	if got, err := store.GetSupersessionActivation(ctx, chain.initial.ID); err != nil || !reflect.DeepEqual(got, chain.initial) {
+		t.Fatalf("historical read of a surviving event = %#v, %v; want %#v", got, err, chain.initial)
+	}
+	if activationRowCount(t, store) != events || activationStateRowCount(t, store) != states {
+		t.Fatal("rejected state read changed stored rows")
+	}
+	afterCurrent, afterActive := rawActivationState(t, store, source.ID)
+	if !bytes.Equal(current, afterCurrent) || !bytes.Equal(active, afterActive) {
+		t.Fatal("rejected state read repaired the damaged projection")
 	}
 }

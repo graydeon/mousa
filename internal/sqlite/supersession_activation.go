@@ -153,35 +153,127 @@ func applySupersessionActivation(ctx context.Context, conn *sql.Conn, activation
 // projections, its same-source declaration and predecessor references, and the whole predecessor
 // chain back to one root within a single read snapshot. The state is never reconstructed or
 // repaired, and the read exposes no document text.
+//
+// CodeNotFound means exactly one thing: the source has no activation history. A state projection that
+// names a missing event, a projection that disagrees with the event it names, a broken chain and a
+// missing declaration or pinned provenance are integrity failures, because recorded state that exists
+// cannot be reported as the absence of history.
+//
+// The method only supplies the read transaction and the commit: verifySupersessionActivationState
+// performs the verification, so a caller that already holds a transaction reaches the same checks
+// through readSupersessionConsultation instead of opening a second one.
 func (store *Store) GetSupersessionActivationState(ctx context.Context, sourceID mousa.SourceID) (mousa.SupersessionActivationState, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return mousa.SupersessionActivationState{}, classify("begin supersession activation state read", err)
 	}
 	defer tx.Rollback()
-	state, err := readSupersessionActivationStateRow(ctx, tx, sourceID)
-	if err != nil {
-		if IsCode(err, CodeNotFound) {
-			var exists int
-			if checkErr := tx.QueryRowContext(ctx, `SELECT 1 FROM supersession_activations WHERE source_id = ? LIMIT 1`, sourceID[:]).Scan(&exists); checkErr == nil {
-				return mousa.SupersessionActivationState{}, integrity("get supersession activation state", "activation history has no current projection")
-			} else if !errors.Is(checkErr, sql.ErrNoRows) {
-				return mousa.SupersessionActivationState{}, classify("get supersession activation history", checkErr)
-			}
-		}
-		return mousa.SupersessionActivationState{}, err
-	}
-	tip, err := readSupersessionActivationRow(ctx, tx, state.CurrentActivationID)
+	state, hasHistory, err := verifySupersessionActivationState(ctx, tx, sourceID)
 	if err != nil {
 		return mousa.SupersessionActivationState{}, err
 	}
-	if err := verifySupersessionStateAgainstTip(ctx, tx, sourceID, state, tip, map[mousa.SupersessionActivationID]bool{}); err != nil {
-		return mousa.SupersessionActivationState{}, err
+	if !hasHistory {
+		// A verified absence reports the same not-found the missing state row produced, so the
+		// command's code and message are unchanged by the extraction.
+		return mousa.SupersessionActivationState{}, readError("get supersession activation state", sql.ErrNoRows)
 	}
 	if err := tx.Commit(); err != nil {
 		return mousa.SupersessionActivationState{}, classify("finish supersession activation state read", err)
 	}
 	return state, nil
+}
+
+// verifySupersessionActivationState verifies one source's current activation state through the
+// supplied queryer and reports whether that source has any activation history.
+//
+// Every read goes through the supplied handle, so a caller that already holds a transaction consults
+// exactly the snapshot of that transaction: the state projection, the event it names, the event's
+// canonical bytes and projections, its declaration reference and the whole predecessor chain all come
+// from one snapshot, and no second transaction or public store read is opened.
+//
+// A source with no activation history reports hasHistory false with no error, so a caller that
+// records a verified absence reads no error code as one. Activation history whose current projection
+// is missing, or that names an event with no stored row, is an integrity failure instead: the event
+// not-found of this read is recorded corruption, never the absence of history, and no state is
+// reconstructed or repaired. A direct historical event read keeps its own not-found for an identity
+// that does not exist.
+func verifySupersessionActivationState(ctx context.Context, q queryer, sourceID mousa.SourceID) (mousa.SupersessionActivationState, bool, error) {
+	state, err := readSupersessionActivationStateRow(ctx, q, sourceID)
+	if err != nil {
+		if !IsCode(err, CodeNotFound) {
+			return mousa.SupersessionActivationState{}, false, err
+		}
+		var exists int
+		if checkErr := q.QueryRowContext(ctx, `SELECT 1 FROM supersession_activations WHERE source_id = ? LIMIT 1`, sourceID[:]).Scan(&exists); checkErr == nil {
+			return mousa.SupersessionActivationState{}, false, integrity("get supersession activation state", "activation history has no current projection")
+		} else if !errors.Is(checkErr, sql.ErrNoRows) {
+			return mousa.SupersessionActivationState{}, false, classify("get supersession activation history", checkErr)
+		}
+		return mousa.SupersessionActivationState{}, false, nil
+	}
+	tip, err := readSupersessionActivationRow(ctx, q, state.CurrentActivationID)
+	if err != nil {
+		// The projection exists, so its named event cannot be absent: this not-found is recorded
+		// corruption rather than the verified absence hasHistory false reports.
+		if IsCode(err, CodeNotFound) {
+			return mousa.SupersessionActivationState{}, true, integrity("get supersession activation state", "current activation event is missing")
+		}
+		return mousa.SupersessionActivationState{}, true, err
+	}
+	if err := verifySupersessionStateAgainstTip(ctx, q, sourceID, state, tip, map[mousa.SupersessionActivationID]bool{}); err != nil {
+		return mousa.SupersessionActivationState{}, true, err
+	}
+	return state, true, nil
+}
+
+// supersessionConsultation is one transaction-local consultation of a source's supersession records,
+// in the shape mousa.BuildSupersessionSelection accepts: the verified current activation state when
+// the source has activation history, and the declaration that state selects when it selects one. A nil
+// state is a verified absence of history; a state naming no declaration is a deactivation, and a state
+// naming one always carries that declaration's verified canonical record.
+type supersessionConsultation struct {
+	state       *mousa.SupersessionActivationState
+	declaration *mousa.SupersessionDeclaration
+}
+
+// readSupersessionConsultation returns the verified supersession records one writer-transaction
+// decision must consult, reading every provenance fact through the supplied queryer. It therefore uses
+// the caller's existing snapshot for the activation state, its predecessor chain and the selected
+// declaration, and a concurrent transition on another connection cannot mix into that snapshot.
+//
+// A source with no activation history reports a nil state and no declaration. A deactivation reports
+// the consulted event with no declaration. A selected declaration must belong to the same source and
+// pass the same canonical provenance verification a direct declaration read performs. Missing or
+// inconsistent recorded state stays an integrity failure, so this reader never manufactures a
+// no-history result, never repairs a record and writes nothing.
+func readSupersessionConsultation(ctx context.Context, q queryer, sourceID mousa.SourceID) (supersessionConsultation, error) {
+	state, hasHistory, err := verifySupersessionActivationState(ctx, q, sourceID)
+	if err != nil {
+		return supersessionConsultation{}, err
+	}
+	if !hasHistory {
+		return supersessionConsultation{}, nil
+	}
+	consultation := supersessionConsultation{state: &state}
+	if state.ActiveDeclarationID == nil {
+		return consultation, nil
+	}
+	// The event row already required this declaration to exist in the same snapshot, so this read
+	// supplies its value and not its existence proof. The failure mapping still matters: a caller of
+	// this reader reads a nil state as the verified absence of history, so a not-found must never
+	// reach it as a successful absence.
+	declaration, err := readSupersessionDeclaration(ctx, q, *state.ActiveDeclarationID)
+	if err != nil {
+		if IsCode(err, CodeNotFound) {
+			return supersessionConsultation{}, integrity("consult supersession activation", "selected declaration is missing")
+		}
+		return supersessionConsultation{}, err
+	}
+	if declaration.SourceID != state.SourceID {
+		return supersessionConsultation{}, integrity("consult supersession activation", "selected declaration belongs to another source")
+	}
+	consultation.declaration = &declaration
+	return consultation, nil
 }
 
 // GetSupersessionActivation returns one stored activation event after verifying its canonical

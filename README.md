@@ -39,8 +39,18 @@ explicitly supplied verified activation and declaration records, plus the
 `mousa.source_trail.v4` record with its strict version-aware codec and identity, a
 separate explicit opt-in constructor and survivor-aware packing for both policies.
 Neither half is called by a retrieval path, no CLI or MCP surface exposes one, and
-nothing withholds evidence yet. Transaction-local verified state, store integration
-and query enforcement remain recorded in
+nothing withholds evidence yet. The store also carries the transaction-local
+consultation the later retrieval change needs: one private reader verifies a source's
+current activation state and returns the declaration it selects, reading the state
+projection, the event it names, the predecessor chain and the declaration through the
+query handle it is given, so a caller that already holds a transaction consults that
+transaction's snapshot instead of opening a second one, and a source with no history is
+reported as such rather than as damaged state. Recorded state that exists but cannot be verified
+fails as an integrity failure rather than as `not_found`: a current projection naming a missing event
+is classified as corruption, and only a source with no activation history reports `not_found` with an
+unchanged message. That reader changes no query, its
+`supersession activation state` callers keep their signature and projection JSON, and v4 store
+integration and query enforcement remain recorded in
 [opt-in supersession enforcement](docs/SUPERSESSION_ENFORCEMENT.md) and are
 not implemented. See the
 [supersession boundary](docs/CAPABILITIES.md#supersession-core-boundary)
@@ -58,7 +68,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
 | **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands, and the internal supersession domain contract (a pure selection API and a v4 trail record with survivor-aware packing) that no retrieval path calls yet. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions; revision-pinned declaration and activation-event administration plus read-only current-state inspection through native commands, and the internal supersession contract (a pure selection API, a v4 trail record with survivor-aware packing, and a transaction-local reader that verifies the current activation state and the declaration it selects inside a caller's transaction) that no retrieval path calls yet. Query supersession enforcement, factual freshness, and semantic conflict checks are deferred. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
@@ -83,8 +93,10 @@ declaration identities and every suppression row, requires an explicit packing p
 carries no associated passages, packs only the surviving candidates under that policy
 and keeps a withheld candidate's canonical size, rank and accepted disposition. No
 retrieval path, store write or CLI or MCP surface builds one yet, and store reads do not
-content-verify a v4 record. Transforms, ranking-stage explanations, transaction-local
-verified state and query enforcement remain planned. The selection and trail-version
+content-verify a v4 record. Transforms, ranking-stage explanations, v4 store integration
+and query enforcement remain planned; the transaction-local consultation reader that a
+retrieval caller would use is implemented and changes no query. The selection and
+trail-version
 contract for opt-in supersession enforcement is recorded in
 [docs/SUPERSESSION_ENFORCEMENT.md](docs/SUPERSESSION_ENFORCEMENT.md). A
 consumer's token-limited rendering is not a stored Source Trail or a new
