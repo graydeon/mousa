@@ -29,8 +29,8 @@ activation put/get administration and a
 read-only current-activation-state inspection command are
 implemented; MCP declaration surfaces and supersession query
 enforcement remain absent, no retrieval path calls the selection API, the consultation
-reader or builds a v4 trail, and a stored v4 record is not content-verified on read or
-startup. The Git
+reader or builds a v4 trail, and the canonical store read path and startup scan
+content-verify a stored v4 record against the activation history it names. The Git
 documentation consumer optionally limits
 rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
@@ -124,6 +124,26 @@ event stays readable, so the corruption classification is not a global remapping
 The public state method's reported code and message for a source with no history were compared
 against the pre-change implementation rather than re-derived. These are regression cases on the
 store's own verification, not measurements and not enforcement acceptance.
+
+Stored v4 trail verification is covered by focused product regression cases in
+`internal/sqlite/trail_supersession_test.go` over real temporary SQLite files. A fixture source holds a
+pinned predecessor, a byte-identical twin of it, the declared successor and an unrelated peer, all as
+current indexed items; the cases build a `mousa.source_trail.v4` record through the opt-in domain
+constructor and commit it through the existing internal trail insert helper, so every valid record is
+read back canonically and every corrupt one is committed without the production read-back. Cases cover
+both packing policies with an active declaration, verified no-history, deactivation and denial
+records, a store reopen, and a recorded trail that stays readable and identical after a replacement
+activation, a deactivation and a successor item revision. Negative cases reject, as integrity errors,
+a missing, foreign-source or mismatching activation event, a missing or cross-source declaration, a
+disposition row whose pins disagree with the consulted declaration, a missing suppression row, an
+extra suppression row, and a changed record committed without repair or writes. A mandatory
+regression turns a constructor-produced duplicate omission into a second released survivor with
+recomputed packet and trail identities and projection rows, shows the structural codec still accepts
+it, and shows the canonical read and a read-only reopen reject it; the withheld duplicate is also
+placed directly after its retained byte-equal twin to show that a withheld candidate seeds no
+retained duplicate set. Every earlier v1–v3 trail case still passes unchanged. These are regression
+cases on the store's own verification of supplied records, not independent relevance samples and not
+enforcement acceptance: no query emits a v4 trail and no CLI or MCP surface reaches it.
 
 A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
 pins the observed behavior of the native declaration and activation administration
