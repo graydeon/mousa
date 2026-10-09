@@ -506,8 +506,11 @@ files are written, it removes its newly created partial directory and reports
 any cleanup error. A complete package remains if only emitting the final CLI
 result fails. Protect the package/config like the store.
 
-The setup skill explains sharing and asks the user to confirm sources before
-retrieval. The evidence skill explains querying, quotations and Source Trails.
+The setup skill explains sharing and reuses explicit user authorization for the
+configured source labels and sharing with the configured host/provider. It asks
+for confirmation before retrieval when that authorization is missing or the
+source scope changes. Installation or tool discovery alone is not authorization.
+The evidence skill explains querying, quotations and Source Trails.
 Data sent to the host/provider includes query/tool arguments, selected evidence
 text, source/item labels, canonical IDs, byte coordinates, hashes and provenance/
 audit metadata. Local audit records remain in the canonical store. Host/provider

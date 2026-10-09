@@ -604,10 +604,12 @@ store paths, stores or credentials. The executable targets the platform used
 to build it. Existing output directories are refused. Ingestion remains disabled
 unless separately requested with `--ingest-source`.
 
-In ChatGPT desktop, install the local marketplace plugin, run its onboarding,
-confirm the permitted sources and sharing consent, then search for Cedar using
-the composer mention picker. Codex CLI can use the evidence skill and core
-tools without a mention picker. The directory is local, not a public listing.
+In ChatGPT desktop, install the local marketplace plugin and run its onboarding.
+The setup skill reuses explicit user authorization for the configured sources
+and sharing with the configured host/provider; otherwise it requests confirmation
+before retrieval. Installation alone does not establish that authorization.
+Then search for Cedar using the composer mention picker. Codex CLI can use the
+evidence skill and core tools without a mention picker. The directory is local, not a public listing.
 Actual desktop interaction and model-driven CLI use require the corresponding
 supported app/account and remain separate from credential-free acceptance.
 
