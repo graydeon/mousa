@@ -506,8 +506,11 @@ files are written, it removes its newly created partial directory and reports
 any cleanup error. A complete package remains if only emitting the final CLI
 result fails. Protect the package/config like the store.
 
-The setup skill explains sharing and asks the user to confirm sources before
-retrieval. The evidence skill explains querying, quotations and Source Trails.
+The setup skill explains sharing and reuses explicit user authorization for the
+configured source labels and sharing with the configured host/provider. It asks
+for confirmation before retrieval when that authorization is missing or the
+source scope changes. Installation or tool discovery alone is not authorization.
+The evidence skill explains querying, quotations and Source Trails.
 Data sent to the host/provider includes query/tool arguments, selected evidence
 text, source/item labels, canonical IDs, byte coordinates, hashes and provenance/
 audit metadata. Local audit records remain in the canonical store. Host/provider
@@ -1135,3 +1138,9 @@ item is revised, deactivated or removed. A v3 record validates its candidates
 under the packing policy it records: an original-policy trail keeps repeated
 byte-equal passages valid, while an exact-v1 trail still has to name the
 duplicate it omitted.
+
+## Maintained agent skills
+
+The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Supersession administration does not currently withhold query evidence.
+
+The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa. Client skills remain bundled with the plugin; they are not development startup instructions.
