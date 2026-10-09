@@ -30,9 +30,10 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
-| Transaction-local supersession consultation | Yes | No command; internal Go API | Verified current state and the declaration it selects read through one supplied query handle: no-history, initial selection, replacement, deactivation and reactivation, the caller's snapshot kept while another connection commits a transition, and missing projection, projection naming a missing current event or a missing selected declaration classified as an integrity failure (with the historical event reader still not-found for an unknown identity), all rejected with no repair or write | None; no caller consults it yet, retrieval still releases every candidate, and v4 content and startup verification are absent |
+| Transaction-local supersession consultation | Yes | No command; internal Go API | Verified current state and the declaration it selects read through one supplied query handle: no-history, initial selection, replacement, deactivation and reactivation, the caller's snapshot kept while another connection commits a transition, and missing projection, projection naming a missing current event or a missing selected declaration classified as an integrity failure (with the historical event reader still not-found for an unknown identity), all rejected with no repair or write | None; no caller consults it yet and retrieval still releases every candidate |
 | Supersession selection contract | Yes | No command; internal Go API | Consultation/denial/deactivation shapes, exact predecessor-pin matching, source isolation, rejected and non-matching candidates, row order and copying, structural validation failures | None; the API is not called by retrieval and withholds nothing |
-| Opt-in supersession trail and survivor packing | Yes | No command; internal Go API | `mousa.source_trail.v4` version boundary, required closed consultation member, strict member codec and identity binding, no-history/deactivation/active/denial records, survivor-aware `original` and `exact-v1` packing including an ordinary budget skip and a withheld duplicate copy, row membership/order/pins, canonical size and input ownership, shared candidate invariants under both policies, unchanged v1–v3 bytes and identities | None; no retrieval path builds one, no store writes or content-verifies one, and nothing withholds evidence |
+| Opt-in supersession trail and survivor packing | Yes | No command; internal Go API | `mousa.source_trail.v4` version boundary, required closed consultation member, strict member codec and identity binding, no-history/deactivation/active/denial records, survivor-aware `original` and `exact-v1` packing including an ordinary budget skip and a withheld duplicate copy, row membership/order/pins, canonical size and input ownership, shared candidate invariants under both policies, unchanged v1–v3 bytes and identities | None; no retrieval path builds or stores one and nothing withholds evidence |
+| Stored v4 trail content and administration verification | Yes | No command; canonical store read path | `mousa.source_trail.v4` content verification on read and during startup over real temporary SQLite files: both packing policies, active/no-history/deactivation/denial records, read and reopen, recorded history readable after a replacement activation, deactivation and item revision, byte-aware duplicate rejection with recomputed identities and projection rows, a withheld candidate excluded from the retained byte-equal set, missing/extra/wrong-pin rows, a missing, foreign-source or mismatched activation event, a missing or cross-source declaration, corrupt records rejected without repair or writes, and unchanged v1–v3 verification | None; no query emits a v4 trail, no CLI or MCP enforcement surface exists, and the native acceptance matrix is unrun |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -67,8 +68,9 @@ is a read-only projection of the verified current state. MCP declaration surface
 activation listing or history commands, and supersession query enforcement remain
 unimplemented. A proposed opt-in enforcement contract is recorded in
 [opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md): both of its domain
-halves and the transaction-local consultation of the verified current state are
-implemented, they change no default behavior, no retrieval path reaches them, and no
+halves, the transaction-local consultation of the verified current state and the
+canonical store verification of a stored v4 trail are implemented, they change no default
+behavior, no retrieval path reaches them, and no
 packet version exists for them.
 Historical
 revision pins remain readable after item updates or deletion; canonical existence
@@ -146,10 +148,41 @@ shares the default trail's version or identity.
 
 Scope of the checks: they are structural and local. They read no store, so they prove no
 stored existence, canonical ancestry, authorization or transaction-local current state.
-No retrieval path calls the constructor, no store writes a v4 record, a stored v4 record
-is not content-verified on read or startup, and no CLI or MCP surface can request one,
-which is why no query withholds evidence. The trail's own decode is reachable through
-`DecodeSourceTrail` for any caller that can already present those bytes.
+No retrieval path calls the constructor, no production path writes a v4 record, and no CLI
+or MCP surface can request one, which is why no query withholds evidence. The trail's own
+decode is reachable through `DecodeSourceTrail` for any caller that can already present
+those bytes. Attaching such a record to a store is a separate store responsibility,
+described below.
+
+### Stored v4 trail verification
+
+The canonical store read path (`internal/sqlite/trail_content.go`, `internal/sqlite/trail.go`)
+content-verifies a stored `mousa.source_trail.v4` record exactly where it already verifies v2 and v3,
+on every read through `GetSourceTrail`, trail inspection and the enforced trace read-back, and in the
+startup record scan. The verification has three parts, all read through the transaction snapshot the
+caller already holds:
+
+- Content. Every named segment still resolves to its canonical record, still carries the recorded
+  digest and the recorded byte size in its coordinates, still derives from the decision source, and
+  its retained indexed text still hashes to that digest. Retired indexed text is not archived, so the
+  immutable digest and coordinate range remain checkable there and the recorded bytes are not.
+- Packing. The recorded policy is reproduced over the surviving candidates only; a candidate that the
+  record names as withheld remains content-verified but is neither selected nor allowed to seed the
+  retained byte-equal set, so a withheld copy is never mistaken for a duplicate omission. Digests stay
+  a comparison shortlist: exact-`v1` equality is decided by the retained bytes actually available.
+- Administration and membership. The recorded activation event and declaration are read from the same
+  snapshot, not from today's activation projection: the event must verify as canonical, belong to the
+  decision source, carry the whole predecessor chain behind it and select exactly the recorded
+  declaration (or a null one). The recorded rows are then re-derived from the verified declaration's
+  exact predecessor pin through the domain `ValidateAgainst` rule, so a missing, extra, wrong-pin or
+  unrelated-candidate row is an integrity failure. A denial and a verified no-history record keep
+  their structural identity and empty-member checks and read no administration.
+
+Later activation changes, deactivation and item revisions therefore do not reinterpret a stored
+record: a replacement activation, a deactivation and a successor item revision leave an existing v4
+trail readable and identical. A record that fails any check is reported as an integrity error and is
+never repaired, rewritten or partially accepted, and the startup scan refuses to open the store. No
+new object set, schema version or migration is involved.
 
 ### Transaction-local consultation
 
@@ -174,8 +207,8 @@ missing, a broken chain, a cross-source pointer or a projection disagreeing with
 keeps its own `not_found` for an identity that does not exist.
 
 These checks are store verification, not enforcement. No retrieval path consults the reader, no
-command or MCP surface reaches it, a stored v4 record is still not content-verified on read or
-startup, and no query withholds evidence.
+command or MCP surface reaches it, and no query withholds evidence. A stored v4 trail is verified
+separately, on read and during startup.
 
 ### Declaration administration
 

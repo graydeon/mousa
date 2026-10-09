@@ -1,6 +1,7 @@
 # Opt-in supersession enforcement
 
-**Status: contract defined; the domain halves and the transaction-local verified state are
+**Status: contract defined; the domain halves, the transaction-local verified state and the
+canonical store verification of a stored v4 record are
 implemented, nothing enforces it.** No query
 implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface and no
 packet version for supersession enforcement, and nothing consults the implemented selection API
@@ -19,17 +20,19 @@ and explicitly supplied verified activation/declaration records. The trail half 
 `mousa.source_trail.v4`, the `NewSourceTrailWithSupersession` constructor, the versioned
 member codec and identity, and survivor-aware packing for both policies in
 `internal/mousa/trail.go` and `internal/mousa/packing.go` — records that evidence and packs
-only the surviving candidates. Both halves withhold, store and release nothing: no retrieval
-caller invokes either one, no store writes or content-verifies a v4 record, and no check in the
-acceptance matrix below has run.
+only the surviving candidates. Both halves withhold and release nothing by themselves: no retrieval
+caller invokes either one, no production path stores a v4 record, and no check in the acceptance
+matrix below has run. The store verifies a stored v4 record on read and startup; the remaining
+integration is the retrieval opt-in itself.
 
 The store also carries the transaction-local consultation of that state, in
 `internal/sqlite/supersession_activation.go`: `readSupersessionConsultation` returns the verified
 current activation state and the declaration it selects, reading the state row, the event it names,
 the whole predecessor chain and the selected declaration through one supplied query handle. It
 opens no transaction and calls no public store method, so a caller that already holds a transaction
-consults exactly that snapshot. It has no caller yet: retrieval does not consult it, and the v4
-content and startup verification below are still absent.
+consults exactly that snapshot. It has no caller yet: retrieval does not consult it. A stored v4
+record is verified by the canonical read path and the startup scan, described under “Stored v4 trail
+verification” below.
 
 Declarations, activation history and the verified current-state projection are implemented;
 see the [supersession boundary](CAPABILITIES.md#supersession-core-boundary). This page only
@@ -223,13 +226,15 @@ authorization, and only then is the stored record returned. The recorded selecti
 returned as recorded and is never reinterpreted under today's declaration, activation state
 or item pointers.
 
-- A v4 record is content-verified in the same way as v2/v3: every named segment still exists
-  with the recorded digest, every suppression names an accepted, unselected candidate of that
-  trail, and every named declaration and activation event still exists and still pins exactly
-  the recorded revisions. Deactivation, later revisions and deleted items do not invalidate
-  the record, because none of those facts is re-read for the decision. **Not implemented yet:**
-  the store read path still content-verifies v2 and v3 records only, no store writes a v4
-  record, and the text-free codec validates structure and supplied-input consistency without
+- A v4 record is content-verified in the same way as v2/v3, and additionally against the
+  administration it recorded: every named segment still exists with the recorded digest and
+  canonical size, every withheld candidate is re-derived from the verified declaration's exact
+  predecessor pin, and the named declaration and activation event still exist, still belong to
+  the decision source and still agree with each other. The event and declaration are read from
+  the record's own snapshot, never from today's activation projection. Deactivation, later
+  revisions and deleted items do not invalidate the record, because none of those facts is
+  re-read for the decision. **Not implemented yet:** no store writes a v4 record, no query emits
+  one, and the text-free codec validates structure and supplied-input consistency without
   proving stored existence or canonical ancestry.
 - Read-time flags stay read-time facts. `indexed_now` continues to describe today's index, and
   a successor-currency diagnostic, if added, is computed when the trail is read.
@@ -421,8 +426,8 @@ Four bounded slices, each independently reviewable and testable:
 2. **Transaction-local verified state.** One extracted verification helper reused by the
    `state` command and by retrieval; the opt-in trace path inside the existing writer
    transaction; v4 content and startup verification. Real SQLite fixtures.
-   *The extracted helper and the consultation reader are implemented with real SQLite fixtures;
-   the opt-in trace path and the v4 content and startup verification are not.*
+   *The extracted helper and the consultation reader are implemented with real SQLite fixtures,
+   and so are the v4 content and startup verification; the opt-in trace path is not.*
 3. **Native opt-in query surface.** An explicit boolean query opt-in, the added result count
    and outcome value, and an actual-CLI regression over a real store. MCP unchanged.
 4. **Client or benchmark work** only where the changed surface justifies it independently.
@@ -496,10 +501,31 @@ provide:
   reason, and a rejected candidate carries lifecycle reasons instead of a packing omission, so
   `original` and `exact-v1` reject the same candidate set.
 
-The trail half is equally structural: it reads no store, so it proves no stored existence,
-canonical ancestry, authorization or transaction-local current state. No retrieval path calls the
-constructor, no store writes or content-verifies a v4 record, and no CLI or MCP surface exposes
-one, so nothing withholds evidence.
+The trail half is equally structural in the domain package: it reads no store, so it proves no stored
+existence, canonical ancestry, authorization or transaction-local current state. No retrieval path
+calls the constructor, no store writes a v4 record in production, and no CLI or MCP surface exposes
+one, so nothing withholds evidence. The canonical store read path verifies a stored v4 record
+separately, described under "Stored v4 trail verification" below.
+
+## Stored v4 trail verification
+
+The read and startup half of the second slice is implemented in `internal/sqlite/trail_content.go`
+and `internal/sqlite/trail.go`. The canonical trail read verifies a stored `mousa.source_trail.v4`
+record where it already verified v2 and v3: every named segment must still resolve to its canonical
+record with the recorded digest and byte size, still derive from the decision source and still hash
+its retained indexed text to that digest; the recorded packing policy is reproduced over the
+surviving candidates only, with a withheld candidate neither selected nor allowed to seed the
+retained byte-equal set, so a digest stays a comparison shortlist and the retained bytes decide
+exact-`v1` equality; and the recorded activation event and declaration are read through the same
+snapshot, must verify as canonical, belong to the decision source and carry the whole predecessor
+chain behind them, and the event must select exactly the recorded declaration or a null one. The
+recorded rows are then re-derived from the verified declaration's exact predecessor pin, so a
+missing, extra, wrong-pin or unrelated-candidate row is an integrity failure. A denial and a verified
+no-history record keep their structural identity and empty-member checks and read no administration.
+The startup record scan runs the same verification, so a store holding a damaged v4 record refuses to
+open; no new object set, schema version or migration is involved. A failed check never repairs,
+rewrites or partially accepts a record, and later activation changes, deactivation and item revisions
+do not reinterpret a stored trail.
 
 ## Limitations and non-goals
 
@@ -507,12 +533,14 @@ This proposal does not implement, and does not claim: query enforcement; semanti
 contradiction detection; authenticated authorship; factual truth or freshness; transitive
 supersession chains or cycles; automatic or default enforcement; enforcement of non-item
 sources; associated-passage enforcement; or any change to ranking, authorization, item
-pointers, canonical declarations and activation history. Only the two domain contracts and the
-transaction-local consultation reader above are implemented, and no query, CLI or MCP surface
+pointers, canonical declarations and activation history. Only the two domain contracts, the
+transaction-local consultation reader and the canonical store verification of a stored v4 record are
+implemented, and no query, CLI or MCP surface
 reaches them, so no retrieval
 behavior changes. The consultation reader's own focused SQLite checks run, including that an open
-transaction keeps the snapshot it read while another connection commits a transition; the opt-in
-trace path, v4 content and startup verification and every other acceptance-matrix check remain
+transaction keeps the snapshot it read while another connection commits a transition, and the stored
+v4 read and startup verification has its own focused SQLite regression cases; the opt-in
+trace path and every other acceptance-matrix check remain
 unimplemented. It makes no performance
 claim: the selection stage's cost, including the reused chain verification, is unmeasured
 until a later slice measures it. The
