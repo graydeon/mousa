@@ -102,7 +102,9 @@ retrieval path, store write or CLI or MCP surface builds one, so no query emits 
 trail. A stored v4 record is content-verified by the canonical read path and by startup
 verification, against the recorded activation event and declaration and that
 declaration's exact predecessor pin, with a withheld candidate excluded from the
-retained byte-equal set so it is never mistaken for a duplicate omission. Transforms,
+retained byte-equal set so it is never mistaken for a duplicate omission. A canonical parent a v4
+record names but the store no longer holds is reported as an integrity failure rather than
+`not_found`; an identity that was never stored still reports `not_found`. Transforms,
 ranking-stage explanations, the retrieval opt-in and query enforcement remain planned;
 the transaction-local consultation reader that a retrieval caller would use is
 implemented and changes no query. The selection and

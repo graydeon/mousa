@@ -699,3 +699,234 @@ func TestStoreV4TrailHistoryReadableAfterAdministrationAndItemChanges(t *testing
 		t.Fatalf("recorded trail after later administration and item changes = %#v, %v, want %#v", reread, err, recorded)
 	}
 }
+
+// damageCanonicalParent removes one named canonical parent row through a test-only foreign-key
+// bypass and restores the connection setting before it returns. Production write paths enforce those
+// foreign keys, so the bypass exists only to produce the damage a partially corrupted store would
+// hold; the restored setting is read back so a leaked connection cannot weaken a later case.
+func damageCanonicalParent(t *testing.T, store *Store, statement string, id []byte) {
+	t.Helper()
+	ctx := context.Background()
+	writer, err := connect(ctx, store.path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if _, err := writer.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatalf("disable foreign keys for the damage fixture: %v", err)
+	}
+	result, err := writer.ExecContext(ctx, statement, id)
+	if err != nil {
+		t.Fatalf("damage the fixture: %v", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		t.Fatalf("damage affected %d rows, %v; want exactly one", affected, err)
+	}
+	if _, err := writer.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("restore foreign keys after the damage fixture: %v", err)
+	}
+	var enabled int
+	if err := writer.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&enabled); err != nil || enabled != 1 {
+		t.Fatalf("foreign keys after the damage fixture = %d, %v; want enabled", enabled, err)
+	}
+}
+
+// v4DamageVictim returns the verified candidate whose canonical dependency a damage case removes:
+// the withheld candidate of an active consultation, so a suppressed passage's own parent is covered,
+// or the first released passage of a record that consulted no history.
+func v4DamageVictim(t *testing.T, input v4Retrieval, trail mousa.SourceTrail, withheld bool) mousa.VerifiedLexicalCandidate {
+	t.Helper()
+	var segmentID mousa.SegmentID
+	if withheld {
+		if len(trail.Supersession.Dispositions) != 1 {
+			t.Fatalf("recorded dispositions = %#v, want exactly one", trail.Supersession.Dispositions)
+		}
+		segmentID = trail.Supersession.Dispositions[0].SegmentID
+	} else {
+		for _, candidate := range trail.Candidates {
+			if candidate.Selected {
+				segmentID = candidate.SegmentID
+				break
+			}
+		}
+		if segmentID == (mousa.SegmentID{}) {
+			t.Fatal("record released no passage to damage")
+		}
+	}
+	for _, candidate := range input.candidates {
+		if candidate.Segment.ID == segmentID {
+			return candidate
+		}
+	}
+	t.Fatalf("no verified candidate for segment %s", segmentID)
+	return mousa.VerifiedLexicalCandidate{}
+}
+
+// TestStoreV4TrailMissingCanonicalParentIsIntegrity removes one canonical parent row a stored v4
+// record names and requires the read to report recorded damage. A v4 record is written only after the
+// store verified the records it names, so a vanished named row means the record lost a parent rather
+// than that the caller asked for an identity that was never stored. Each case proves a valid control
+// read first, then that the rejected read neither rewrote the record nor changed canonical rows, and
+// finally that reopening the damaged file still fails verification.
+func TestStoreV4TrailMissingCanonicalParentIsIntegrity(t *testing.T) {
+	ctx := context.Background()
+	for _, policy := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
+		for _, consult := range []string{"active", "no-history"} {
+			for _, parent := range []string{"segment", "representation"} {
+				t.Run(policy+"/"+consult+"/"+parent, func(t *testing.T) {
+					fixture := newV4Fixture(t)
+					defer fixture.store.Close()
+					var state *mousa.SupersessionActivationState
+					var declaration *mousa.SupersessionDeclaration
+					if consult == "active" {
+						activated, current := fixture.activate(t)
+						declaration, state = &activated, &current
+					}
+					input := fixture.retrieve(t, "request-v4-missing-"+parent+"-"+consult+"-"+policy)
+					trail := storeV4Trail(t, fixture.store, buildV4Trail(t, input, 1<<20, policy, state, declaration))
+					if reread, err := fixture.store.GetSourceTrail(ctx, trail.ID); err != nil || !reflect.DeepEqual(reread, trail) {
+						t.Fatalf("control read = %#v, %v, want %#v", reread, err, trail)
+					}
+
+					victim := v4DamageVictim(t, input, trail, consult == "active")
+					statement := `DELETE FROM segments WHERE id = ?`
+					id := victim.Segment.ID[:]
+					if parent == "representation" {
+						statement = `DELETE FROM representations WHERE id = ?`
+						id = victim.Segment.RepresentationID[:]
+					}
+					damageCanonicalParent(t, fixture.store, statement, id)
+
+					before := canonicalRowCounts(t, fixture.store)
+					var beforeRecord []byte
+					if err := fixture.store.db.QueryRowContext(ctx, `SELECT record_json FROM source_trails WHERE id = ?`, trail.ID[:]).Scan(&beforeRecord); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := fixture.store.GetSourceTrail(ctx, trail.ID); !IsCode(err, CodeIntegrity) {
+						t.Fatalf("stored v4 trail with a missing named %s = %v, want %s", parent, err, CodeIntegrity)
+					}
+					var afterRecord []byte
+					if err := fixture.store.db.QueryRowContext(ctx, `SELECT record_json FROM source_trails WHERE id = ?`, trail.ID[:]).Scan(&afterRecord); err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(beforeRecord, afterRecord) {
+						t.Fatal("a rejected v4 read rewrote the stored record")
+					}
+					if after := canonicalRowCounts(t, fixture.store); !reflect.DeepEqual(before, after) {
+						t.Fatalf("canonical rows changed: before %#v after %#v", before, after)
+					}
+
+					// The in-process read above and startup verification are separate checks: the same
+					// damaged file must also be refused when the store is opened again.
+					path := fixture.store.path
+					if err := fixture.store.Close(); err != nil {
+						t.Fatal(err)
+					}
+					reopened, err := Open(ctx, path)
+					if reopened != nil {
+						reopened.Close()
+					}
+					if !IsCode(err, CodeIntegrity) {
+						t.Fatalf("open of the damaged store = %v, want %s", err, CodeIntegrity)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestSourceTrailReaderClassificationBoundary pins the classification the v4 correction must not
+// move: an identity that was never stored stays not-found for the trail and for the canonical record
+// readers, and a stored pre-v4 trail whose named segment is gone keeps the not-found it has always
+// reported on the same damage the v4 case above now classifies.
+func TestSourceTrailReaderClassificationBoundary(t *testing.T) {
+	ctx := context.Background()
+	fixture := newV4Fixture(t)
+	defer fixture.store.Close()
+	input := fixture.retrieve(t, "request-v4-legacy-boundary")
+
+	traced, err := fixture.store.TraceEnforcedLexical(ctx, input.request, "sharedterm", 10, 1<<20, mousa.PackingExactV1)
+	if err != nil {
+		t.Fatalf("TraceEnforcedLexical: %v", err)
+	}
+	if traced.Trail.Schema != mousa.SourceTrailSchemaV2 {
+		t.Fatalf("legacy fixture schema = %s, want %s", traced.Trail.Schema, mousa.SourceTrailSchemaV2)
+	}
+	var released mousa.SegmentID
+	for _, candidate := range traced.Trail.Candidates {
+		if candidate.Selected {
+			released = candidate.SegmentID
+			break
+		}
+	}
+	if released == (mousa.SegmentID{}) {
+		t.Fatal("legacy fixture released no passage")
+	}
+	damageCanonicalParent(t, fixture.store, `DELETE FROM segments WHERE id = ?`, released[:])
+	if _, err := fixture.store.GetSourceTrail(ctx, traced.Trail.ID); !IsCode(err, CodeNotFound) {
+		t.Fatalf("stored %s trail with a missing named segment = %v, want %s", traced.Trail.Schema, err, CodeNotFound)
+	}
+
+	var absentTrail mousa.SourceTrailID
+	absentTrail[0] = 0x5a
+	if _, err := fixture.store.GetSourceTrail(ctx, absentTrail); !IsCode(err, CodeNotFound) {
+		t.Fatalf("unknown trail identity = %v, want %s", err, CodeNotFound)
+	}
+	absentSegment := mousa.SegmentID(testDigest("absent segment identity"))
+	if _, err := fixture.store.GetSegment(ctx, absentSegment); !IsCode(err, CodeNotFound) {
+		t.Fatalf("unknown segment identity = %v, want %s", err, CodeNotFound)
+	}
+	absentRepresentation := mousa.RepresentationID(testDigest("absent representation identity"))
+	if _, err := fixture.store.GetRepresentation(ctx, absentRepresentation); !IsCode(err, CodeNotFound) {
+		t.Fatalf("unknown representation identity = %v, want %s", err, CodeNotFound)
+	}
+}
+
+// TestStoreV4TrailReadRejectsDuplicateAsBudgetOmission rebuilds a constructor-produced duplicate
+// omission under the limited budget that already omits it by byte equality, relabels that row as a
+// budget omission without a duplicate reference and recomputes the accounting and identities. The
+// structural codec accepts the record while the canonical read rejects it, because an unselected
+// byte-equal passage must still name the released passage it duplicates whatever omission label it
+// carries.
+func TestStoreV4TrailReadRejectsDuplicateAsBudgetOmission(t *testing.T) {
+	ctx := context.Background()
+	fixture := newV4Fixture(t)
+	defer fixture.store.Close()
+	input := fixture.retrieve(t, "request-v4-budget-duplicate")
+	full := buildV4Trail(t, input, 1<<20, mousa.PackingExactV1, nil, nil)
+	duplicateIndex := -1
+	var budget uint64
+	for index, candidate := range full.Candidates {
+		if candidate.Omission == "duplicate" {
+			if duplicateIndex >= 0 {
+				t.Fatal("fixture produced more than one duplicate omission")
+			}
+			duplicateIndex = index
+			continue
+		}
+		if candidate.Selected {
+			budget += candidate.TextBytes
+		}
+	}
+	if duplicateIndex < 0 {
+		t.Fatalf("fixture produced no duplicate omission: %#v", full.Candidates)
+	}
+	limited := storeV4Trail(t, fixture.store, buildV4Trail(t, input, budget, mousa.PackingExactV1, nil, nil))
+	if row := limited.Candidates[duplicateIndex]; row.Omission != "duplicate" || row.DuplicateOf == "" {
+		t.Fatalf("limited-budget candidate = %#v, want a duplicate omission of the released passage", row)
+	}
+
+	mutated := limited
+	mutated.Candidates = append([]mousa.TrailCandidate(nil), limited.Candidates...)
+	mutated.Candidates[duplicateIndex].Omission = "budget"
+	mutated.Candidates[duplicateIndex].DuplicateOf = ""
+	mutated = resealV4Trail(t, mutated)
+	if mutated.ID == limited.ID {
+		t.Fatal("the mutation did not change the trail identity")
+	}
+	assertV4CodecAccepts(t, mutated)
+	commitV4Trail(t, fixture.store, mutated)
+	if _, err := fixture.store.GetSourceTrail(ctx, mutated.ID); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("GetSourceTrail = %v, want %s", err, CodeIntegrity)
+	}
+}

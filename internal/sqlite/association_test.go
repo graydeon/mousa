@@ -543,7 +543,7 @@ func TestTrailRepresentationCheckCoversLaterSegments(t *testing.T) {
 	defer tx.Rollback()
 	representations := make(map[mousa.RepresentationID]mousa.Representation)
 	paths := make(map[mousa.RepresentationID][]mousa.EvidencePath)
-	if err := verifyTrailRepresentation(ctx, tx, first, sourceID, representations, paths); err != nil {
+	if err := verifyTrailRepresentation(ctx, tx, first, sourceID, representations, paths, false); err != nil {
 		t.Fatalf("released passage rejected: %v", err)
 	}
 	selector := mousa.NewTextByteRangeSelector(0, representation.ByteLength+1)
@@ -554,7 +554,7 @@ func TestTrailRepresentationCheckCoversLaterSegments(t *testing.T) {
 	beyond := first
 	beyond.ID = id
 	beyond.Selector = selector
-	if err := verifyTrailRepresentation(ctx, tx, beyond, sourceID, representations, paths); !IsCode(err, CodeIntegrity) {
+	if err := verifyTrailRepresentation(ctx, tx, beyond, sourceID, representations, paths, false); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("passage beyond its representation accepted after the representation was verified: %v", err)
 	}
 }

@@ -525,7 +525,9 @@ no-history record keep their structural identity and empty-member checks and rea
 The startup record scan runs the same verification, so a store holding a damaged v4 record refuses to
 open; no new object set, schema version or migration is involved. A failed check never repairs,
 rewrites or partially accepts a record, and later activation changes, deactivation and item revisions
-do not reinterpret a stored trail.
+do not reinterpret a stored trail. A named canonical dependency that has disappeared is classified as
+that damage rather than as ordinary unavailability: the read reports an integrity error for it, while
+an identity that was never stored keeps its `not_found`, as do the v1–v3 reads.
 
 ## Limitations and non-goals
 

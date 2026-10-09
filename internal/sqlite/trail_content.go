@@ -16,6 +16,18 @@ type retainedText struct {
 	available bool
 }
 
+// canonicalTrailParentError classifies a canonical dependency read of one stored trail. A v4 record
+// names every canonical record its verification reads, so a named row that is now missing means the
+// record lost a parent rather than that the caller asked for an identity the store never held, and
+// earlier schemas keep the not-found they have always reported. Every other error keeps its own code,
+// so an unreadable or malformed store is never relabelled as corruption.
+func canonicalTrailParentError(v4Record bool, op, parent string, err error) error {
+	if !v4Record || !IsCode(err, CodeNotFound) {
+		return err
+	}
+	return integrity(op, parent+" is missing")
+}
+
 // verifyTrailContent checks a stored trail's released bytes against canonical store content: every
 // recorded segment still decodes, still carries the recorded digest, still has the recorded size in
 // its coordinates, still derives from the decision source, and its retained indexed text still
@@ -33,6 +45,9 @@ type retainedText struct {
 // when the consulted administration and the candidate's own verified ancestry say so.
 func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail, sourceID mousa.SourceID) error {
 	exact := trail.PackingPolicy == mousa.PackingExactV1
+	// A v4 record names each canonical record this pass reads, which decides how a missing one is
+	// classified below.
+	v4 := trail.Schema == mousa.SourceTrailSchemaV4
 	// The candidates a v4 record names as withheld remain content-verified, but they are neither
 	// selected nor allowed to seed the retained byte-equal set, so the byte-aware duplicate check
 	// leaves them alone.
@@ -50,18 +65,18 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 	items := make(map[mousa.RepresentationID]string)
 	primaryItems := make(map[string]struct{})
 	var verified []mousa.VerifiedLexicalCandidate
-	if trail.Schema == mousa.SourceTrailSchemaV4 {
+	if v4 {
 		verified = make([]mousa.VerifiedLexicalCandidate, len(trail.Candidates))
 	}
 	for index, candidate := range trail.Candidates {
 		segment, err := getSegment(ctx, q, candidate.SegmentID)
 		if err != nil {
-			return err
+			return canonicalTrailParentError(v4, "verify trail", "candidate segment", err)
 		}
 		if segment.ContentSHA256 != candidate.ContentSHA256 {
 			return integrity("verify trail", "candidate digest disagrees with canonical segment")
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV4 {
+		if v4 {
 			verified[index] = mousa.VerifiedLexicalCandidate{
 				Segment:     segment,
 				FinalRank:   candidate.FinalRank,
@@ -75,10 +90,10 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 		if !ok || span.End-span.Start != candidate.TextBytes {
 			return integrity("verify trail", "candidate size disagrees with canonical segment")
 		}
-		if err := verifyTrailRepresentation(ctx, q, segment, sourceID, representations, paths); err != nil {
+		if err := verifyTrailRepresentation(ctx, q, segment, sourceID, representations, paths, v4); err != nil {
 			return err
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV4 {
+		if v4 {
 			verified[index].Paths = paths[segment.RepresentationID]
 		}
 		if candidate.Selected && candidate.Omission == "" && len(trail.Associated) > 0 {
@@ -118,7 +133,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 			}
 		}
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV4 {
+	if v4 {
 		if err := verifySourceTrailSupersession(ctx, q, trail, sourceID, verified); err != nil {
 			return err
 		}
@@ -227,7 +242,7 @@ func verifyAssociatedTrailContent(ctx context.Context, q queryer, trail mousa.So
 		if segment.ContentSHA256 != row.ContentSHA256 {
 			return integrity("verify associated trail", "associated digest disagrees with canonical segment")
 		}
-		if err := verifyTrailRepresentation(ctx, q, segment, sourceID, representations, paths); err != nil {
+		if err := verifyTrailRepresentation(ctx, q, segment, sourceID, representations, paths, trail.Schema == mousa.SourceTrailSchemaV4); err != nil {
 			return err
 		}
 		item, err := representationItem(ctx, q, sourceID, segment.RepresentationID, items)
@@ -276,13 +291,18 @@ func verifyAssociatedTrailContent(ctx context.Context, q queryer, trail mousa.So
 // coordinates are checked for every segment, so a later passage of an already verified
 // representation cannot escape the check. Nothing here consults the mutable current-item pointer,
 // so historical trails stay readable after a revision, deactivation or deletion.
-func verifyTrailRepresentation(ctx context.Context, q queryer, segment mousa.Segment, sourceID mousa.SourceID, representations map[mousa.RepresentationID]mousa.Representation, paths map[mousa.RepresentationID][]mousa.EvidencePath) error {
+//
+// v4Record reports whether the record that named this segment is a v4 record, which decides how a
+// missing representation row is classified: a v4 record named it as its own canonical dependency, so
+// its absence is recorded damage, while an earlier record keeps the not-found it has always reported.
+// The ancestry reads below classify their own missing rows, so only this direct read is mapped.
+func verifyTrailRepresentation(ctx context.Context, q queryer, segment mousa.Segment, sourceID mousa.SourceID, representations map[mousa.RepresentationID]mousa.Representation, paths map[mousa.RepresentationID][]mousa.EvidencePath, v4Record bool) error {
 	representation, verified := representations[segment.RepresentationID]
 	if !verified {
 		var err error
 		representation, err = getRepresentation(ctx, q, segment.RepresentationID)
 		if err != nil {
-			return err
+			return canonicalTrailParentError(v4Record, "verify trail representation", "candidate representation", err)
 		}
 		segmentPaths, err := lexicalEvidencePaths(ctx, q, segment)
 		if err != nil {
