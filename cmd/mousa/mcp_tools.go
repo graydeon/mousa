@@ -210,6 +210,21 @@ func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Native opt-in fields do not extend the established closed MCP output schemas.
+	if operation == "mousa_query" {
+		result := schema.Properties["result"]
+		delete(result.Properties, "supersession_excluded")
+		result.PropertyOrder = slices.DeleteFunc(result.PropertyOrder, func(name string) bool {
+			return name == "supersession_excluded"
+		})
+	}
+	if operation == "mousa_trail" {
+		historical := schema.Properties["result"].Properties["historical"]
+		delete(historical.Properties, "supersession")
+		historical.PropertyOrder = slices.DeleteFunc(historical.PropertyOrder, func(name string) bool {
+			return name == "supersession"
+		})
+	}
 	schema.Properties["schema"].Enum = []any{mcpResultVersion}
 	schema.Properties["operation"].Enum = []any{operation}
 	schema.OneOf = []*jsonschema.Schema{{Required: []string{"result"}}, {Required: []string{"error"}}}

@@ -78,9 +78,11 @@ Local directory and JSONL ingestion, lexical retrieval, source lifecycle and acc
 checks, byte-budget packing, exact-content deduplication, declared associations and
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
 
-Revision-pinned supersession declarations and activation administration are available.
-Query enforcement is still under review; public `main` does not yet withhold an older
-item because a separate correcting item exists. Semantic retrieval, hybrid ranking,
+Revision-pinned supersession declarations and activation administration are available,
+together with an explicit native JSONL query opt-in
+(`query --source <id> --supersession <text>`). Default queries remain uncurated and
+withhold nothing; opt-in usage, response fields and the validation boundary are in the
+[usage guide](docs/USAGE.md#local-usage-cmdmousa). Semantic retrieval, hybrid ranking,
 secret filtering and full model-window budgeting remain planned.
 
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
@@ -96,7 +98,7 @@ retrieval quality and performance.
 | [How Mousa works](docs/OVERVIEW.md) | The nine-stage pipeline, Source Trails and design principles. |
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
-| [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the proposed opt-in enforcement boundary. |
+| [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
 
 ## Contributing
 

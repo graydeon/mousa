@@ -51,6 +51,7 @@ type SourceTrailView struct {
 	PackingPolicy        string                       `json:"packing_policy,omitempty"`
 	Associated           []SourceTrailAssociatedView  `json:"associated,omitempty"`
 	AssociationOmissions []mousa.AssociationOmission  `json:"association_omissions,omitempty"`
+	Supersession         *mousa.SupersessionSelection `json:"supersession,omitempty"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -123,9 +124,22 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 {
+		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
+		}
+		if trail.Supersession != nil {
+			selection := *trail.Supersession
+			selection.Dispositions = append([]mousa.SupersessionDisposition{}, trail.Supersession.Dispositions...)
+			if selection.ActivationID != nil {
+				id := *selection.ActivationID
+				selection.ActivationID = &id
+			}
+			if selection.DeclarationID != nil {
+				id := *selection.DeclarationID
+				selection.DeclarationID = &id
+			}
+			view.Supersession = &selection
 		}
 		for _, candidate := range trail.Candidates {
 			if candidate.Disposition != mousa.CandidateAccepted {
