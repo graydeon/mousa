@@ -1223,6 +1223,6 @@ duplicate it omitted.
 
 ## Maintained agent skills
 
-The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Supersession administration does not currently withhold query evidence.
+The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Administration alone leaves default queries unchanged; an explicitly opted-in native or MCP query applies exact pinned-predecessor withholding.
 
 The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa. Client skills remain bundled with the plugin; they are not development startup instructions.
