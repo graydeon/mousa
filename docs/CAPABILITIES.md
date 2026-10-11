@@ -108,7 +108,7 @@ proves consistency with the supplied records only. Stored existence, pinned ance
 authorization, successor currency and current state remain transaction-bound store
 responsibilities, so a hash never stands in for integrity or permission. The opted-in
 store path supplies those verified inputs and records the selection in v4; default
-and MCP query paths do not invoke it.
+and opted-out MCP query paths do not invoke it.
 
 ### Opt-in trail record and survivor packing
 
@@ -993,7 +993,8 @@ always writes v4. Withheld text is not released, its recorded rank and canonical
 stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
 Directory and `--associations` combinations are rejected before writable open.
-The flag is not available on MCP queries.
+MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
+boolean. MCP administration and opted-in trail inspection remain unavailable.
 
 Valid queries open the store writable and may create or migrate it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not

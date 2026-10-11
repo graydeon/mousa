@@ -291,7 +291,9 @@ with the event it names fails integrity verification and is never rebuilt or rep
 by the read. The state is a verified snapshot rather than a reservation: a caller that
 transitions next still states its own expected predecessor and can still conflict if
 another caller wins first. Use `state` for the current projection and `get` for one historical event. There is
-no activation listing or per-source history command and no supersession MCP surface.
+no activation listing or per-source history command. MCP `mousa_query` accepts an
+optional `supersession` boolean; declaration and activation administration and
+opted-in trail inspection remain unavailable over MCP.
 
 The declaration and activation command groups are trusted local store administration,
 and none of them claims to authenticate a recorded actor or author. See the
