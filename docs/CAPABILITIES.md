@@ -69,7 +69,8 @@ requests without committing their decision or trail.
 
 Both `original` and `exact-v1` packing operate on survivors. Only the accepted
 candidate's own exact predecessor representation matches; item labels, equal bytes,
-ancestor pins and successor availability do not. MCP query opt-in, directory
+ancestor pins and successor availability do not. MCP query opt-in
+(proposed in [MCP supersession opt-in](MCP_SUPERSESSION.md)), directory
 enforcement and association-plus-supersession combinations are unsupported.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
@@ -386,6 +387,12 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs |
 | `mousa_trail` | `source`, `trail_id` | None | Existing filtered trail inspection with fresh authorization; no evidence text |
+
+No tool accepts a supersession input today: `mousa_query` rejects a `supersession`
+argument as `invalid_arguments`, and no response carries a native-only supersession
+field. The proposed optional `supersession` inputs, the result fields they would add and
+the reasons for keeping the envelope at `mousa.mcp_result.v1` are specified in
+[MCP supersession opt-in](MCP_SUPERSESSION.md); none of it is implemented.
 
 For example, call `mousa_sync` with:
 

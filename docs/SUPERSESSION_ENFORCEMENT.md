@@ -4,6 +4,8 @@
 query opt-in.** Use `query --source <id> --supersession <text>`, with flags before
 query text. Defaults, legacy trail versions and MCP query behavior are unchanged.
 Directory queries and association-plus-supersession combinations are rejected.
+An MCP query opt-in is proposed for review in
+[MCP supersession opt-in](MCP_SUPERSESSION.md); it is not implemented.
 
 `Store.EvaluateAndTraceSupersessionLexical` evaluates current authorization, reads
 source-scoped verified candidates, consults verified administration and builds
@@ -512,8 +514,9 @@ an identity that was never stored keeps its `not_found`, as do the v1–v3 reads
 Enforcement is explicit, source-local and exact-pin-only. It does not implement semantic
 contradiction detection, authenticated authorship, factual truth or freshness, transitive
 supersession, automatic/default enforcement, directory enforcement, associated-passage
-enforcement or MCP query opt-in. Ranking, authorization, current item pointers,
-declarations and activation history are not rewritten by a query.
+enforcement or MCP query opt-in (proposed in
+[MCP supersession opt-in](MCP_SUPERSESSION.md)). Ranking, authorization, current item
+pointers, declarations and activation history are not rewritten by a query.
 
 Real-file SQLite regressions cover live-store corruption rollback and explicit
 transaction ordering. Native subprocess regressions exercise the CLI surface; native
