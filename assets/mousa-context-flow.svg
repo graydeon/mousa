@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360" role="img" aria-labelledby="title desc">
+  <title id="title">From local documents to context with provenance</title>
+  <desc id="desc">Mousa searches local text, checks source access and packs evidence under a byte budget. It returns selected passages in a context packet and records selection and omission decisions in a Source Trail. This is a conceptual diagram, not a benchmark.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#337d79"/></marker>
+  </defs>
+  <rect width="1100" height="360" rx="18" fill="#f1eee5"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="36" y="40" font-size="13" letter-spacing="2" fill="#526761">THE SHAPE OF A QUERY</text>
+    <text x="1064" y="40" text-anchor="end" font-size="13" fill="#526761">LOCAL TEXT · SQLITE · NO MODEL REQUIRED</text>
+    <rect x="36" y="82" width="220" height="222" rx="12" fill="#faf9f4" stroke="#d4d7ce"/>
+    <text x="58" y="117" font-size="22" font-weight="700" fill="#182b2a">Your documents</text>
+    <text x="58" y="143" font-size="15" fill="#536562">Files or explicit JSONL items</text>
+    <g fill="#e4eee8" stroke="#adc4b9">
+      <rect x="58" y="165" width="172" height="31" rx="5"/>
+      <rect x="58" y="206" width="172" height="31" rx="5"/>
+      <rect x="58" y="247" width="172" height="31" rx="5"/>
+    </g>
+    <g font-size="14" fill="#25443e"><text x="72" y="185">Notes</text><text x="72" y="226">Documentation</text><text x="72" y="267">Project history</text></g>
+    <path d="M 264 191 H 318" fill="none" stroke="#337d79" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="332" y="82" width="296" height="222" rx="12" fill="#173e3b"/>
+    <text x="356" y="119" font-size="25" font-weight="700" fill="#f7f6ef">Mousa</text>
+    <g font-size="17" fill="#f1f2e9">
+      <text x="356" y="160">01   Find matching passages</text>
+      <text x="356" y="196">02   Check source access</text>
+      <text x="356" y="232">03   Pack within your budget</text>
+    </g>
+    <path d="M 356 251 H 604" stroke="#527e73"/>
+    <text x="356" y="277" font-size="14" fill="#b4d5c7">Source-scoped lexical retrieval</text>
+    <path d="M 636 191 H 672 V 138 H 706" fill="none" stroke="#337d79" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 672 191 V 255 H 706" fill="none" stroke="#337d79" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="720" y="82" width="344" height="112" rx="12" fill="#dce9df" stroke="#adc4b9"/>
+    <text x="742" y="115" font-size="21" font-weight="700" fill="#182b2a">Context packet</text>
+    <text x="742" y="140" font-size="15" fill="#35584d">Selected passages, ready for your caller</text>
+    <g fill="#468879"><rect x="742" y="158" width="84" height="11" rx="3"/><rect x="832" y="158" width="60" height="11" rx="3"/><rect x="898" y="158" width="38" height="11" rx="3"/></g>
+    <rect x="720" y="214" width="344" height="90" rx="12" fill="#faf9f4" stroke="#d4d7ce"/>
+    <text x="742" y="247" font-size="21" font-weight="700" fill="#182b2a">Source Trail</text>
+    <text x="742" y="275" font-size="15" fill="#536562">What was selected, omitted and why</text>
+    <text x="36" y="336" font-size="13" fill="#526761">Evidence for your agent or application. A record you can inspect.</text>
+  </g>
+</svg>

@@ -36,7 +36,7 @@ rendered prompt content with a pinned tokenizer; this does not bound the full
 packet or a model's context window. No answering pipeline exists, so no
 RAG/answer-quality benchmark is applicable. Memory benchmarks (LongMemEval,
 MemoryAgentBench) and FreshStack await the corresponding retrieval capabilities;
-see the [implemented and planned capabilities](../README.md#foundation).
+see the [implemented and planned capabilities](OVERVIEW.md#foundation).
 
 ## Supersession contract evidence
 
