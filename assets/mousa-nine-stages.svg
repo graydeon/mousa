@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="615" viewBox="0 0 1100 615" role="img" aria-labelledby="title desc">
+<title id="title">Mousa's nine-stage retrieval backbone</title>
+<desc id="desc">Read left to right, then top to bottom. Prepare source material: ingest, normalize, segment. Find evidence: index, match, rank. Produce inspectable context: verify, trace, pack. The diagram shows logical responsibilities, not exact transaction execution order. Current search is lexical; verification checks source policy and lifecycle, not factual truth.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#567f73"/></marker></defs>
+<rect width="1100" height="615" rx="18" fill="#f1eee5"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="36" y="41" font-size="14" letter-spacing="2" fill="#526761">THE NINE-STAGE RETRIEVAL BACKBONE</text>
+<text x="1064" y="41" text-anchor="end" font-size="14" fill="#526761">FROM SOURCE MATERIAL TO USABLE CONTEXT</text>
+
+<text x="36" y="83" font-size="13" letter-spacing="1.8" fill="#526761">PREPARE SOURCE MATERIAL</text>
+<rect x="36" y="98" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="56" y="133" font-size="14" fill="#337d79">01</text><text x="93" y="134" font-size="24" font-weight="700" fill="#182b2a">Ingest</text>
+<text x="56" y="170" font-size="17" fill="#182b2a">Bring in source text</text><text x="56" y="198" font-size="15" fill="#536562">Files or JSONL items</text>
+<path d="M360 160 H384" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="392" y="98" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="412" y="133" font-size="14" fill="#337d79">02</text><text x="449" y="134" font-size="24" font-weight="700" fill="#182b2a">Normalize</text>
+<text x="412" y="170" font-size="17" fill="#182b2a">Make text consistent</text><text x="412" y="198" font-size="15" fill="#536562">Stable UTF-8 representation</text>
+<path d="M716 160 H740" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="748" y="98" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="768" y="133" font-size="14" fill="#337d79">03</text><text x="805" y="134" font-size="24" font-weight="700" fill="#182b2a">Segment</text>
+<text x="768" y="170" font-size="17" fill="#182b2a">Create addressable passages</text><text x="768" y="198" font-size="15" fill="#536562">Deterministic byte ranges</text>
+<text x="36" y="249" font-size="13" letter-spacing="1.8" fill="#526761">FIND RELEVANT EVIDENCE</text>
+<rect x="36" y="264" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="56" y="299" font-size="14" fill="#337d79">04</text><text x="93" y="300" font-size="24" font-weight="700" fill="#182b2a">Index</text>
+<text x="56" y="336" font-size="17" fill="#182b2a">Build a local search index</text><text x="56" y="364" font-size="15" fill="#536562">SQLite FTS5</text>
+<path d="M360 326 H384" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="392" y="264" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="412" y="299" font-size="14" fill="#337d79">05</text><text x="449" y="300" font-size="24" font-weight="700" fill="#182b2a">Match</text>
+<text x="412" y="336" font-size="17" fill="#182b2a">Find candidate passages</text><text x="412" y="364" font-size="15" fill="#536562">Source-scoped lexical search</text>
+<path d="M716 326 H740" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="748" y="264" width="316" height="124" rx="10" fill="#faf9f4" stroke="#d4d7ce"/>
+<text x="768" y="299" font-size="14" fill="#337d79">06</text><text x="805" y="300" font-size="24" font-weight="700" fill="#182b2a">Rank</text>
+<text x="768" y="336" font-size="17" fill="#182b2a">Order the candidates</text><text x="768" y="364" font-size="15" fill="#536562">Inspectable BM25 order</text>
+<text x="36" y="415" font-size="13" letter-spacing="1.8" fill="#526761">MAKE CONTEXT INSPECTABLE</text>
+<rect x="36" y="430" width="316" height="124" rx="10" fill="#173e3b" stroke="#173e3b"/>
+<text x="56" y="465" font-size="14" fill="#97cbbb">07</text><text x="93" y="466" font-size="24" font-weight="700" fill="#f7f6ef">Verify</text>
+<text x="56" y="502" font-size="17" fill="#f7f6ef">Check source eligibility</text><text x="56" y="530" font-size="15" fill="#b4d5c7">Access policy and lifecycle</text>
+<path d="M360 492 H384" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="392" y="430" width="316" height="124" rx="10" fill="#173e3b" stroke="#173e3b"/>
+<text x="412" y="465" font-size="14" fill="#97cbbb">08</text><text x="449" y="466" font-size="24" font-weight="700" fill="#f7f6ef">Trace</text>
+<text x="412" y="502" font-size="17" fill="#f7f6ef">Record how selection happened</text><text x="412" y="530" font-size="15" fill="#b4d5c7">Durable Source Trail</text>
+<path d="M716 492 H740" fill="none" stroke="#567f73" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="748" y="430" width="316" height="124" rx="10" fill="#173e3b" stroke="#173e3b"/>
+<text x="768" y="465" font-size="14" fill="#97cbbb">09</text><text x="805" y="466" font-size="24" font-weight="700" fill="#f7f6ef">Pack</text>
+<text x="768" y="502" font-size="17" fill="#f7f6ef">Release a bounded selection</text><text x="768" y="530" font-size="15" fill="#b4d5c7">Explicit text-byte budget</text>
+<text x="36" y="590" font-size="14" fill="#526761">One responsibility per stage. Selected passages in a packet; selection decisions in a Source Trail.</text></g></svg>

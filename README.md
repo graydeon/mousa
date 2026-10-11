@@ -8,10 +8,17 @@ record of how they were selected.
 
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) · [Capabilities](docs/CAPABILITIES.md) · [Public benchmarks](https://github.com/graydeon/mousa-benchmarks)
 
-![Documents flow through local lexical search, source access checks and byte-budget packing into a context packet and an inspectable Source Trail.](assets/mousa-context-flow.svg)
+## Nine stages, one inspectable path
 
-*Local files → bounded evidence → inspectable provenance.* The packet carries
-selected text; the Source Trail records selection and omission decisions.
+![Mousa's nine stages, read left to right and top to bottom: ingest, normalize, segment; index, match, rank; verify, trace, pack.](assets/mousa-nine-stages.svg)
+
+Mousa prepares your material, finds matching evidence, and assembles a context packet
+with a Source Trail. Each stage has one responsibility; the diagram shows the
+logical backbone rather than the exact order of database operations.
+
+Today, search is lexical and verification covers source access and lifecycle.
+Semantic search, factual freshness and semantic conflict checks remain planned.
+[Explore each stage and its implementation boundary →](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone)
 
 > **Pre-alpha.** CLI and local stdio MCP are available. Build from source with
 > Go 1.25+. Packages are internal; there is no stable SDK.
