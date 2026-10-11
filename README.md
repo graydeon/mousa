@@ -8,6 +8,13 @@ record of how they were selected.
 
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) · [Capabilities](docs/CAPABILITIES.md) · [Public benchmarks](https://github.com/graydeon/mousa-benchmarks)
 
+## Why Mousa?
+
+*Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology,
+Mnemosyne—the Titan goddess of memory—is the mother of the nine Muses.
+The name gives Mousa a practical organizing idea: durable memory is not one act.
+Sources move through nine explicit stages before they become usable context.
+
 ## Nine stages, one inspectable path
 
 ![Mousa's nine stages, read left to right and top to bottom: ingest, normalize, segment; index, match, rank; verify, trace, pack.](assets/mousa-nine-stages.svg)
@@ -90,11 +97,6 @@ retrieval quality and performance.
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the proposed opt-in enforcement boundary. |
-
-*Mousa* is the Ancient Greek singular of *Muse*. Its name draws on Mnemosyne,
-the goddess of memory and mother of the nine Muses: an organizing idea for the
-[nine stages](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone) that turn source
-material into usable context.
 
 ## Contributing
 
