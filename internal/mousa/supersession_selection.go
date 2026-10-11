@@ -39,9 +39,9 @@ type SupersessionDisposition struct {
 // history or a deactivated declaration; Dispositions is always non-nil, so an empty selection is an
 // explicit empty array rather than an absent field.
 //
-// The member withholds nothing by itself: recording it in a trail, blanking withheld text, releasing
-// fewer bytes or freeing budget is later integration work. The candidates it names stay in the
-// caller's verified list with their accepted disposition, rank, text and canonical size unchanged.
+// The member withholds nothing by itself. The opted-in store caller records it in a trail and
+// clears withheld text in copied returned candidates after construction; this builder leaves the
+// supplied candidates' accepted disposition, rank, text and canonical size unchanged.
 type SupersessionSelection struct {
 	Consulted     bool                       `json:"consulted"`
 	ActivationID  *SupersessionActivationID  `json:"activation_id"`

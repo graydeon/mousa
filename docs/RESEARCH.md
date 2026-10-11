@@ -18,25 +18,19 @@ comparison.
 
 ## Status
 
-Pre-alpha engine (verified lexical retrieval with FTS5 BM25, ingest, segmentation,
-lifecycle verification, policy decisions, Source Trails, byte-budget packets and
-opt-in declared associations; internal revision-pinned supersession storage,
-activation history, a pure supersession selection API, a domain-only
-`mousa.source_trail.v4` record with survivor-aware packing, and a transaction-local
-reader that verifies the current activation state and the declaration it selects inside
-a caller's transaction). Native declaration and
-activation put/get administration and a
-read-only current-activation-state inspection command are
-implemented; MCP declaration surfaces and supersession query
-enforcement remain absent, no retrieval path calls the selection API, the consultation
-reader or builds a v4 trail, and the canonical store read path and startup scan
-content-verify a stored v4 record against the activation history it names. The Git
-documentation consumer optionally limits
-rendered prompt content with a pinned tokenizer; this does not bound the full
-packet or a model's context window. No answering pipeline exists, so no
-RAG/answer-quality benchmark is applicable. Memory benchmarks (LongMemEval,
-MemoryAgentBench) and FreshStack await the corresponding retrieval capabilities;
-see the [implemented and planned capabilities](../README.md#foundation).
+Pre-alpha engine: verified FTS5 BM25 retrieval, ingestion, segmentation, lifecycle and
+policy decisions, Source Trails, byte-budget packets, opt-in declared associations,
+and explicit native JSONL supersession enforcement. Declaration/activation administration
+and read-only current-state inspection are implemented. The fresh opted-in store path
+consults administration inside the retrieval transaction and emits v4; default and MCP
+queries are unchanged. Directory and association-plus-supersession enforcement are
+unsupported. Canonical read and startup verification validate recorded v4 history.
+
+The Git documentation consumer optionally limits rendered prompt content with a pinned
+tokenizer; this does not bound the full packet or a model's context window. No answering
+pipeline exists, so no RAG/answer-quality benchmark is applicable. Memory benchmarks
+and FreshStack await their corresponding capabilities; see the
+[implemented and planned capabilities](../README.md#foundation).
 
 ## Supersession contract evidence
 
@@ -73,23 +67,22 @@ replacement, deactivation, reactivation, exact retry, stale rejection, rejected
 input, damaged-store rejection, and the read-only current-state view (its three-field
 JSON projection, deactivation as an explicit null, per-source isolation, usage and
 missing-history exits, refusal to create or migrate a store, and failure without
-repair over a damaged projection). MCP declaration surfaces and query suppression
-remain absent. Product regression cases in the current tree additionally cover the pure
-selection API: consultation shapes, exact predecessor-representation matching, multiple
-segments of the pinned representation, lifecycle-rejected and non-matching candidates, later
-revisions,
-byte-equal other items, ancestor representation pins, source isolation, malformed or
-cross-source administrative inputs, row order, and unchanged caller-owned inputs. These
-are structural cases over supplied records, not independent relevance samples or
-enforcement acceptance: nothing calls the API, no trail records it, and no query withholds
-evidence. This evidence does
-not demonstrate
-semantic contradiction resolution, authenticated authorship, native-host agent
-acceptance or whole-model context-window safety. A proposed contract for opt-in query
-enforcement, including its future acceptance matrix, is recorded in
-[opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md); both of its domain
-halves and the transaction-local verified-state consultation are implemented and none of
-its future checks has been run.
+repair over a damaged projection). MCP supersession query opt-in remains absent.
+Product domain regressions cover exact predecessor matching, multiple segments,
+lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,
+ancestor pins, source isolation, malformed administrative inputs, row order and
+unchanged caller-owned inputs. These pure supplied-record cases are structural evidence,
+not independent native enforcement acceptance.
+
+The fresh store entry point and native subprocess regressions separately exercise
+the [enforcement contract](SUPERSESSION_ENFORCEMENT.md): both packing policies,
+no-history/active/deactivated/stale pins, survivor selection, disjoint counts/outcomes,
+historical reads and restart. Real SQLite files and live-store corruption test rollback
+after opening; startup refusal alone does not establish transaction rollback.
+Native requests deliberately have fresh request/decision/trail IDs, while identical
+released selection retains its packet ID. No semantic contradiction resolution,
+authenticated authorship, native-host agent acceptance, model-window safety or
+performance improvement follows from these correctness cases.
 
 The domain half of the v4 trail record and survivor packing is covered by product
 regression cases in `internal/mousa/trail_v4_test.go` and a pinned golden fixture in
@@ -141,9 +134,9 @@ regression turns a constructor-produced duplicate omission into a second release
 recomputed packet and trail identities and projection rows, shows the structural codec still accepts
 it, and shows the canonical read and a read-only reopen reject it; the withheld duplicate is also
 placed directly after its retained byte-equal twin to show that a withheld candidate seeds no
-retained duplicate set. Every earlier v1–v3 trail case still passes unchanged. These are regression
-cases on the store's own verification of supplied records, not independent relevance samples and not
-enforcement acceptance: no query emits a v4 trail and no CLI or MCP surface reaches it.
+retained duplicate set. Every earlier v1–v3 trail case remains unchanged. These are
+product-local regressions on supplied records, separate from fresh retrieval integration
+and independent native subprocess observations.
 
 A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
 pins the observed behavior of the native declaration and activation administration

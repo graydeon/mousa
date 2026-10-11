@@ -24,6 +24,13 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 }
 
 func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) (*evidenceResult, error) {
+	return queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, declarations, false)
+}
+
+func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration, supersession bool) (*evidenceResult, error) {
+	if supersession && declarations != nil {
+		return nil, fmt.Errorf("supersession cannot be combined with associations")
+	}
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -36,7 +43,12 @@ func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa
 		return nil, err
 	}
 	expression := strings.Join(terms, " OR ")
-	traced, err := store.EvaluateAndTraceAssociatedLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
+	var traced sqlite.TracedLexicalResult
+	if supersession {
+		traced, err = store.EvaluateAndTraceSupersessionLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
+	} else {
+		traced, err = store.EvaluateAndTraceAssociatedLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +66,11 @@ func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa
 	if packingPolicy == mousa.PackingExactV1 {
 		result.DuplicateOmitted = new(int)
 	}
+	supersessionIndex := 0
+	if supersession {
+		result.SupersessionExcluded = new(int)
+		*result.SupersessionExcluded = len(traced.Trail.Supersession.Dispositions)
+	}
 	type representationLocation struct {
 		record mousa.Representation
 		item   string
@@ -63,6 +80,11 @@ func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa
 	for index, candidate := range traced.Candidates {
 		if candidate.Disposition != mousa.CandidateAccepted {
 			result.LifecycleExcluded++
+			continue
+		}
+		if supersession && supersessionIndex < len(traced.Trail.Supersession.Dispositions) &&
+			traced.Trail.Supersession.Dispositions[supersessionIndex].SegmentID == candidate.Segment.ID {
+			supersessionIndex++
 			continue
 		}
 		if !traced.Trail.Candidates[index].Selected {
@@ -181,6 +203,8 @@ func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa
 		result.Outcome = "evidence"
 	case result.BudgetOmitted > 0:
 		result.Outcome = "budget_omitted"
+	case result.SupersessionExcluded != nil && *result.SupersessionExcluded > 0:
+		result.Outcome = "supersession_excluded"
 	case result.LifecycleExcluded > 0:
 		result.Outcome = "lifecycle_excluded"
 	default:

@@ -112,6 +112,8 @@ query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --packing-policy original|exact-v1
                             exact-v1 omits byte-equal copies of selected passages
+  --supersession            withhold the exact active predecessor revision; requires --source
+                            and cannot be combined with --associations
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
@@ -207,8 +209,23 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
 	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
+	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession; requires --source")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	if *supersession {
+		associationSupplied := false
+		flags.Visit(func(option *flag.Flag) {
+			if option.Name == "associations" {
+				associationSupplied = true
+			}
+		})
+		if associationSupplied {
+			return usageError{"supersession cannot be combined with associations"}
+		}
+		if *sourceID == "" {
+			return usageError{"supersession requires --source; directory queries are not supported"}
+		}
 	}
 	var declarations []mousa.AssociationDeclaration
 	if *associations != "" {
@@ -238,7 +255,20 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runQuery(ctx, storePath, source, label, positional[len(positional)-1], *policy, *budget, *packing, declarations)
+	query := positional[len(positional)-1]
+	terms, err := mousa.PrepareLexicalTerms(query, *policy == "dedup")
+	if err != nil {
+		return usageError{err.Error()}
+	}
+	expressionBytes := 0
+	for _, term := range terms {
+		expressionBytes += len(term)
+	}
+	expressionBytes += (len(terms) - 1) * len(" OR ")
+	if expressionBytes > mousa.MaxLexicalExpressionBytes {
+		return usageError{"query expression exceeds byte limit"}
+	}
+	return runQueryWithSupersession(ctx, storePath, source, label, query, *policy, *budget, *packing, declarations, *supersession)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -545,6 +575,7 @@ type evidenceResult struct {
 	LifecycleExcluded    int                          `json:"lifecycle_excluded"`
 	BudgetOmitted        int                          `json:"budget_omitted"`
 	DuplicateOmitted     *int                         `json:"duplicate_omitted,omitempty"`
+	SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
 	PackingPolicy        string                       `json:"packing_policy,omitempty"`
 	UsedBytes            uint64                       `json:"used_bytes"`
 	BudgetBytes          uint64                       `json:"budget_bytes"`
@@ -589,13 +620,21 @@ type associationOmission struct {
 
 // runQuery runs one authorized query against one resolved source.
 func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) error {
+	return runQueryWithSupersession(ctx, storePath, source, label, query, policy, budgetBytes, packingPolicy, declarations, false)
+}
+
+func runQueryWithSupersession(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration, supersession bool) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	result, err := queryItems(ctx, store, source, query, policy, budgetBytes, packingPolicy, declarations)
+	request, err := newRetrievalRequest(source.ID)
+	if err != nil {
+		return err
+	}
+	result, err := queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, declarations, supersession)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ Read the current task, repository documentation and operator-supplied workflow b
 
 ## Find the affected contract
 
-Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): implemented domain records and transaction-local consultation are distinct from proposed retrieval enforcement. Inspect current code and documentation rather than assuming a proposal is available to clients.
+Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native JSONL queries have an explicit opt-in; defaults, directory and MCP boundaries remain distinct. Inspect current code and documentation before changing a client or store path.
 
 Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection, supersession selection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
 
