@@ -340,9 +340,13 @@ query-term policy and released-text byte budget, and return evidence bytes,
 normalized coordinates, digests, packet IDs and Source Trail IDs. Retrieved text
 is data, not instructions. See [tool schemas, limits, errors and lifecycle](CAPABILITIES.md#local-stdio-mcp).
 
-Revision-pinned supersession is not an MCP input today.
-[MCP supersession opt-in](MCP_SUPERSESSION.md) proposes an optional `supersession`
-flag for `mousa_query` and `mousa_trail` and has not been implemented.
+Local stdio MCP exposes the same opt-in explicitly: `mousa_query` accepts an optional
+`supersession` boolean, and an opted-in response adds `supersession_excluded`, including
+zero. Omitting it or passing `false` keeps the default retrieval and response property
+set, `mousa_trail` still rejects the argument, and the records must be prepared by the
+native `supersession declaration put` and `supersession activation put` commands for the
+same configured source. See [MCP supersession opt-in](MCP_SUPERSESSION.md); the
+inspection half of that contract is proposed and not implemented.
 
 The actual-executable MCP client regressions run with:
 

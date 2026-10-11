@@ -22,8 +22,10 @@ Pre-alpha engine: verified FTS5 BM25 retrieval, ingestion, segmentation, lifecyc
 policy decisions, Source Trails, byte-budget packets, opt-in declared associations,
 and explicit native JSONL supersession enforcement. Declaration/activation administration
 and read-only current-state inspection are implemented. The fresh opted-in store path
-consults administration inside the retrieval transaction and emits v4; default and MCP
-queries are unchanged. Directory and association-plus-supersession enforcement are
+consults administration inside the retrieval transaction and emits v4; default queries
+are unchanged, and the local stdio MCP query tool exposes the same opt-in explicitly
+while its opted-out responses keep the previous property set. Directory and
+association-plus-supersession enforcement are
 unsupported. Canonical read and startup verification validate recorded v4 history.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
@@ -67,9 +69,11 @@ replacement, deactivation, reactivation, exact retry, stale rejection, rejected
 input, damaged-store rejection, and the read-only current-state view (its three-field
 JSON projection, deactivation as an explicit null, per-source isolation, usage and
 missing-history exits, refusal to create or migrate a store, and failure without
-repair over a damaged projection). MCP supersession query opt-in remains absent;
-[MCP supersession opt-in](MCP_SUPERSESSION.md) proposes one and records no
-observations.
+repair over a damaged projection). MCP supersession query opt-in is implemented as the
+optional `supersession` boolean on `mousa_query`, with product client regressions in
+`cmd/mousa/mcp_supersession_test.go` over the built executable and fresh temporary
+stores; [MCP supersession opt-in](MCP_SUPERSESSION.md) records the client contract, its
+inspection half and the independent capture it still owes.
 Product domain regressions cover exact predecessor matching, multiple segments,
 lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,
 ancestor pins, source isolation, malformed administrative inputs, row order and

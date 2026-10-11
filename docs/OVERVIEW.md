@@ -29,7 +29,8 @@ and `supersession activation put|get`, and the verified current state for one so
 is inspectable read-only through `supersession activation state <source-id>`.
 
 Native JSONL queries can opt into exact revision-pin suppression with
-`query --source <id> --supersession <text>`. The fresh store entry point
+`query --source <id> --supersession <text>`, and the local stdio MCP `mousa_query` tool
+takes the same opt-in as an optional boolean. The fresh store entry point
 `EvaluateAndTraceSupersessionLexical` evaluates authorization, verifies candidates,
 consults administration and records a v4 trail inside one writer transaction.
 Only an accepted candidate whose own representation is the active declaration's
@@ -37,7 +38,8 @@ exact predecessor pin is withheld. Successor availability does not gate suppress
 and no successor passage is manufactured. Both packing policies apply to survivors.
 
 Defaults are unchanged: recording an activation alone does not filter a default
-query or move item pointers. MCP supersession opt-in, directory enforcement and
+query or move item pointers. MCP administration and the MCP inspection opt-in,
+directory enforcement and
 association-plus-supersession queries are unsupported. Actor, time and reason labels
 do not authenticate authorship or establish factual truth.
 

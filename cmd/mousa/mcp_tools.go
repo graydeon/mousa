@@ -28,6 +28,7 @@ type mcpArguments struct {
 	BudgetBytes   uint64
 	PackingPolicy string
 	TrailID       mousa.SourceTrailID
+	Supersession  bool
 }
 
 type mcpToolError struct {
@@ -101,7 +102,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		allowed = append(allowed, "items", "segment_policy")
 		required = append(required, "items")
 	case "mousa_query":
-		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy")
+		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession")
 		required = append(required, "query", "policy", "budget_bytes")
 	case "mousa_trail":
 		allowed = append(allowed, "trail_id")
@@ -144,6 +145,10 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		case "budget_bytes":
 			if err := json.Unmarshal(value, &args.BudgetBytes); err != nil || args.BudgetBytes == 0 || args.BudgetBytes > mcpMaxBudgetBytes {
 				return args, errors.New("budget_bytes must be an integer from 1 to 65536")
+			}
+		case "supersession":
+			if err := json.Unmarshal(value, &args.Supersession); err != nil {
+				return args, errors.New("supersession must be a boolean")
 			}
 		default:
 			text, err := decodeItemString(value)
@@ -210,14 +215,8 @@ func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Native opt-in fields do not extend the established closed MCP output schemas.
-	if operation == "mousa_query" {
-		result := schema.Properties["result"]
-		delete(result.Properties, "supersession_excluded")
-		result.PropertyOrder = slices.DeleteFunc(result.PropertyOrder, func(name string) bool {
-			return name == "supersession_excluded"
-		})
-	}
+	// The native opt-in field is declared on the tool that implements it: a client
+	// can only accept a response property its discovered closed schema names.
 	if operation == "mousa_trail" {
 		historical := schema.Properties["result"].Properties["historical"]
 		delete(historical.Properties, "supersession")
@@ -254,6 +253,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"source": source, "query": map[string]any{"type": "string", "minLength": 1, "maxLength": mcpMaxQueryBytes},
 				"policy": stringEnum("original", "dedup"), "packing_policy": stringEnum("original", "exact-v1"),
 				"budget_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": mcpMaxBudgetBytes},
+				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
 			},
 		}},
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload.", InputSchema: map[string]any{
