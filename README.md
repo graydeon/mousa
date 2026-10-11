@@ -8,10 +8,24 @@ record of how they were selected.
 
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) · [Capabilities](docs/CAPABILITIES.md) · [Public benchmarks](https://github.com/graydeon/mousa-benchmarks)
 
-![Documents flow through local lexical search, source access checks and byte-budget packing into a context packet and an inspectable Source Trail.](assets/mousa-context-flow.svg)
+## Why Mousa?
 
-*Local files → bounded evidence → inspectable provenance.* The packet carries
-selected text; the Source Trail records selection and omission decisions.
+*Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology,
+Mnemosyne—the Titan goddess of memory—is the mother of the nine Muses.
+The name gives Mousa a practical organizing idea: durable memory is not one act.
+Sources move through nine explicit stages before they become usable context.
+
+## Nine stages, one inspectable path
+
+![Mousa's nine stages, read left to right and top to bottom: ingest, normalize, segment; index, match, rank; verify, trace, pack.](assets/mousa-nine-stages.svg)
+
+Mousa prepares your material, finds matching evidence, and assembles a context packet
+with a Source Trail. Each stage has one responsibility; the diagram shows the
+logical backbone rather than the exact order of database operations.
+
+Today, search is lexical and verification covers source access and lifecycle.
+Semantic search, factual freshness and semantic conflict checks remain planned.
+[Explore each stage and its implementation boundary →](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone)
 
 > **Pre-alpha.** CLI and local stdio MCP are available. Build from source with
 > Go 1.25+. Packages are internal; there is no stable SDK.
@@ -85,11 +99,6 @@ retrieval quality and performance.
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
-
-*Mousa* is the Ancient Greek singular of *Muse*. Its name draws on Mnemosyne,
-the goddess of memory and mother of the nine Muses: an organizing idea for the
-[nine stages](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone) that turn source
-material into usable context.
 
 ## Contributing
 
