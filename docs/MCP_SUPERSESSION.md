@@ -100,7 +100,7 @@ take the existing default path. Only explicit `true` opts in.
 | Input | Result | Why |
 |---|---|---|
 | Field omitted | Legacy path; response property set unchanged | The field is optional and defaults to `false` |
-| `false` | Identical to omission, byte for byte | The opt-in is one boolean value, not a presence marker |
+| `false` | Same path, property set and stable semantic values as omission | The opt-in is one boolean value, not a presence marker |
 | `true` | `queryItemsForRequestWithSupersession(..., nil, true)` | The existing CLI entry point already implements this behavior |
 | `null` | Rejected: `invalid_arguments` | The decoder already refuses any null field value |
 | `"true"`, `"false"` | Rejected: `invalid_arguments` | A string is not the declared boolean type; no truthy coercion |
@@ -121,7 +121,7 @@ compatibility boundary, not as a spelling to be detected.
 **Discovery.** The `mousa_query` input schema gains one optional property,
 `"supersession": {"type": "boolean"}`, and its description states that the flag enables
 exact pinned-predecessor withholding for one configured JSONL source and that the
-default remains uncurated. The other three tools keep their current input schemas.
+default remains uncurated. The query-only first slice leaves the other three tools unchanged; the completed contract also extends `mousa_trail` as section 5 describes. `mousa_sync` and `mousa_status` keep their current input and output schemas.
 
 **Unchanged boundaries for opted-out callers.** Source selection, the required fields,
 the error envelope with its `code`, `message`, `completed_items` and `failed_item`
@@ -131,10 +131,20 @@ value affects store creation, migration or writability; unlike the CLI, MCP has 
 pre-open validation stage to preserve.
 
 **Acceptance requirement.** A future test must prove this boundary rather than assume it:
-the declared input property appears in `tools/list` for `mousa_query` only; each rejected
-value above returns `invalid_arguments` with no `result`; and an omitted or `false` call
-returns a payload identical to the pre-change default response for the same request,
-including the absence of `supersession_excluded`.
+the declared input property appears on each tool when its implementation slice lands;
+each rejected value above returns `invalid_arguments` with no `result`; and omitted or
+`false` calls preserve the pre-change property set and stable semantic values, including
+the absence of `supersession_excluded`.
+
+**Comparison boundary.** Independent query calls produce fresh `request_id`,
+`decision_id`, `trail_id`, `evaluated_at_usec` and `latency_micros`. Exclude exactly those
+fields when comparing otherwise equivalent responses; validate and retain their raw
+values separately. Compare every remaining field, including packet identity, evidence
+identities/text/coordinates, reasons, counts and property presence. Do not normalize away
+new or unknown fields. For inspection, fresh `authorization_decision_id` belongs to the
+authorization wrapper, while the historical request/decision/trail identities remain
+recorded facts. Compare `indexed_now` only under unchanged index membership; after an item
+revision, assert its current meaning separately from the immutable recorded member.
 
 ## 2. Source identity and administration
 
@@ -219,8 +229,9 @@ were considered and rejected:
 | A separate tool for opted-in retrieval | Discovery advertises a fifth tool that duplicates an existing one, and every client must choose between two tools that differ by one boolean |
 
 Omitting the field for opted-out calls is not cosmetic: the field has `omitempty`, so an
-opted-out response carries exactly today's property set and no caller learns that
-enforcement exists unless it asked.
+opted-out response carries exactly today's property set. Discovery still advertises the optional
+capability to every client. Clients must refresh schemas from the current server;
+a cached older closed schema cannot validate newly opted-in fields.
 
 **Proposed query input and result** (not implemented; not produced by the current build):
 
@@ -237,11 +248,45 @@ result is the ordinary evidence response plus one declared field:
   "operation": "mousa_query",
   "source": "inspection-notes",
   "result": {
-    "query": "harbor inspection", "source": "inspection-notes",
-    "outcome": "evidence", "matched_candidates": 1, "supersession_excluded": 0,
-    "packing_policy": "original", "used_bytes": 28, "budget_bytes": 4096,
-    "trail_id": "<64 lowercase hex>", "packet_id": "<64 lowercase hex>",
-    "evidence": [{"item": "notes/harbor@1f3c", "segment_id": "<64 lowercase hex>", "rank": 1, "text": "The harbor inspection is scheduled for Friday."}]
+    "query": "harbor inspection",
+    "source": "inspection-notes",
+    "query_policy": "original",
+    "expression": "\"harbor\" OR \"inspection\"",
+    "request_id": "1111111111111111111111111111111111111111111111111111111111111111",
+    "decision_id": "2222222222222222222222222222222222222222222222222222222222222222",
+    "decision_outcome": "allow",
+    "decision_reasons": [
+      "allow"
+    ],
+    "evaluated_at_usec": 1700000000000000,
+    "trail_id": "3333333333333333333333333333333333333333333333333333333333333333",
+    "packet_id": "4444444444444444444444444444444444444444444444444444444444444444",
+    "outcome": "evidence",
+    "matched_candidates": 1,
+    "candidate_limit": 100,
+    "lifecycle_excluded": 0,
+    "budget_omitted": 0,
+    "supersession_excluded": 0,
+    "packing_policy": "original",
+    "used_bytes": 46,
+    "budget_bytes": 4096,
+    "evidence": [
+      {
+        "item": "notes/harbor@1f3c",
+        "segment_id": "5555555555555555555555555555555555555555555555555555555555555555",
+        "content_sha256": "40f048dad1531ef91af8701b549f1748f5f3e27947ec313699487ad360356b1c",
+        "representation_id": "6666666666666666666666666666666666666666666666666666666666666666",
+        "representation_sha256": "40f048dad1531ef91af8701b549f1748f5f3e27947ec313699487ad360356b1c",
+        "byte_start": 0,
+        "byte_end": 46,
+        "segment_policy": "fixed-v1",
+        "rank": 1,
+        "bm25_score": -1.0,
+        "byte_length": 46,
+        "text": "The harbor inspection is scheduled for Friday."
+      }
+    ],
+    "latency_micros": 100
   }
 }
 ```
@@ -254,15 +299,38 @@ An active declaration that withholds the only matching candidate produces:
   "operation": "mousa_query",
   "source": "inspection-notes",
   "result": {
-    "outcome": "supersession_excluded", "matched_candidates": 1, "supersession_excluded": 1,
-    "packing_policy": "original", "used_bytes": 0, "budget_bytes": 4096,
-    "trail_id": "<64 lowercase hex>", "evidence": []
+    "query": "harbor inspection",
+    "source": "inspection-notes",
+    "query_policy": "original",
+    "expression": "\"harbor\" OR \"inspection\"",
+    "request_id": "7777777777777777777777777777777777777777777777777777777777777777",
+    "decision_id": "8888888888888888888888888888888888888888888888888888888888888888",
+    "decision_outcome": "allow",
+    "decision_reasons": [
+      "allow"
+    ],
+    "evaluated_at_usec": 1700000000000000,
+    "trail_id": "9999999999999999999999999999999999999999999999999999999999999999",
+    "packet_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "outcome": "supersession_excluded",
+    "matched_candidates": 1,
+    "candidate_limit": 100,
+    "lifecycle_excluded": 0,
+    "budget_omitted": 0,
+    "supersession_excluded": 1,
+    "packing_policy": "original",
+    "used_bytes": 0,
+    "budget_bytes": 4096,
+    "evidence": [],
+    "latency_micros": 100
   }
 }
 ```
 
-The examples elide the identity, time and reason fields that every result already
-carries. Three readings:
+These are complete hypothetical envelopes with the required existing fields. Repeated
+hex digits stand for schema-compatible identities, not actual records or recomputed
+canonical hashes; the passage digest and its 46-byte UTF-8 size are concrete. No current
+build produced these payloads. Three readings:
 
 - The consulted-no-history and deactivated cases are **not** distinguishable from the
   response counts alone: both withhold nothing. The recorded `mousa.source_trail.v4`
@@ -299,7 +367,7 @@ schema. When the caller opts in, the handler returns the member
 | `supersession: true`, damaged v4 record | `integrity` failure; the record is never repaired or partially returned |
 
 **Reasons.** A separately opted-in inspection is the smallest change that keeps ordinary
-inspection byte-compatible: every existing caller of `mousa_trail` keeps exactly the
+inspection compatible in shape and stable semantics: every existing caller of `mousa_trail` keeps exactly the
 property set it has today, and a client that cannot render the member never receives it.
 Returning the member unconditionally for v4 records was rejected because it silently
 changes ordinary inspection, and a new inspection tool was rejected for the same reason
@@ -308,9 +376,10 @@ as a new query tool in section 4.
 **Recorded, not reinterpreted.** The member is the record's own evidence: historical
 selection is verified from the stored event and declaration it names plus a fresh
 authorization decision, never from today's activation projection. A replacement
-activation, a deactivation and later item revisions leave an existing trail readable and
-identical, so the member a client reads after an activation change is the one recorded
-at query time.
+activation or deactivation does not reinterpret that member. Later item revisions may
+change a candidate's current `indexed_now` value; fresh authorization may change the
+wrapper or decline disclosure. The recorded member, when authorization permits it,
+remains the one recorded at query time.
 
 **Output schema implication.** The declared member needs the identity types it contains
 (`mousa.SupersessionActivationID`, `mousa.SupersessionDeclarationID` and
@@ -319,49 +388,72 @@ at query time.
 `mousa.SourceTrailID`, `mousa.SegmentID` and `mousa.SHA256` already are. Without that
 mapping the derived schema would describe those identities as byte arrays, which is not
 what the payload emits. No shipped schema currently names those three types, so the
-mapping must leave the other three tools' discovered schemas identical, which the
-implementation must assert.
+completed implementation must leave `mousa_sync` and `mousa_status` schemas identical.
+The inspection slice must also leave the already-extended query schema unchanged from
+the query-only slice, while extending only the trail schema.
 
 **Proposed inspection input and result** (not implemented; not produced by the current
 build):
 
 ```json
-{"source": "inspection-notes", "trail_id": "<64 lowercase hex>", "supersession": true}
+{"source": "inspection-notes", "trail_id": "9999999999999999999999999999999999999999999999999999999999999999", "supersession": true}
 ```
 
 ```json
 {
+  "schema": "mousa.mcp_result.v1",
+  "operation": "mousa_trail",
   "source": "inspection-notes",
-  "trail_id": "<64 lowercase hex>",
-  "authorization_decision_id": "<64 lowercase hex>",
-  "authorization_outcome": "allow",
-  "authorization_reasons": ["allow"],
-  "historical": {
-    "id": "<64 lowercase hex>",
-    "schema": "mousa.source_trail.v4",
-    "packing_policy": "original",
-    "budget_bytes": 4096,
-    "used_bytes": 0,
-    "lifecycle_excluded": 0,
-    "candidates": [
-      {"segment_id": "<64 lowercase hex>", "content_sha256": "<64 lowercase hex>", "rank": 1, "text_bytes": 28, "selected": false, "indexed_now": true}
+  "result": {
+    "source": "inspection-notes",
+    "trail_id": "9999999999999999999999999999999999999999999999999999999999999999",
+    "authorization_decision_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "authorization_outcome": "allow",
+    "authorization_reasons": [
+      "allow"
     ],
-    "supersession": {
-      "consulted": true,
-      "activation_id": "<64 lowercase hex>",
-      "declaration_id": "<64 lowercase hex>",
-      "dispositions": [
+    "historical": {
+      "id": "9999999999999999999999999999999999999999999999999999999999999999",
+      "request_id": "7777777777777777777777777777777777777777777777777777777777777777",
+      "decision_id": "8888888888888888888888888888888888888888888888888888888888888888",
+      "decision_outcome": "allow",
+      "decision_reasons": [
+        "allow"
+      ],
+      "expression": "\"harbor\" OR \"inspection\"",
+      "budget_bytes": 4096,
+      "used_bytes": 0,
+      "packet_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "lifecycle_excluded": 0,
+      "candidates": [
         {
-          "selection": "superseded",
-          "segment_id": "<64 lowercase hex>",
-          "content_sha256": "<64 lowercase hex>",
-          "declaration_id": "<64 lowercase hex>",
-          "predecessor_item_id": "notes/harbor@1f3c",
-          "predecessor_representation_id": "<64 lowercase hex>",
-          "successor_item_id": "notes/harbor@9ab0",
-          "successor_representation_id": "<64 lowercase hex>"
+          "segment_id": "5555555555555555555555555555555555555555555555555555555555555555",
+          "content_sha256": "40f048dad1531ef91af8701b549f1748f5f3e27947ec313699487ad360356b1c",
+          "rank": 1,
+          "text_bytes": 46,
+          "selected": false,
+          "indexed_now": true
         }
-      ]
+      ],
+      "schema": "mousa.source_trail.v4",
+      "packing_policy": "original",
+      "supersession": {
+        "consulted": true,
+        "activation_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "declaration_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "dispositions": [
+          {
+            "selection": "superseded",
+            "segment_id": "5555555555555555555555555555555555555555555555555555555555555555",
+            "content_sha256": "40f048dad1531ef91af8701b549f1748f5f3e27947ec313699487ad360356b1c",
+            "declaration_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "predecessor_item_id": "notes/harbor@1f3c",
+            "predecessor_representation_id": "6666666666666666666666666666666666666666666666666666666666666666",
+            "successor_item_id": "notes/harbor@9ab0",
+            "successor_representation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ]
+      }
     }
   }
 }
@@ -383,8 +475,8 @@ boundary and must not duplicate those tests.
 
 | Case | What it must prove |
 |---|---|
-| Discovered schema | `tools/list` shows one optional boolean input on `mousa_query`, the declared optional `supersession_excluded` in its result schema, an unchanged envelope `schema` enum, and byte-identical schemas for the other three tools |
-| Omitted and explicit false | Both return a payload identical to the pre-change default response for the same request, with no `supersession_excluded`, under an active declaration |
+| Discovered schema | The completed milestone declares the optional boolean on query and trail, the query count and historical member in their respective output schemas, and the unchanged envelope enum. Sync/status schemas are byte-identical; during the query-only intermediate slice, trail is unchanged too |
+| Omitted and explicit false | Both preserve the pre-change property set and stable semantic values under an active declaration, with no `supersession_excluded`; apply only the enumerated per-call exclusions from section 1 and retain all raw values |
 | Strict input errors | `null`, `"true"`, `1`, `0`, a duplicate key, an unknown key and trailing data each return `invalid_arguments` with `isError: true` and no `result` |
 | Store-open boundary | Starting the server against an absent store path creates it before any call; a rejected-input call writes nothing, a denied call writes only the decision and trail the operation defines, and no tool call opens, creates or migrates a store of its own |
 | Consulted, no history | `supersession_excluded` is `0`, evidence is released, the packet identity equals the default query's for the same selection, and the recorded trail is v4 with null activation and declaration identities |
@@ -393,7 +485,7 @@ boundary and must not duplicate those tests.
 | No successor match | Suppression still applies when the pinned successor is historical, inactive, unmatched or over budget, and no replacement passage appears |
 | Denial | No administrative lookup and no identity revealed; the recorded trail is v4 with `consulted: false`; the response carries the declared count as `0` and otherwise reports the same outcome, reasons and empty evidence as the default query |
 | Corrupt recorded state | An activation projection naming a missing event fails the opted-in call with the storage `integrity` code, commits no decision or trail, and leaves the default query path behaving as today |
-| Restart | Reopening the store and inspecting the original trail returns identical bytes; a fresh opted-in query has fresh request, decision and trail identities |
+| Restart | Under unchanged index membership and allowing authorization, the recorded historical fields and supersession member are unchanged; the inspection authorization ID and fresh query request/decision/trail IDs vary and are validated separately |
 | Inspection opt-in | `supersession: true` returns the recorded member; omitted, `false` and v1–v3 records keep today's property set; a declined authorization returns no `historical` |
 | Inspection after an activation change | A replacement activation or deactivation after the trail was recorded does not change the member |
 
@@ -416,7 +508,7 @@ runner's conventions: a `pilot` that freezes only observed values, a `capture` a
 | Real requests and responses | Exact request bytes and exact response bytes per call, from `initialize`, `notifications/initialized`, `tools/list` and `tools/call` |
 | Fresh stores | Each case starts from a new store prepared by the runner, so no case depends on another's residue |
 | State brackets | A logical SQLite fingerprint (table names, row counts and content digests, including WAL-visible state) before and after every command, with reads required to change only their own recorded audit rows |
-| Cases | Discovery; omitted versus explicit false equality; active suppression under both packing policies; consulted no-history; deactivation; the strict input rejections; inspection opt-in true versus false; corruption failure; restart determinism |
+| Cases | Discovery; omitted versus explicit false stable-value/property-set equality with raw per-call values retained; active suppression under both packing policies; consulted no-history; deactivation; the strict input rejections; inspection opt-in true versus false; corruption failure; restart determinism |
 | Negative controls | An intentionally inverted assertion, an undeclared response field injected into a captured response, a damaged activation row the call must refuse, and a read whose bracket is made to look like a write |
 
 The existing native capture at product `e0837750bc8972d6fc7ebffc86a8fba05a0ee1f4`
