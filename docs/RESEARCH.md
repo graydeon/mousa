@@ -30,7 +30,7 @@ The Git documentation consumer optionally limits rendered prompt content with a 
 tokenizer; this does not bound the full packet or a model's context window. No answering
 pipeline exists, so no RAG/answer-quality benchmark is applicable. Memory benchmarks
 and FreshStack await their corresponding capabilities; see the
-[implemented and planned capabilities](../README.md#foundation).
+[implemented and planned capabilities](OVERVIEW.md#foundation).
 
 ## Supersession contract evidence
 

@@ -919,6 +919,9 @@ literal FTS5 phrases, then OR-join them. This is not a complete implementation o
 the index's `unicode61` tokenizer. Keep the leading terms whose expression fits
 4,096 bytes. An oversized first term is retained and rejected by the store rather
 than silently removed.
+Opted-in `--supersession` queries instead reject unpreparable or oversized
+expressions as usage errors before opening the store. Without that opt-in,
+including `--supersession=false`, the existing post-open error boundary remains.
 
 The candidate limit is 100, not an exhaustive match count. Default packing
 (`--packing-policy original`) walks verified rank order, skips accepted segments

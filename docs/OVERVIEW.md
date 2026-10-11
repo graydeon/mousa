@@ -1,0 +1,143 @@
+# How Mousa works
+
+[← Back to Mousa](../README.md) · [Usage guide](USAGE.md) · [Capability matrix](CAPABILITIES.md)
+
+Implementation detail and design targets for the pre-alpha core. Supported interfaces
+and measured results are distinguished below and in the capability matrix.
+
+## Why Mousa?
+
+*Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—the titan Goddess of Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
+
+## The problem
+
+Long-lived knowledge does not only grow. It becomes stale, duplicated, contradictory, and detached from its sources. Search can return matching text without showing why it was selected, whether it remains current, or what it replaced. Agent systems also pay a direct cost when retrieval sends more context than the task requires.
+
+Mousa currently offers source-linked lexical retrieval, source-lifecycle and
+policy checks, inspectable ranking, and byte-budget evidence packing. A Git
+documentation example can optionally limit its rendered prompt content using
+a pinned tokenizer; this is not a token limit on CLI packets or a model's
+complete context window.
+
+## Current development boundary
+
+The internal Go core now stores source-local supersession declarations pinned to
+exact predecessor and successor item revisions, plus immutable activation history
+and a verified current-state projection. Declaration and activation-event
+administration are reachable natively through `supersession declaration put|get`
+and `supersession activation put|get`, and the verified current state for one source
+is inspectable read-only through `supersession activation state <source-id>`.
+
+Native JSONL queries can opt into exact revision-pin suppression with
+`query --source <id> --supersession <text>`. The fresh store entry point
+`EvaluateAndTraceSupersessionLexical` evaluates authorization, verifies candidates,
+consults administration and records a v4 trail inside one writer transaction.
+Only an accepted candidate whose own representation is the active declaration's
+exact predecessor pin is withheld. Successor availability does not gate suppression,
+and no successor passage is manufactured. Both packing policies apply to survivors.
+
+Defaults are unchanged: recording an activation alone does not filter a default
+query or move item pointers. MCP supersession opt-in, directory enforcement and
+association-plus-supersession queries are unsupported. Actor, time and reason labels
+do not authenticate authorship or establish factual truth.
+
+A query prepares and size-checks its expression before opening the store only when it
+opts in. Default and `--supersession=false` queries, including directory queries, keep
+the established post-open failure and writable-open boundary.
+
+Stored v4 trails verify their recorded event, declaration and canonical candidate
+content rather than today's activation or item pointers. Later transitions and item
+revisions do not reinterpret history. Damaged administration fails a fresh allowed
+request without committing its decision or trail; a denied request consults no
+administration. See the [enforcement contract](SUPERSESSION_ENFORCEMENT.md),
+[capability boundary](CAPABILITIES.md#supersession-core-boundary) and
+[evidence record](RESEARCH.md#supersession-contract-evidence).
+
+## The nine-stage retrieval backbone
+
+Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are implemented in the Go core; stages 6–9 are implemented in narrower form and the deferred parts are listed:
+
+| Stage | Responsibility | Status |
+|---|---|---|
+| **1. Ingest** | Register source material with its origin, identity, and policy metadata. | Implemented. |
+| **2. Normalize** | Convert input into a stable representation while preserving the original source. | Implemented for UTF-8 text. |
+| **3. Segment** | Produce deterministic, addressable chunks. | Implemented for byte-range text segments. |
+| **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
+| **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
+| **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit native JSONL query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
+| **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
+
+Each stage has one responsibility and a visible boundary. The pipeline can be tested stage by stage, and no single model, provider, or harness owns the result.
+
+## Source Trails
+
+A Source Trail records how a context packet was produced. Default packing writes
+`mousa.source_trail.v1`, binding the policy request and decision, outcome,
+search expression, byte budget, packet identity, and ordered candidate
+dispositions. Opt-in exact-content packing writes v2, which also binds
+duplicate omissions and retained-segment relationships. Queries that record
+a declared-association stage write v3, binding associated passages and
+omissions. Older trail bytes and identities remain unchanged.
+
+`query --source <id> --supersession <text>` always writes
+`mousa.source_trail.v4`, including denial, verified no-history and deactivation.
+Its closed `supersession` member binds consultation, nullable activation and
+declaration identities, and each withheld candidate's exact pins. Withheld candidates
+keep their accepted disposition, original rank and canonical size, but release no text,
+consume no budget and seed no retained duplicate set. The packet identity still binds
+the released selection, so an unchanged selection has the same packet identity.
+
+Canonical read and startup verification check the recorded administration and candidate
+content. A missing canonical parent named by v4 is an integrity failure; an unknown
+requested identity remains `not_found`, and legacy readers retain their behavior.
+Retired indexed text is not archived: historical byte comparisons can use only text
+still retained. A consumer's token-limited rendering is not a stored Source Trail or a
+new canonical packet.
+
+The goal is not to present a score as an explanation. The goal is to retain enough evidence to inspect what was selected, what was rejected, and why.
+
+## Intended callers
+
+Mousa is intended to expose one portable core through narrow interfaces for:
+
+- agent harnesses and model-independent automation;
+- command-line tools;
+- application and SDK integrations;
+- MCP clients;
+- documented HTTP clients where a service boundary is justified;
+- ordinary JSON and JSONL import and export.
+
+The supported executable, `cmd/mousa`, provides the local CLI and a stdio MCP interface.
+
+## Design principles
+
+- **Local-first:** the baseline should work without a hosted service.
+- **Source-linked:** retrieved context should retain durable links to its evidence.
+- **Lean:** use the smallest reliable components and avoid mandatory services.
+- **Portable:** start with ordinary files, SQLite, documented protocols, and a tested CPU-only baseline.
+- **Inspectable:** ranking, filtering, transformation, and packet assembly should be traceable.
+- **Deterministic where possible:** stable identities, hashes, manifests, and truncation rules should make results reproducible.
+- **Token-aware:** retrieval quality and context cost should be measured together.
+- **Provider-independent:** no model provider, accelerator, agent harness, or database service should own the canonical store.
+
+Compatibility will be documented as a tested matrix. Mousa will not claim support for an operating system, architecture, accelerator, model backend, or agent harness until that combination has reproducible public verification.
+
+## Foundation
+
+Implemented and planned capabilities, marked per item:
+
+- SQLite-first local storage (implemented);
+- lexical retrieval through SQLite FTS5 or an equally portable built-in mechanism (FTS5 implemented);
+- optional semantic retrieval behind a narrow provider interface (planned);
+- inspectable hybrid ranking (planned);
+- deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- secret filtering and non-indexable sensitivity classes (planned);
+- byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
+- source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
+- source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
+- documented export formats that other tools can read without Mousa (planned).
+
+Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs; the research record binds observations to their measured revisions and limitations.

@@ -256,17 +256,19 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		return err
 	}
 	query := positional[len(positional)-1]
-	terms, err := mousa.PrepareLexicalTerms(query, *policy == "dedup")
-	if err != nil {
-		return usageError{err.Error()}
-	}
-	expressionBytes := 0
-	for _, term := range terms {
-		expressionBytes += len(term)
-	}
-	expressionBytes += (len(terms) - 1) * len(" OR ")
-	if expressionBytes > mousa.MaxLexicalExpressionBytes {
-		return usageError{"query expression exceeds byte limit"}
+	if *supersession {
+		terms, err := mousa.PrepareLexicalTerms(query, *policy == "dedup")
+		if err != nil {
+			return usageError{err.Error()}
+		}
+		expressionBytes := 0
+		for _, term := range terms {
+			expressionBytes += len(term)
+		}
+		expressionBytes += (len(terms) - 1) * len(" OR ")
+		if expressionBytes > mousa.MaxLexicalExpressionBytes {
+			return usageError{"query expression exceeds byte limit"}
+		}
 	}
 	return runQueryWithSupersession(ctx, storePath, source, label, query, *policy, *budget, *packing, declarations, *supersession)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -528,5 +529,89 @@ func TestSupersessionQueryMixedLifecyclePrecedence(t *testing.T) {
 				t.Fatalf("surviving budget did not take precedence over suppression/lifecycle: %s", raw)
 			}
 		})
+	}
+}
+
+// TestSupersessionQueryValidationPreservesDirectoryDefaultOpen checks the same
+// validation boundary through the directory spelling, which shares
+// queryCommand's parser: only the opt-in preflight may reject before the store
+// is opened.
+func TestSupersessionQueryValidationPreservesDirectoryDefaultOpen(t *testing.T) {
+	binary := buildCLI(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("harbor inspection evidence"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, policy := range []string{"original", "dedup"} {
+		for name, query := range map[string]string{
+			"oversized":    strings.Repeat("a", mousa.MaxLexicalExpressionBytes+1),
+			"unpreparable": "!!!",
+		} {
+			for _, mode := range []string{"default", "explicit-false"} {
+				t.Run(policy+"/"+name+"/"+mode, func(t *testing.T) {
+					store := filepath.Join(t.TempDir(), "local.sqlite")
+					args := []string{"-store", store, "query", "--policy", policy}
+					if mode == "explicit-false" {
+						args = append(args, "--supersession=false")
+					}
+					out, err := exec.Command(binary, append(append(args, root), query)...).Output()
+					var exit *exec.ExitError
+					if !errors.As(err, &exit) || exit.ExitCode() != 1 || len(out) != 0 {
+						t.Fatalf("exit = %v, stdout = %q; want exit 1 and no success response", err, out)
+					}
+					if _, statErr := os.Stat(store); statErr != nil {
+						t.Fatalf("directory default invalid query lost legacy writable-open boundary: %v", statErr)
+					}
+				})
+			}
+		}
+	}
+	t.Run("opted-in-rejected-before-open", func(t *testing.T) {
+		store := filepath.Join(t.TempDir(), "local.sqlite")
+		out, err := exec.Command(binary, "-store", store, "query", "--supersession", root, "harbor").Output()
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 2 || len(out) != 0 {
+			t.Fatalf("exit = %v, stdout = %q; want exit 2 and no success response", err, out)
+		}
+		if _, statErr := os.Stat(store); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("rejected directory opt-in opened store: %v", statErr)
+		}
+	})
+}
+
+func TestSupersessionQueryValidationPreservesDefaultWritableOpen(t *testing.T) {
+	binary := buildCLI(t)
+	for _, policy := range []string{"original", "dedup"} {
+		for name, query := range map[string]string{
+			"oversized":    strings.Repeat("a", mousa.MaxLexicalExpressionBytes+1),
+			"unpreparable": "!!!",
+		} {
+			for _, mode := range []string{"default", "explicit-false", "opted"} {
+				t.Run(policy+"/"+name+"/"+mode, func(t *testing.T) {
+					store := filepath.Join(t.TempDir(), "local.sqlite")
+					args := []string{"-store", store, "query", "--source", "query/validation", "--policy", policy}
+					wantExit := 1
+					if mode == "opted" {
+						args = append(args, "--supersession")
+						wantExit = 2
+					} else if mode == "explicit-false" {
+						args = append(args, "--supersession=false")
+					}
+					out, err := exec.Command(binary, append(args, query)...).Output()
+					var exit *exec.ExitError
+					if !errors.As(err, &exit) || exit.ExitCode() != wantExit || len(out) != 0 {
+						t.Fatalf("exit = %v, stdout = %q; want exit %d and no success response", err, out, wantExit)
+					}
+					_, statErr := os.Stat(store)
+					if mode == "opted" {
+						if !errors.Is(statErr, os.ErrNotExist) {
+							t.Fatalf("opted-in invalid query opened store: %v", statErr)
+						}
+					} else if statErr != nil {
+						t.Fatalf("default invalid query lost legacy writable-open boundary: %v", statErr)
+					}
+				})
+			}
+		}
 	}
 }
