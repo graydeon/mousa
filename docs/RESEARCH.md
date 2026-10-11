@@ -67,7 +67,9 @@ replacement, deactivation, reactivation, exact retry, stale rejection, rejected
 input, damaged-store rejection, and the read-only current-state view (its three-field
 JSON projection, deactivation as an explicit null, per-source isolation, usage and
 missing-history exits, refusal to create or migrate a store, and failure without
-repair over a damaged projection). MCP supersession query opt-in remains absent.
+repair over a damaged projection). MCP supersession query opt-in remains absent;
+[MCP supersession opt-in](MCP_SUPERSESSION.md) proposes one and records no
+observations.
 Product domain regressions cover exact predecessor matching, multiple segments,
 lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,
 ancestor pins, source isolation, malformed administrative inputs, row order and

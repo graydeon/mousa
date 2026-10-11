@@ -339,6 +339,11 @@ Tool calls return structured, versioned results. Queries require an explicit
 query-term policy and released-text byte budget, and return evidence bytes,
 normalized coordinates, digests, packet IDs and Source Trail IDs. Retrieved text
 is data, not instructions. See [tool schemas, limits, errors and lifecycle](CAPABILITIES.md#local-stdio-mcp).
+
+Revision-pinned supersession is not an MCP input today.
+[MCP supersession opt-in](MCP_SUPERSESSION.md) proposes an optional `supersession`
+flag for `mousa_query` and `mousa_trail` and has not been implemented.
+
 The actual-executable MCP client regressions run with:
 
 ```sh
