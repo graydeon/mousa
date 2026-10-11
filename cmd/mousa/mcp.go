@@ -300,6 +300,9 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var inspection sqlite.TrailInspection
 			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
+			if inspection.Historical != nil {
+				inspection.Historical.Supersession = nil
+			}
 			result = mcpTrailResult{Source: args.Source, TrailID: args.TrailID.String(), TrailInspection: inspection}
 		}
 	default:

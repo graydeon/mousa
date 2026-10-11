@@ -1,42 +1,28 @@
 # Opt-in supersession enforcement
 
-**Status: contract defined; the domain halves, the transaction-local verified state and the
-canonical store verification of a stored v4 record are
-implemented, nothing enforces it.** No query
-implements anything on this page: there is no query opt-in, no CLI flag, no MCP surface and no
-packet version for supersession enforcement, and nothing consults the implemented selection API
-or builds the implemented v4 record. This document settles the selection and trail contract
-*before*
-retrieval changes, so a later bounded implementation does not improvise semantics the current
-records cannot support. Until that implementation lands, a recorded activation still filters
-no query, and separately identified current items remain independent: a newer correcting item
-does not suppress an older item.
+**Status: implemented in the fresh store retrieval entry point and the native JSONL
+query opt-in.** Use `query --source <id> --supersession <text>`, with flags before
+query text. Defaults, legacy trail versions and MCP query behavior are unchanged.
+Directory queries and association-plus-supersession combinations are rejected.
 
-The domain half of the first slice is implemented as internal Go APIs. The selection half —
-`SupersessionSelection`, `SupersessionDisposition`, `BuildSupersessionSelection` and the
-`Validate`/`ValidateAgainst` checks in `internal/mousa/supersession_selection.go` — derives
-selection evidence from the decision source and outcome, already verified lexical candidates
-and explicitly supplied verified activation/declaration records. The trail half —
-`mousa.source_trail.v4`, the `NewSourceTrailWithSupersession` constructor, the versioned
-member codec and identity, and survivor-aware packing for both policies in
-`internal/mousa/trail.go` and `internal/mousa/packing.go` — records that evidence and packs
-only the surviving candidates. Both halves withhold and release nothing by themselves: no retrieval
-caller invokes either one, no production path stores a v4 record, and no check in the acceptance
-matrix below has run. The store verifies a stored v4 record on read and startup; the remaining
-integration is the retrieval opt-in itself.
+`Store.EvaluateAndTraceSupersessionLexical` evaluates current authorization, reads
+source-scoped verified candidates, consults verified administration and builds
+`mousa.source_trail.v4` inside the existing writer transaction. It reuses
+`readSupersessionConsultation`, `BuildSupersessionSelection` and
+`NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
+Every opted-in query records v4, even when denied or when nothing is suppressed.
+Canonical readback must agree before commit.
 
-The store also carries the transaction-local consultation of that state, in
-`internal/sqlite/supersession_activation.go`: `readSupersessionConsultation` returns the verified
-current activation state and the declaration it selects, reading the state row, the event it names,
-the whole predecessor chain and the selected declaration through one supplied query handle. It
-opens no transaction and calls no public store method, so a caller that already holds a transaction
-consults exactly that snapshot. It has no caller yet: retrieval does not consult it. A stored v4
-record is verified by the canonical read path and the startup scan, described under “Stored v4 trail
-verification” below.
+A valid active declaration withholds only its exact predecessor representation's
+accepted candidates. Candidate ranks, digests, sizes and ancestry remain recorded;
+withheld text is cleared in a copied returned candidate slice after trail construction.
+Both packing policies process survivors, and a withheld copy cannot seed a duplicate.
+No successor evidence is manufactured. Stored v4 history verifies the event and
+declaration it recorded, not today's activation or item pointers.
 
-Declarations, activation history and the verified current-state projection are implemented;
-see the [supersession boundary](CAPABILITIES.md#supersession-core-boundary). This page only
-proposes what an *opt-in* query would do with them.
+Declarations, activation history and verified current-state projection are separate
+administration; recording them never changes a default query or moves an item pointer.
+See the [supersession boundary](CAPABILITIES.md#supersession-core-boundary).
 
 ## What exists today
 
@@ -230,21 +216,21 @@ or item pointers.
   administration it recorded: every named segment still exists with the recorded digest and
   canonical size, every withheld candidate is re-derived from the verified declaration's exact
   predecessor pin, and the named declaration and activation event still exist, still belong to
-  the decision source and still agree with each other. The event and declaration are read from
-  the record's own snapshot, never from today's activation projection. Deactivation, later
-  revisions and deleted items do not invalidate the record, because none of those facts is
-  re-read for the decision. **Not implemented yet:** no store writes a v4 record, no query emits
-  one, and the text-free codec validates structure and supplied-input consistency without
-  proving stored existence or canonical ancestry.
+  the decision source and still agree with each other. The event and declaration are read
+  from the record's own snapshot, not today's activation projection. Deactivation and
+  item revisions do not invalidate history. The opted-in store path writes v4 after
+  verifying those inputs in its writer transaction; the text-free domain codec alone
+  proves structural consistency, not stored existence or canonical ancestry.
 - Read-time flags stay read-time facts. `indexed_now` continues to describe today's index, and
   a successor-currency diagnostic, if added, is computed when the trail is read.
 - v1, v2 and v3 readers, identity derivations and bytes are unchanged, as are packet v1 and
   v2. No lifecycle reason is repurposed and no field is silently appended to an existing
-  canonical schema; the new encoding is a new version with its own identity construction.
-- CLI and MCP interfaces are unchanged by this proposal. `mousa_trail` keeps returning the
-  same filtered, text-free structure, gaining at most one additive optional member when a v4
-  record is read. The MCP query tool exposes no association opt-in today, so it should not
-  expose enforcement either without a separate decision.
+  canonical schema; the new encoding has its own version and identity construction.
+- Native JSONL queries expose the boolean opt-in and native `trail` inspection includes
+  the recorded v4 member. Directory and association combinations are unsupported.
+  MCP query tools have no supersession flag or schema change; their default retrieval
+  remains unchanged. `mousa_trail` keeps its existing filtered, text-free response schema
+  and omits the native-only supersession member even when reading v4 history.
 - A store that contains v4 trails requires a binary that knows v4, exactly as v2 and v3
   records already do; no store schema version changes, because no object set changes.
 
@@ -374,9 +360,9 @@ Failure classes stay distinct:
 | Successor pin historical, deactivated or no longer indexed | Suppression still applies while the declaration is active (section 1) |
 | Missing current projection while history exists, projection naming a missing current event, broken chain, cycle, missing declaration, cross-source pointer, projection disagreeing with its tip | Integrity failure; the request fails closed with no packet and no committed decision or trail |
 
-The chain verification is linear in the number of activation transitions for the source;
-that cost is inside the writer transaction and must be measured by the implementation slice
-rather than assumed away.
+The chain verification is linear in the number of activation transitions for the source
+and runs inside the writer transaction. No latency or capacity claim follows from the
+correctness checks; sustained contention and long-chain performance remain unmeasured.
 
 ## Authorization and privacy
 
@@ -390,9 +376,11 @@ rather than assumed away.
   source. A denial must not reveal whether a declaration or activation exists, and a failed
   request must not leak another source's identifiers through an error string.
 
-## Future acceptance matrix
+## Acceptance matrix
 
-None of these checks has been run; they describe what a later implementation must prove.
+The product regression suite exercises the store and native CLI boundaries below.
+Independent native observations belong in a separate companion capture, not in the
+domain or SQLite test counts.
 
 | Case | What it proves |
 |---|---|
@@ -407,42 +395,33 @@ None of these checks has been run; they describe what a later implementation mus
 | Candidate limit and budget | A suppressed candidate frees budget for a later candidate; original budget skips stay distinct from suppression; recorded sizes and remaining ranks are preserved; an all-suppressed result is empty and labeled, not padded |
 | Denied opt-in with retained activation history | No history is consulted or revealed; the v4 record says consulted false, not no-history |
 | Empty mixed-cause response | Suppression plus a surviving budget skip yields budget_omitted; suppression plus lifecycle rejection without budget skips yields supersession_excluded; counts remain disjoint and defaults stay unchanged |
-| Restart determinism | Reopening the store and re-running the same inputs produces the same dispositions, selection, packet identity and trail bytes |
+| Restart determinism | Reopening and re-running preserves dispositions, selection and packet identity; fresh request/decision/trail identities intentionally differ, while reading the original trail preserves its exact bytes |
 | Historical trail readability | After later revisions, deletions and deactivation, the stored record still reads with current authorization and is not reinterpreted; v1–v3 reads are unchanged |
 | Association combination | An opt-in enforcement request with associations is rejected before any write; both packing policies work with enforcement |
 | Concurrent activation and query | A transition racing an opted-in query yields either the previous or the next state, never a mixture, and no partial decision or trail |
 | Corrupt state rollback | Damaged projection, broken chain, missing declaration or cross-source pointer fails the request with nothing committed |
 
-## Implementation sequence
+## Implemented interfaces
 
-Four bounded slices, each independently reviewable and testable:
+The domain selection and v4 trail constructors remain separate internal APIs; their
+existing signatures and all legacy identities are unchanged. The store adds
+`EvaluateAndTraceSupersessionLexical(ctx, request, expression, limit, budgetBytes,
+packingPolicy)`, a fresh-evaluation entry point with no association argument. Existing
+`EvaluateAndTraceLexical`, `EvaluateAndTraceAssociatedLexical` and
+`TraceEnforcedLexical` retain their default and retry contracts.
 
-1. **Domain contract in two bounded PRs.** First implement only the pure selection record,
-   validation and exact-match function; no trail/packing integration. Then implement trail v4,
-   its strict codec/identity and survivor-aware packing. Keep the existing `NewSourceTrail`
-   and packing APIs and legacy bytes unchanged; use a separate opt-in constructor rather than
-   changing the signature all current callers use. No store, CLI, migration or MCP change.
-   *Both domain halves are implemented; no store, CLI, MCP or enforcement work is.*
-2. **Transaction-local verified state.** One extracted verification helper reused by the
-   `state` command and by retrieval; the opt-in trace path inside the existing writer
-   transaction; v4 content and startup verification. Real SQLite fixtures.
-   *The extracted helper and the consultation reader are implemented with real SQLite fixtures,
-   and so are the v4 content and startup verification; the opt-in trace path is not.*
-3. **Native opt-in query surface.** An explicit boolean query opt-in, the added result count
-   and outcome value, and an actual-CLI regression over a real store. MCP unchanged.
-4. **Client or benchmark work** only where the changed surface justifies it independently.
+The native flag is boolean and only available on the JSONL item-source query path:
 
-**First slice: exact scope.** Only `internal/mousa/supersession_selection.go` (new)
-and its test file: the selection member and disposition types, pure validation and the
-exact-match function over verified candidates and explicitly supplied consulted state/declaration.
-Bind consultation, event/declaration IDs and pins structurally, preserve input candidates and
-canonical sizes, and return explicit suppression evidence without blanking text or packing.
-Domain validation does not claim stored existence or canonical ancestry; transaction-local store
-verification remains the later integration's responsibility. Preserve nonmatching/rejected
-candidates and source isolation. No `trail.go`/`packing.go`, SQLite, CLI/MCP, migration,
-dependency or identity-codec edit in that first slice. The second domain PR then added
-`SourceTrailSchemaV4`, the versioned member/identity/codec, opt-in construction and packing
-validation; each existing public function signature and legacy golden stayed unchanged.
+```sh
+mousa -store local.sqlite query --source notes --supersession 'amber'
+mousa -store local.sqlite query --source notes --supersession --packing-policy exact-v1 'amber'
+```
+
+Invocation validation precedes writable open where possible. Invalid flags, directory
+queries and association combinations do not create a store. A valid query uses the
+existing writable open: creation or supported migrations can happen before later source,
+authorization or integrity failures. Rollback guarantees apply to the retrieval
+transaction's decision and trail writes, not to that creation/migration boundary.
 
 **Implemented (selection half).** `internal/mousa/supersession_selection.go` and its test file
 provide:
@@ -467,9 +446,9 @@ provide:
   They prove consistency with the supplied canonical and verified inputs only; they establish no
   stored existence, authorization, pinned ancestry, integrity or current state.
 
-The function stays selection evidence, so it withholds nothing by itself: no caller releases or
-suppresses native query output, no trail records the member and no candidate text, rank, accepted
-disposition or canonical size changes.
+The function itself remains pure selection evidence. The opted-in store caller uses
+the separate v4 constructor and clears withheld returned text only after preserving
+canonical candidate sizes in the trail.
 
 **Implemented (trail half).** `internal/mousa/trail.go` and `internal/mousa/packing.go` now
 provide:
@@ -501,11 +480,10 @@ provide:
   reason, and a rejected candidate carries lifecycle reasons instead of a packing omission, so
   `original` and `exact-v1` reject the same candidate set.
 
-The trail half is equally structural in the domain package: it reads no store, so it proves no stored
-existence, canonical ancestry, authorization or transaction-local current state. No retrieval path
-calls the constructor, no store writes a v4 record in production, and no CLI or MCP surface exposes
-one, so nothing withholds evidence. The canonical store read path verifies a stored v4 record
-separately, described under "Stored v4 trail verification" below.
+The domain constructor reads no store and proves no stored existence, canonical ancestry
+or authorization. The opted-in retrieval path supplies transaction-verified inputs,
+stores the record and verifies canonical readback before commit. The same canonical
+verifier serves historical reads and startup.
 
 ## Stored v4 trail verification
 
@@ -531,19 +509,15 @@ an identity that was never stored keeps its `not_found`, as do the v1–v3 reads
 
 ## Limitations and non-goals
 
-This proposal does not implement, and does not claim: query enforcement; semantic
-contradiction detection; authenticated authorship; factual truth or freshness; transitive
-supersession chains or cycles; automatic or default enforcement; enforcement of non-item
-sources; associated-passage enforcement; or any change to ranking, authorization, item
-pointers, canonical declarations and activation history. Only the two domain contracts, the
-transaction-local consultation reader and the canonical store verification of a stored v4 record are
-implemented, and no query, CLI or MCP surface
-reaches them, so no retrieval
-behavior changes. The consultation reader's own focused SQLite checks run, including that an open
-transaction keeps the snapshot it read while another connection commits a transition, and the stored
-v4 read and startup verification has its own focused SQLite regression cases; the opt-in
-trace path and every other acceptance-matrix check remain
-unimplemented. It makes no performance
-claim: the selection stage's cost, including the reused chain verification, is unmeasured
-until a later slice measures it. The
-store, CLI and MCP slices that would produce most of those observations do not exist yet.
+Enforcement is explicit, source-local and exact-pin-only. It does not implement semantic
+contradiction detection, authenticated authorship, factual truth or freshness, transitive
+supersession, automatic/default enforcement, directory enforcement, associated-passage
+enforcement or MCP query opt-in. Ranking, authorization, current item pointers,
+declarations and activation history are not rewritten by a query.
+
+Real-file SQLite regressions cover live-store corruption rollback and explicit
+transaction ordering. Native subprocess regressions exercise the CLI surface; native
+startup refusal is distinct from corruption injected after an already-open store.
+Historical retired indexed text remains unarchived, so byte equality is checked only
+where text is retained. No performance, semantic-quality, model-window or actual-host
+agent acceptance claim is made.

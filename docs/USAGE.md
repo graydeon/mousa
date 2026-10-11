@@ -80,6 +80,24 @@ nothing. Each duplicate keeps its own provenance and references the retained
 segment in the trail. Equal text is not independent corroboration or shared
 authorization. Default `--packing-policy original` retains repeated passages.
 
+For a JSONL source with a separately stored and activated supersession declaration:
+
+```sh
+./mousa -store local.sqlite query --source inspection-notes --supersession 'harbor inspection'
+./mousa -store local.sqlite query --source inspection-notes --supersession --packing-policy exact-v1 'harbor inspection'
+```
+
+Flags precede query text. Opted-in responses add `supersession_excluded`, including
+zero; defaults omit it. Suppression is distinct from lifecycle, budget and duplicate
+omissions, and an empty result reports budget omission before supersession exclusion,
+then lifecycle exclusion. `--supersession` requires `--source`, so a directory query
+or an `--associations` combination is rejected before the store opens. A valid query
+uses writable open and can create or migrate a store before a later operation fails;
+rollback does not undo that open boundary. Only the opted-in query prepares and
+size-checks its expression before opening the store: a default or
+`--supersession=false` query keeps the established post-open expression error, and
+the store's own limit rejects an oversized expression after the store is opened.
+
 `--associations <file>` opts a query into declared associated context:
 
 ```sh
@@ -258,8 +276,9 @@ rejects the transition; rejection does not undo that creation or migration. Malf
 or oversized input is rejected before the store opens.
 `get` opens the store read-only and keeps historical reads: an event stays readable
 after later transitions, while a retry of that event is rejected. Activation is
-recorded local administration only; it filters no query, grants no access, moves no
-item pointer and mutates no declaration.
+recorded local administration; it grants no access, moves no
+item pointer, mutates no declaration and changes no default query. Only an explicitly
+opted-in query applies it.
 
 `state` opens the store read-only and prints one JSON object with exactly
 `source_id`, `current_activation_id` and `active_declaration_id`. The identity
