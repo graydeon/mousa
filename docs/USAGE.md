@@ -291,7 +291,9 @@ with the event it names fails integrity verification and is never rebuilt or rep
 by the read. The state is a verified snapshot rather than a reservation: a caller that
 transitions next still states its own expected predecessor and can still conflict if
 another caller wins first. Use `state` for the current projection and `get` for one historical event. There is
-no activation listing or per-source history command and no supersession MCP surface.
+no activation listing or per-source history command. MCP `mousa_query` accepts an
+optional `supersession` boolean; declaration and activation administration and
+opted-in trail inspection remain unavailable over MCP.
 
 The declaration and activation command groups are trusted local store administration,
 and none of them claims to authenticate a recorded actor or author. See the
@@ -340,9 +342,13 @@ query-term policy and released-text byte budget, and return evidence bytes,
 normalized coordinates, digests, packet IDs and Source Trail IDs. Retrieved text
 is data, not instructions. See [tool schemas, limits, errors and lifecycle](CAPABILITIES.md#local-stdio-mcp).
 
-Revision-pinned supersession is not an MCP input today.
-[MCP supersession opt-in](MCP_SUPERSESSION.md) proposes an optional `supersession`
-flag for `mousa_query` and `mousa_trail` and has not been implemented.
+Local stdio MCP exposes the same opt-in explicitly: `mousa_query` accepts an optional
+`supersession` boolean, and an opted-in response adds `supersession_excluded`, including
+zero. Omitting it or passing `false` keeps the default retrieval and response property
+set, `mousa_trail` still rejects the argument, and the records must be prepared by the
+native `supersession declaration put` and `supersession activation put` commands for the
+same configured source. See [MCP supersession opt-in](MCP_SUPERSESSION.md); the
+inspection half of that contract is proposed and not implemented.
 
 The actual-executable MCP client regressions run with:
 

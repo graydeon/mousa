@@ -69,8 +69,9 @@ requests without committing their decision or trail.
 
 Both `original` and `exact-v1` packing operate on survivors. Only the accepted
 candidate's own exact predecessor representation matches; item labels, equal bytes,
-ancestor pins and successor availability do not. MCP query opt-in
-(proposed in [MCP supersession opt-in](MCP_SUPERSESSION.md)), directory
+ancestor pins and successor availability do not. The local stdio MCP query tool
+implements the same explicit opt-in as an optional `supersession` boolean
+([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP administration, directory
 enforcement and association-plus-supersession combinations are unsupported.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
@@ -107,7 +108,7 @@ proves consistency with the supplied records only. Stored existence, pinned ance
 authorization, successor currency and current state remain transaction-bound store
 responsibilities, so a hash never stands in for integrity or permission. The opted-in
 store path supplies those verified inputs and records the selection in v4; default
-and MCP query paths do not invoke it.
+and opted-out MCP query paths do not invoke it.
 
 ### Opt-in trail record and survivor packing
 
@@ -318,7 +319,8 @@ for a source with no history are unchanged.
 
 The `state` command inspects the current projection; `get <activation-id>` reads one
 historical event. There is no activation listing or per-source history command, no
-source alias or name lookup, and no supersession MCP tool.
+source alias or name lookup, and no supersession MCP administration tool; the MCP query
+opt-in reads the same records through the retrieval transaction.
 
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable
@@ -385,14 +387,19 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
-| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs |
+| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`) | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; an opted-in response adds the withheld-candidate count `supersession_excluded` |
 | `mousa_trail` | `source`, `trail_id` | None | Existing filtered trail inspection with fresh authorization; no evidence text |
 
-No tool accepts a supersession input today: `mousa_query` rejects a `supersession`
-argument as `invalid_arguments`, and no response carries a native-only supersession
-field. The proposed optional `supersession` inputs, the result fields they would add and
-the reasons for keeping the envelope at `mousa.mcp_result.v1` are specified in
-[MCP supersession opt-in](MCP_SUPERSESSION.md); none of it is implemented.
+`mousa_query` accepts one supersession input today: the optional `supersession` boolean
+withholds an accepted candidate whose own representation is the selected declaration's
+exact predecessor pin for that configured source, and an opted-in response reports the
+declared count `supersession_excluded`, including zero. Omitted or `false` keeps the
+default retrieval and response property set, other values are `invalid_arguments`, and
+`mousa_sync`, `mousa_status` and `mousa_trail` reject the field. The records are prepared
+by native administration; MCP exposes no administration tool. The proposed inspection
+inputs, the result member they would add and the reasons for keeping the envelope at
+`mousa.mcp_result.v1` are specified in
+[MCP supersession opt-in](MCP_SUPERSESSION.md); the inspection half is not implemented.
 
 For example, call `mousa_sync` with:
 
@@ -411,6 +418,11 @@ Then call `mousa_query` with:
 ```json
 {"source":"inspection-notes","query":"harbor inspection","policy":"original","budget_bytes":4096}
 ```
+
+Add `"supersession":true` to that call to withhold an accepted candidate whose own
+representation is the selected declaration's exact predecessor pin for the same source;
+the result then reports `supersession_excluded` (including `0`). The records come from
+the native `supersession declaration put` and `supersession activation put` commands.
 
 Use the returned `result.trail_id` with `mousa_trail`. Items use the same strict
 record validation, normalization, immutable revision identities and atomic
@@ -981,7 +993,8 @@ always writes v4. Withheld text is not released, its recorded rank and canonical
 stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
 Directory and `--associations` combinations are rejected before writable open.
-The flag is not available on MCP queries.
+MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
+boolean. MCP administration and opted-in trail inspection remain unavailable.
 
 Valid queries open the store writable and may create or migrate it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not
@@ -1210,6 +1223,6 @@ duplicate it omitted.
 
 ## Maintained agent skills
 
-The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Supersession administration does not currently withhold query evidence.
+The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Administration alone leaves default queries unchanged; an explicitly opted-in native or MCP query applies exact pinned-predecessor withholding.
 
 The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa. Client skills remain bundled with the plugin; they are not development startup instructions.

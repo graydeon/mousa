@@ -1,10 +1,12 @@
 # Opt-in supersession enforcement
 
-**Status: implemented in the fresh store retrieval entry point and the native JSONL
-query opt-in.** Use `query --source <id> --supersession <text>`, with flags before
-query text. Defaults, legacy trail versions and MCP query behavior are unchanged.
-Directory queries and association-plus-supersession combinations are rejected.
-An MCP query opt-in is proposed for review in
+**Status: implemented in the fresh store retrieval entry point, the native JSONL
+query opt-in and the local stdio MCP query tool.** Use
+`query --source <id> --supersession <text>` with flags before query text, or the MCP
+`mousa_query` tool with `supersession: true`. Defaults, legacy trail versions and every
+opted-out MCP response are unchanged. Directory queries and
+association-plus-supersession combinations are rejected.
+The MCP inspection opt-in is proposed for review in
 [MCP supersession opt-in](MCP_SUPERSESSION.md); it is not implemented.
 
 `Store.EvaluateAndTraceSupersessionLexical` evaluates current authorization, reads
@@ -229,10 +231,12 @@ or item pointers.
   v2. No lifecycle reason is repurposed and no field is silently appended to an existing
   canonical schema; the new encoding has its own version and identity construction.
 - Native JSONL queries expose the boolean opt-in and native `trail` inspection includes
-  the recorded v4 member. Directory and association combinations are unsupported.
-  MCP query tools have no supersession flag or schema change; their default retrieval
-  remains unchanged. `mousa_trail` keeps its existing filtered, text-free response schema
-  and omits the native-only supersession member even when reading v4 history.
+  the recorded v4 member. The local stdio MCP `mousa_query` tool exposes the same opt-in
+  and reports the withheld count; its opted-out responses keep today's property set.
+  Directory and association combinations are unsupported.
+  `mousa_trail` keeps its existing filtered, text-free response schema
+  and omits the native-only supersession member even when reading v4 history, and it
+  rejects the argument; exposing it is a proposed later slice.
 - A store that contains v4 trails requires a binary that knows v4, exactly as v2 and v3
   records already do; no store schema version changes, because no object set changes.
 
@@ -514,7 +518,7 @@ an identity that was never stored keeps its `not_found`, as do the v1–v3 reads
 Enforcement is explicit, source-local and exact-pin-only. It does not implement semantic
 contradiction detection, authenticated authorship, factual truth or freshness, transitive
 supersession, automatic/default enforcement, directory enforcement, associated-passage
-enforcement or MCP query opt-in (proposed in
+enforcement or the MCP inspection opt-in (proposed in
 [MCP supersession opt-in](MCP_SUPERSESSION.md)). Ranking, authorization, current item
 pointers, declarations and activation history are not rewritten by a query.
 

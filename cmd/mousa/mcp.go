@@ -287,7 +287,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		request, err = callerRetrievalRequest(source.ID, a.caller)
 		if err == nil {
 			var evidence *evidenceResult
-			evidence, err = queryItemsForRequest(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, nil)
+			evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, nil, args.Supersession)
 			if err == nil {
 				evidence.Query, evidence.Source = args.Query, args.Source
 				evidence.LatencyMicros = time.Since(started).Microseconds()
