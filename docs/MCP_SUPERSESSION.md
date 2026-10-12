@@ -514,7 +514,7 @@ member for a v4 record and treats its recorded selection as recorded.
 
 ### Independent stdio MCP client observations
 
-The [independent query-only capture](https://github.com/graydeon/mousa-benchmarks/tree/main/results/2026-10-12-mcp-query-supersession-schedule-binding) pins product commit
+The [independent query-only capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding) pins product commit
 `7ae0d8768e7cd203c48478412b493e1255c97b11`, tree
 `2b8b14f76e0907f3ca3fd5dc8c33934567e61d14`. Two fresh-store captures each record
 129 steps, 2,847 passing assertions and 39 stable selections; the pilot has 2,846

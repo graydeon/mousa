@@ -73,7 +73,7 @@ repair over a damaged projection). MCP supersession query opt-in is implemented 
 optional `supersession` boolean on `mousa_query`, with product client regressions in
 `cmd/mousa/mcp_supersession_test.go` over the built executable and fresh temporary
 stores; [MCP supersession opt-in](MCP_SUPERSESSION.md) records the client contract, its
-inspection half and the [independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/main/results/2026-10-12-mcp-query-supersession-schedule-binding).
+inspection half and the [independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding).
 The capture records two fresh-store observations with 129 steps, 2,847 passing
 assertions and 39 stable selections each, plus replay and rejecting controls.
 Opted-in inspection remains unimplemented and has no client capture; these observations
