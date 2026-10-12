@@ -8,8 +8,8 @@ argument on `mousa_query`, declares the count it reports and reuses the native
 transaction; the query cases of the acceptance matrix are covered by product
 regressions in `cmd/mousa/mcp_supersession_test.go`. `mousa_trail` still rejects the
 argument as `invalid_arguments` and MCP responses still omit every native-only
-supersession field there, so every inspection case and the independent client capture
-remain **NOT RUN**. The JSON blocks below are documentation examples with placeholder
+supersession field there, so every opted-in inspection case remains **NOT RUN**.
+The independent query-only client capture is published in the benchmark archive below. The JSON blocks below are documentation examples with placeholder
 identities, not captured responses.
 
 The implemented native contract remains
@@ -483,7 +483,8 @@ holds. It contains no disposition for a denied or unconsulted record.
 The query cases below are covered by the committed product regressions in
 `cmd/mousa/mcp_supersession_test.go`, which run the built executable over stdio against
 fresh temporary SQLite stores. The inspection cases remain **NOT RUN** until that slice
-lands, and the independent client capture below is **NOT RUN** for either. The
+lands. Independent query-only client observations are published below; opted-in
+inspection capture remains **NOT RUN**. The
 store-level transaction and damage semantics are already covered by the existing product
 regressions in `internal/sqlite/trail_supersession_test.go` and
 `internal/sqlite/supersession_activation_test.go`; the cases here prove the client
@@ -513,12 +514,22 @@ member for a v4 record and treats its recorded selection as recorded.
 
 ### Independent stdio MCP client observations
 
-A companion benchmark capture supplies the independently reproduced client behavior; a
-product test is not that evidence. The planned paired gate is: the product implementation
-PR requires the companion capture in the same milestone, and the capture is published
-before the product PR links to it.
+The [independent query-only capture](https://github.com/graydeon/mousa-benchmarks/tree/main/results/2026-10-12-mcp-query-supersession-schedule-binding) pins product commit
+`7ae0d8768e7cd203c48478412b493e1255c97b11`, tree
+`2b8b14f76e0907f3ca3fd5dc8c33934567e61d14`. Two fresh-store captures each record
+129 steps, 2,847 passing assertions and 39 stable selections; the pilot has 2,846
+assertions. All 21 negative controls reject, including request-binding, strict JSON
+and schema controls. A focused regression also preserves JSON types when comparing
+recorded metadata with the frozen schedule. The real forbidden-write control fails
+capture and replay. Earlier archives retain their own runners and historical limits.
 
-The smallest capture that proves the new client behavior is one standalone
+This is synthetic stdio client-boundary evidence, not semantic truth, retrieval quality,
+performance, authentication or native-host acceptance. Ordinary inspection remains
+filtered; opted-in inspection is unimplemented and unmeasured. The next inspection
+milestone requires its own paired client capture. Product-local tests do not replace
+that evidence.
+
+The capture protocol uses one standalone
 standard-library runner in the benchmark repository that speaks MCP `2025-11-25` over
 the pinned executable's stdio in separate processes. It mirrors the existing native
 runner's conventions: a `pilot` that freezes only observed values, a `capture` and a
