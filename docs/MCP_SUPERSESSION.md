@@ -529,11 +529,16 @@ filtered; opted-in inspection is unimplemented and unmeasured. The next inspecti
 milestone requires its own paired client capture. Product-local tests do not replace
 that evidence.
 
-The capture protocol uses one standalone
-standard-library runner in the benchmark repository that speaks MCP `2025-11-25` over
-the pinned executable's stdio in separate processes. It mirrors the existing native
-runner's conventions: a `pilot` that freezes only observed values, a `capture` and a
-`verify` that replay it, and a `negative-controls` mode.
+### Proposed inspection-capture requirements
+
+The following table specifies the future combined query-and-inspection milestone;
+it is not a list of observations from the published query-only archive. In particular,
+inspection opt-in remains unimplemented and unmeasured, and each isolation requirement
+must be demonstrated by that future capture rather than inferred from this one.
+
+Use a standalone standard-library runner that speaks MCP `2025-11-25` over the pinned
+executable's stdio in separate processes, with pilot, capture, replay and negative-control
+modes. The existing query-only runner is a starting point for this protocol.
 
 | Requirement | Form |
 |---|---|
