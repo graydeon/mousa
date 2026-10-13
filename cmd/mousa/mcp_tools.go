@@ -105,7 +105,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession")
 		required = append(required, "query", "policy", "budget_bytes")
 	case "mousa_trail":
-		allowed = append(allowed, "trail_id")
+		allowed = append(allowed, "trail_id", "supersession")
 		required = append(required, "trail_id")
 	case "mousa_status":
 	default:
@@ -204,25 +204,21 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 }
 
 func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
-	// These canonical IDs marshal as lowercase hex, not as their Go byte arrays.
+	// These canonical IDs marshal as lowercase hex, not as their Go byte arrays. The recorded
+	// consultation member names activation, declaration and representation identities, which the
+	// derived schema would otherwise describe as byte arrays.
 	hexID := &jsonschema.Schema{Type: "string", Pattern: "^[0-9a-f]{64}$"}
 	schema, err := jsonschema.For[mcpEnvelope[T]](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-		reflect.TypeFor[mousa.PolicyDecisionID](): hexID,
-		reflect.TypeFor[mousa.SourceTrailID]():    hexID,
-		reflect.TypeFor[mousa.SegmentID]():        hexID,
-		reflect.TypeFor[mousa.SHA256]():           hexID,
+		reflect.TypeFor[mousa.PolicyDecisionID]():          hexID,
+		reflect.TypeFor[mousa.SourceTrailID]():             hexID,
+		reflect.TypeFor[mousa.SegmentID]():                 hexID,
+		reflect.TypeFor[mousa.SHA256]():                    hexID,
+		reflect.TypeFor[mousa.SupersessionActivationID]():  hexID,
+		reflect.TypeFor[mousa.SupersessionDeclarationID](): hexID,
+		reflect.TypeFor[mousa.RepresentationID]():          hexID,
 	}})
 	if err != nil {
 		return nil, err
-	}
-	// The native opt-in field is declared on the tool that implements it: a client
-	// can only accept a response property its discovered closed schema names.
-	if operation == "mousa_trail" {
-		historical := schema.Properties["result"].Properties["historical"]
-		delete(historical.Properties, "supersession")
-		historical.PropertyOrder = slices.DeleteFunc(historical.PropertyOrder, func(name string) bool {
-			return name == "supersession"
-		})
 	}
 	schema.Properties["schema"].Enum = []any{mcpResultVersion}
 	schema.Properties["operation"].Enum = []any{operation}
@@ -256,9 +252,10 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
 			},
 		}},
-		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload.", InputSchema: map[string]any{
+		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "trail_id"}, "properties": map[string]any{
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
+				"supersession": map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities it named and the withholding rows. This member exists only on a mousa.source_trail.v4 record; a legacy record has none. It reports recorded evidence and reinterprets nothing under the current activation projection. Requires native declaration and activation administration for this source; omitted or false keeps the filtered inspection."},
 			},
 		}},
 	}

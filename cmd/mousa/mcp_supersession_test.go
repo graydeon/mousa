@@ -136,11 +136,8 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 	requireMCPSchemaProperties(t, historical, []string{
 		"id", "request_id", "decision_id", "decision_outcome", "decision_reasons", "expression",
 		"budget_bytes", "used_bytes", "packet_id", "lifecycle_excluded", "candidates", "schema",
-		"packing_policy", "associated", "association_omissions",
+		"packing_policy", "associated", "association_omissions", "supersession",
 	})
-	if historical.Properties["supersession"] != nil {
-		t.Fatal("the inspection opt-in is not implemented yet, but the trail schema declares it")
-	}
 	for _, schema := range []*jsonschema.Schema{query, trail} {
 		encoded, err := json.Marshal(schema)
 		if err != nil {
@@ -166,7 +163,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 		"mousa_sync":   {"items", "segment_policy", "source"},
 		"mousa_status": {"source"},
 		"mousa_query":  {"budget_bytes", "packing_policy", "policy", "query", "source", "supersession"},
-		"mousa_trail":  {"source", "trail_id"},
+		"mousa_trail":  {"source", "supersession", "trail_id"},
 	} {
 		got := make([]string, 0, len(properties[name]))
 		for property := range properties[name] {
@@ -220,7 +217,7 @@ func TestMCPSupersessionQueryOptInInputBoundaries(t *testing.T) {
 	decisions, decisionsDigest := tableDigest(t, run.store, "policy_decisions")
 	trails, trailsDigest := tableDigest(t, run.store, "source_trails")
 	client.call("mousa_query", json.RawMessage(`{"source":"alpha","query":"oldterm","policy":"dedup","budget_bytes":8192,"supersession":"true"}`), "invalid_arguments")
-	client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": strings.Repeat("a", 64), "supersession": true}, "invalid_arguments")
+	client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": strings.Repeat("a", 64), "supersession": "true"}, "invalid_arguments")
 	client.call("mousa_status", map[string]any{"source": "alpha", "supersession": true}, "invalid_arguments")
 	if after, digest := tableDigest(t, run.store, "policy_decisions"); after != decisions || digest != decisionsDigest {
 		t.Fatalf("a rejected argument wrote a decision: %d/%s", after, digest)
@@ -499,9 +496,8 @@ func TestMCPSupersessionQueryOptInKeepsFilteredV4History(t *testing.T) {
 	if _, present := query["supersession_excluded"]; present || len(hits(query)) != 1 {
 		t.Fatalf("MCP default query changed under active administration: %v", query)
 	}
-	// The trail opt-in is a later slice: the input stays undeclared and rejected, and
-	// ordinary inspection keeps filtering the native-only recorded member.
-	client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": native["trail_id"], "supersession": true}, "invalid_arguments")
+	// Ordinary inspection keeps filtering the native-only recorded member; the opted-in trail
+	// inspection and its own boundaries are covered by the regressions below.
 	trail := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": native["trail_id"]}, "")
 	history := trail["historical"].(map[string]any)
 	if _, present := history["supersession"]; present || history["schema"] != "mousa.source_trail.v4" || history["used_bytes"] != float64(0) || history["candidates"].([]any)[0].(map[string]any)["selected"] != false {

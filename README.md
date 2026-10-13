@@ -81,8 +81,10 @@ Source Trail inspection are implemented. The same executable serves local stdio 
 Revision-pinned supersession declarations and activation administration are available,
 together with an explicit native JSONL query opt-in
 (`query --source <id> --supersession <text>`) and the same opt-in on the local stdio MCP
-`mousa_query` tool. Default and opted-out queries remain uncurated and
-withhold nothing; opt-in usage, response fields and the validation boundary are in the
+`mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
+`mousa.source_trail.v4` record recorded. Default and opted-out queries and inspections
+remain uncurated and withhold nothing; opt-in usage, response fields and the validation
+boundary are in the
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Semantic retrieval, hybrid ranking,
 secret filtering and full model-window budgeting remain planned.
 

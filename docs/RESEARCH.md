@@ -69,14 +69,18 @@ replacement, deactivation, reactivation, exact retry, stale rejection, rejected
 input, damaged-store rejection, and the read-only current-state view (its three-field
 JSON projection, deactivation as an explicit null, per-source isolation, usage and
 missing-history exits, refusal to create or migrate a store, and failure without
-repair over a damaged projection). MCP supersession query opt-in is implemented as the
-optional `supersession` boolean on `mousa_query`, with product client regressions in
-`cmd/mousa/mcp_supersession_test.go` over the built executable and fresh temporary
-stores; [MCP supersession opt-in](MCP_SUPERSESSION.md) records the client contract, its
-inspection half and the [independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding).
+repair over a damaged projection). The MCP supersession opt-in is implemented for both
+tools: the optional `supersession` boolean withholds a pinned predecessor on
+`mousa_query`, and the same boolean on `mousa_trail` returns the recorded consultation
+member of a `mousa.source_trail.v4` record. Product client regressions cover both halves
+in `cmd/mousa/mcp_supersession_test.go` and `cmd/mousa/mcp_trail_supersession_test.go`
+over the built executable and fresh temporary stores;
+[MCP supersession opt-in](MCP_SUPERSESSION.md) records the client contract and the
+[independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding).
 The capture records two fresh-store observations with 129 steps, 2,847 passing
 assertions and 39 stable selections each, plus replay and rejecting controls.
-Opted-in inspection remains unimplemented and has no client capture; these observations
+The inspection opt-in has no independent client capture yet; that paired capture remains
+**NOT RUN**, and these observations
 make no semantic-truth, retrieval-quality, performance or native-host claim.
 Product domain regressions cover exact predecessor matching, multiple segments,
 lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,

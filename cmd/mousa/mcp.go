@@ -300,7 +300,10 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var inspection sqlite.TrailInspection
 			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
-			if inspection.Historical != nil {
+			// The recorded member is filtered here, at the client boundary: the store
+			// read verifies it either way, and an opted-out caller keeps the property
+			// set it had before the opt-in existed.
+			if inspection.Historical != nil && !args.Supersession {
 				inspection.Historical.Supersession = nil
 			}
 			result = mcpTrailResult{Source: args.Source, TrailID: args.TrailID.String(), TrailInspection: inspection}
