@@ -331,6 +331,18 @@ Store, permitted sources and trusted caller are fixed at startup. Ingestion is
 disabled unless that source also has `--ingest-source`. The default stdio mode
 has no listener, directory import, shell, policy administration or withdrawal tool.
 
+`mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed
+authorization decision ID and reasons, but no history or existence disclosure.
+Unknown and foreign identities return `not_found` without committing the attempted
+decision. An already-open inspector also returns `not_found` for a trail whose missing
+decision parent prevents source ownership verification; fresh-open verification instead
+rejects that damaged store as `integrity`. Neither path repairs history.
+
+Native `query --source <id> --associations <file>` can produce v3 history that the
+configured same-source MCP inspector reads. Omitted, false and true `supersession`
+inputs all preserve its association metadata and producing identities without adding
+a supersession member.
+
 `--caller cli` uses the existing CLI retrieval policy, including source-scoped
 denials and withdrawal. This is trusted local configuration, not caller
 authentication or protection from someone who can modify the store. Other

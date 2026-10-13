@@ -195,6 +195,12 @@ identity that was never stored, including an unknown trail identity, still repor
 the v1–v3 readers keep the codes they already reported for the same damage. Every other storage error
 keeps its own code; a v4 read never relabels a busy, unreadable or malformed store as corruption.
 
+Source-scoped inspection first establishes ownership through the typed decision parent.
+If that parent is missing in an already-open inspector, own-source and foreign-source
+orphans remain indistinguishable from unknown IDs: all return `not_found`. The
+unscoped canonical reader and fresh-open startup verifier reject that damage as
+`integrity`. No path repairs damage or releases partial history.
+
 ### Transaction-local consultation
 
 The store side of that contract is implemented in
@@ -470,10 +476,13 @@ Tool errors set MCP `isError: true`. Boundary codes include
 `invalid_arguments`, `source_not_permitted`, `ingestion_not_permitted`,
 `invalid_item`, `resource_limit`, `busy` and `cancelled`; canonical storage errors
 retain their existing codes, with `operation_failed` for other failures.
-Authorization exclusions are successful query/inspection results, not tool
-errors: they carry current decision reasons but no selected evidence or
-historical trail payload. An allowed request for another source's trail returns
-`not_found`.
+Authorization exclusions are successful query/inspection results, not tool errors.
+Denied inspection commits its fresh authorization decision and necessary input rows,
+returns that decision's ID and reasons, and performs no historical lookup. It releases
+no historical payload. Unknown or foreign-source inspection errors roll back their
+attempted authorization and return `not_found`; historical and administrative rows
+remain unchanged. MCP inspection can read native-created same-source v3 association
+history even though MCP query does not produce it.
 
 Unknown tools/methods and malformed protocol parameters use SDK JSON-RPC errors.
 Invalid JSON or an oversized inbound frame terminates the stdio session with a

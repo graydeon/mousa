@@ -384,7 +384,8 @@ read verifies that member either way.
 | `supersession: true`, v1–v3 record | No member: those versions have none, so the response keeps today's property set |
 | `supersession: true`, authorization declined | No `historical` at all, no member, and the call is a successful result with the current decision reasons — denial must not become a tool error or reveal whether a trail exists |
 | `supersession: true`, unknown or other-source trail | `not_found`, unchanged |
-| `supersession: true`, damaged v4 record | `integrity` failure; the record is never repaired or partially returned |
+| `supersession: true`, damaged v4 record whose source ownership is established | `integrity` failure; the record is never repaired or partially returned |
+| Already-open inspection, missing decision parent needed to establish ownership | `not_found`, like an unknown or foreign identity; the unscoped canonical reader and fresh-open startup verifier reject the damage as `integrity` |
 
 **Reasons.** A separately opted-in inspection is the smallest change that keeps ordinary
 inspection compatible in shape and stable semantics: every existing caller of `mousa_trail` keeps exactly the
@@ -401,6 +402,22 @@ change a candidate's current `indexed_now` value; fresh authorization may change
 wrapper or decline disclosure. The recorded member, when authorization permits it,
 remains the one recorded at query time.
 
+**Authorization writes and refusal.** Successful inspection, including denial, commits
+one fresh authorization decision and its necessary input rows. The returned
+`authorization_decision_id` identifies that decision; denial returns its reasons but
+does not look up history or reveal existence. An unknown, foreign or damaged-history
+error instead rolls back the in-flight transaction, including its attempted decision.
+Neither path changes historical or administrative rows.
+
+Source-scoped inspection establishes ownership by joining the trail's typed decision
+parent. A trail has no independent source column. If that parent disappears through
+out-of-band damage after the inspector opens, neither an own-source nor a foreign-source
+orphan can establish ownership, so both remain `not_found`. Reading unverified record
+bytes or reporting integrity merely because a trail row exists would disclose foreign
+existence. This live-open refusal differs from fresh-open verification, which rejects
+the damaged store before serving requests, and from successful denial, which commits
+authorization without looking up even damaged history.
+
 **Output schema implication.** The declared member needs the identity types it contains
 (`mousa.SupersessionActivationID`, `mousa.SupersessionDeclarationID` and
 `mousa.RepresentationID`) mapped to the existing lowercase-hex string declaration
@@ -415,11 +432,11 @@ query-only build and extends only the trail schema; the inspection regressions p
 accepted digests of the sync, status and query output schemas, so a shared declaration
 cannot silently change them.
 
-Two record versions are distinguishable here and one is not reachable over this
-interface: a default JSONL query records v1 for `original` packing and v2 for
-`exact-v1`, both without a member, while a v3 record belongs to the directory association
-surface, which a configured JSONL MCP source cannot produce. Only a v4 record carries the
-member, and the opt-in fabricates no null object for any other version.
+A default JSONL query records v1 for `original` packing and v2 for `exact-v1`,
+both without a member. MCP query does not produce associations, but native
+`query --source alpha --associations FILE` can create v3 history for the same
+JSONL source, and MCP inspection can read it under either packing policy.
+Only a v4 record carries the member; the opt-in fabricates no member for v1–v3.
 
 **Inspection input and result** (documentation example; the field set is what the
 committed build returns and the identities are placeholders rather than captured
@@ -522,11 +539,12 @@ boundary and do not duplicate those tests.
 | Restart | Under unchanged index membership and allowing authorization, the recorded historical fields and supersession member are unchanged; the inspection authorization ID and fresh query request/decision/trail IDs vary and are validated separately | Covered by `TestMCPSupersessionQueryOptInRestartKeepsRecordedMember` |
 | Inspection opt-in property set | Omitted and explicit `false` keep the filtered inspection under both packing policies; `supersession: true` adds exactly the recorded `historical.supersession` member and no other property, and the returned member equals the producing record's own member as canonical JSON | Covered by `TestMCPSupersessionTrailOptInPreservesDefaultPropertySet` |
 | Recorded members | The recorded member is returned for an active declaration, a verified absence of history, a deactivation and an unconsulted denial, and the recorded identities, consultation flag, disposition rows and pins are asserted against the fixture | Covered by `TestMCPSupersessionTrailOptInRecordedMembers` |
-| Legacy record versions | A v1 record (`original` packing) and a v2 record (`exact-v1`) keep today's property set and gain no fabricated null member; a v3 record is not reachable from a configured JSONL MCP source | Covered by `TestMCPSupersessionTrailOptInLegacyVersions` |
+| Legacy record versions | v1 (`original` packing), v2 (`exact-v1`) and native-created same-source v3 association history keep their historical properties and producing identities under omitted/false/true; none gains a member | Covered by `TestMCPSupersessionTrailOptInLegacyVersions` and `TestMCPSupersessionTrailNativeAssociationHistory` |
 | Strict input errors | `null`, `"true"`, `1`, `0`, a duplicate key, an unknown key, non-object arguments and trailing data are rejected with `invalid_arguments` and no `result`, and each rejected call is bracketed against the stored trail, candidate, declaration, activation and decision rows; `mousa_sync` and `mousa_status` still reject the field | Covered by `TestMCPSupersessionTrailOptInInputBoundaries` |
-| Declined authorization and unknown trails | A declined inspection is a successful result with the current denial reasons and no `historical` payload; an unknown or other-source trail stays `not_found`; neither commits an audit row | Covered by `TestMCPSupersessionTrailOptInAuthorizationBoundaries` |
+| Declined authorization and unknown trails | Denial succeeds with current reasons and no history, committing exactly its response-bound decision and necessary input children while existing rows remain unchanged; unknown/foreign errors roll back their attempted decision | Covered by `TestMCPSupersessionTrailOptInAuthorizationBoundaries` and `TestMCPSupersessionTrailDeniedAudit` |
 | Inspection after an activation change | A restart, a replacement activation and a deactivation after the trail was recorded do not change the returned member, and the fresh wrapper authorization identity is validated separately | Covered by `TestMCPSupersessionTrailOptInRestartAndActivationChange` |
 | Damaged v4 records | A removed candidate row, a removed candidate segment, a removed recorded activation event, a removed recorded declaration and a damaged record all fail with `integrity` under the default and opted-in call, with no partial member, no repair and no committed audit row | Covered by `TestMCPSupersessionTrailOptInRefusesDamagedRecords` |
+| Missing decision parent | Already-open own/foreign orphan and unknown inspections return the same `not_found` without writes; denied inspection commits only authorization without reading damaged history; unscoped canonical reads and fresh-open verification reject the orphan as `integrity` | Covered by `TestMCPSupersessionTrailOrphanSourceMasking` |
 
 Ordinary inspection keeps its filter unless the caller opts in:
 `TestMCPSupersessionQueryOptInKeepsFilteredV4History` asserts that the default

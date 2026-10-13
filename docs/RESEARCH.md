@@ -82,6 +82,13 @@ assertions and 39 stable selections each, plus replay and rejecting controls.
 The inspection opt-in has no independent client capture yet; that paired capture remains
 **NOT RUN**, and these observations
 make no semantic-truth, retrieval-quality, performance or native-host claim.
+The 2026-10-13 inspection evidence correction adds real stdio regressions in
+`cmd/mousa/mcp_trail_audit_test.go`: successful denial commits a response-bound decision
+and its input children with all existing rows unchanged; native JSONL association
+queries produce inspectable v3 history under both packing policies; and own/foreign
+orphans remain source-masked `not_found` in an already-open inspector while canonical
+and startup verification reject the damage as integrity. These correct documentation
+claims and missing fixtures, not runtime regressions. No storage semantics changed.
 Product domain regressions cover exact predecessor matching, multiple segments,
 lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,
 ancestor pins, source isolation, malformed administrative inputs, row order and

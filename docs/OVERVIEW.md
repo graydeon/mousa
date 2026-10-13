@@ -96,6 +96,10 @@ the released selection, so an unchanged selection has the same packet identity.
 Canonical read and startup verification check the recorded administration and candidate
 content. A missing canonical parent named by v4 is an integrity failure; an unknown
 requested identity remains `not_found`, and legacy readers retain their behavior.
+Source-scoped inspection is narrower: if a missing decision parent prevents ownership
+verification in an already-open inspector, it returns `not_found` for own and foreign
+orphans alike. Fresh-open verification rejects the store instead. Successful denied
+inspection commits only fresh authorization evidence and never looks up history.
 Retired indexed text is not archived: historical byte comparisons can use only text
 still retained. A consumer's token-limited rendering is not a stored Source Trail or a
 new canonical packet.

@@ -513,6 +513,12 @@ rewrites or partially accepts a record, and later activation changes, deactivati
 do not reinterpret a stored trail. A named canonical dependency that has disappeared is classified as
 that damage rather than as ordinary unavailability: the read reports an integrity error for it, while
 an identity that was never stored keeps its `not_found`, as do the v1–v3 reads.
+Source-scoped inspection must first prove ownership through the typed decision parent.
+If that parent has disappeared after the inspector opened, the source guard returns
+`not_found` for both own and foreign orphans, as for an unknown ID. It does not infer
+ownership from unverified record bytes. Unscoped canonical reads and fresh-open startup
+verification still reject the damage as `integrity`; this is not an in-flight repair or
+a successful read. Denial precedes that guard and commits only fresh authorization.
 
 ## Limitations and non-goals
 

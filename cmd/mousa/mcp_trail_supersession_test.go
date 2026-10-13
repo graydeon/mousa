@@ -450,6 +450,10 @@ func TestMCPSupersessionTrailOptInLegacyVersions(t *testing.T) {
 			trailID := query["trail_id"].(string)
 
 			omitted := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": trailID}, "")
+			optedOut := mcpInspectTrail(client, "alpha", trailID, false)
+			if !reflect.DeepEqual(mcpStableTrailValues(t, omitted), mcpStableTrailValues(t, optedOut)) {
+				t.Fatalf("explicit false changed legacy history: %v versus %v", omitted, optedOut)
+			}
 			opted := mcpInspectTrail(client, "alpha", trailID, true)
 			historical := omitted["historical"].(map[string]any)
 			// A default JSONL query writes the legacy record: it carries no schema property for the
