@@ -8,13 +8,14 @@ argument on both tools, declares the count the query reports and the recorded me
 inspection returns, and reuses the native transaction and the verified inspection read;
 the query cases of the acceptance matrix are covered by product regressions in
 `cmd/mousa/mcp_supersession_test.go` and the inspection cases by
-`cmd/mousa/mcp_trail_supersession_test.go`. The independent query-only client capture is
-published in the benchmark archive below; the required independent stdio inspection
-capture is named in section 6 and is still **NOT RUN**. The JSON blocks below are
-documentation examples with placeholder identities, not captured responses.
+`cmd/mousa/mcp_trail_supersession_test.go`. Independent query-only and
+2026-10-13 inspection observations are published separately in the benchmark archive
+linked in section 6. Both milestones are accepted; their observations retain their
+own source pins. The JSON blocks below are documentation examples with placeholder
+identities, not captured responses.
 
 The implemented native contract remains
-[Opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md). This proposal adds a
+[Opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md). This interface adds a
 client boundary for that contract. It changes no native behavior, storage object,
 canonical record, schema version, migration, dependency or benchmark file.
 
@@ -179,7 +180,7 @@ or configuration is introduced.
 **Reasons.** Native administration already owns preparation: `supersession declaration
 put` and `supersession activation put` write the immutable records against the source and
 revisions the operator names, and `mousa_query` therefore reuses them unchanged. MCP
-administration tools and new storage objects are outside this proposal. A source label
+administration tools and new storage objects are outside this interface. A source label
 already resolves to one canonical source identity, so adding an MCP-side source mapping
 would create a second way to name the same source.
 
@@ -219,7 +220,7 @@ The MCP handler must not add an administrative read of its own before or after t
 that does not gate withholding, canonical candidate rank and size, both packing policies
 (`original` and `exact-v1`), the rejection of a supersession-plus-association
 combination, and fail-closed corruption handling are already implemented and are reused
-as they are. This proposal adds no ranking rule, no storage object and no new
+as they are. This interface adds no ranking rule, no storage object and no new
 disposition value.
 
 ## 4. Output compatibility
@@ -515,9 +516,9 @@ holds. It contains no disposition for a denied or unconsulted record.
 The query cases below are covered by the committed product regressions in
 `cmd/mousa/mcp_supersession_test.go` and the inspection cases by
 `cmd/mousa/mcp_trail_supersession_test.go`, which run the built executable over stdio
-against fresh temporary SQLite stores. Independent query-only client observations are
-published below; the required independent inspection capture remains **NOT RUN**. The
-store-level transaction and damage semantics are already covered by the existing product
+against fresh temporary SQLite stores. Independent query-only and inspection observations
+are published separately below. The store-level transaction and damage semantics are
+already covered by the existing product
 regressions in `internal/sqlite/trail_supersession_test.go` and
 `internal/sqlite/supersession_activation_test.go`; the cases here prove the client
 boundary and do not duplicate those tests.
@@ -562,42 +563,55 @@ and schema controls. A focused regression also preserves JSON types when compari
 recorded metadata with the frozen schedule. The real forbidden-write control fails
 capture and replay. Earlier archives retain their own runners and historical limits.
 
-This is synthetic stdio client-boundary evidence, not semantic truth, retrieval quality,
-performance, authentication or native-host acceptance. It covers the query half only. The
-inspection opt-in is implemented and covered by the product regressions above, but it has
-no independent stdio client observation yet: that capture remains **NOT RUN**, and the
-paired inspection milestone is not accepted until it is published against the product
-revision that ships this interface. Product-local tests do not replace that evidence.
+### Accepted inspection observations — 2026-10-13
 
-### Required inspection-capture requirements
+The [independent inspection capture](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
+is accepted with [product PR75](https://github.com/graydeon/mousa/pull/75) and
+[companion PR30](https://github.com/graydeon/mousa-benchmarks/pull/30).
+It targets public product commit `5ffa0286b35ecf84b36abe53d029a78075c02b86`, tree
+`c73fb12a9ccdc6df65ad998a3039255a43dc6ad1`, not the later product merge
+`899449f8b000c7b35a4f98266efdfdf1119c1971`. The capture-time companion HEAD is
+`2f419c47be796f6e647997e120fe5a364351e9ce`, tree
+`422fe7106535c6646dfea2eb69db3adea9b52fbd`; runner and fixture hashes pin the bytes
+used. The evidence head `9a5a4433f0bdce707288c7e7b97fb986d5ce38ff` and later
+companion merge `7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d` share tree
+`5c0708b0902c71eb79c42ca45d241dc53885d544`. Those are publication identities,
+not renamed capture-time identities.
 
-The following table specifies the pending combined query-and-inspection capture; it is not
-a list of observations from the published query-only archive. Inspection opt-in is
-implemented but unmeasured, and each isolation requirement must be demonstrated by that
-capture rather than inferred from this one.
+Two independent final captures each record 268 steps, 5,314 passing assertions and
+60 stable historical selections; their offline replays pass. All 60 selections match
+between stores after the protocol's declared fresh identity exclusions, with producing
+identities validated against each capture's own native query and stored trail.
+A supplemental comparison finds all 18 denied wrappers per store equal after excluding
+only the fresh authorization ID and echoed requested trail ID. It is separate from the
+per-capture assertion count, which does not represent independent relevance cases.
 
-Use a standalone standard-library runner that speaks MCP `2025-11-25` over the pinned
-executable's stdio in separate processes, with pilot, capture, replay and negative-control
-modes. The existing query-only runner is a starting point for this protocol.
+The [runner, frozen protocol and reproduction guide](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/mcp-trail-supersession)
+record the following client-boundary evidence without importing product internals:
 
-| Requirement | Form |
+| Boundary | Recorded evidence |
 |---|---|
-| Pins | Product commit and tree, benchmark head and tree, `GOWORK=off`, Go version, and the built binary's SHA-256 with a build receipt (command, exit, output digest) |
-| Real requests and responses | Exact request bytes and exact response bytes per call, from `initialize`, `notifications/initialized`, `tools/list` and `tools/call` |
-| Fresh stores | Each case starts from a new store prepared by the runner, so no case depends on another's residue |
-| State brackets | A logical SQLite fingerprint (table names, row counts and content digests, including WAL-visible state) before and after every command, with reads required to change only their own recorded audit rows |
-| Cases | Discovery; omitted versus explicit false stable-value/property-set equality with raw per-call values retained; active suppression under both packing policies; consulted no-history; deactivation; the strict input rejections; inspection opt-in true versus false; corruption failure; restart determinism |
-| Negative controls | An intentionally inverted assertion, an undeclared response field injected into a captured response, a damaged activation row the call must refuse, and a read whose bracket is made to look like a write |
+| Build and discovery | Clean anonymous public product checkout; Go 1.27.1, `GOWORK=off`, `CGO_ENABLED=0`, `go build -trimpath`, binary SHA-256 and build receipt; MCP `2025-11-25` discovery with only the trail schemas extended from the query-only baseline |
+| Real requests and responses | Exact stdio frames, native commands, exits and notifications; generated frames bound to the frozen schedule with JSON types and recursive duplicate-key checks preserved |
+| Historical inspection | Both packing policies; v4 active, no-history, deactivated and recorded unconsulted-denial members; omitted/false filtering; later activation and content changes, restart; native-created v1–v3 including same-source v3 associations, without fabricating a member |
+| State and refusals | Full logical SQLite snapshots including committed WAL state; successful denial commits only response-bound authorization and necessary input children; erroneous reads commit nothing; already-open own/foreign orphan refusals stay masked `not_found`, distinct from fresh-open startup integrity refusal |
+| Controls | 17 rehashed negative mutations reject at named detectors; two ordinary controls pass; a separate actual extra-table-and-row write makes capture and replay fail at `orphan-deny-unknown-true:only-bound-authorization-write` |
+
+These are synthetic native/stdio observations, not semantic truth, retrieval quality,
+latency/throughput, authentication, native-host acceptance or general physical database
+integrity. The named controls do not establish general fault coverage. Startup refusal
+does not prove live transaction rollback, and a matching rebuilt binary in the tested
+environment is not universal reproducible-build proof. Current `indexed_now` values
+remain live properties, not immutable historical selection fields.
 
 The existing native capture at product `e0837750bc8972d6fc7ebffc86a8fba05a0ee1f4`
 under benchmark `f252d7aadba35330abcd0c387053a017f08b1b8d` remains native CLI
-evidence. It is not relabelled as MCP acceptance, and it is not a substitute for the
-capture above.
+evidence. It and the query-only archive above keep their original source pins and raw
+bytes; neither is relabelled as inspection acceptance.
 
-## 7. Open questions for review
+## 7. Accepted client contract decisions
 
-Both implemented slices answer these three questions as the recommendation states, and the
-review may still change any of them.
+Both implemented and accepted slices use these decisions:
 
 1. **Schema evolution or a new envelope version.** This document treats a declared
    optional property in a tool's static output schema as an additive change and keeps
@@ -629,9 +643,9 @@ Each slice is independently reviewable and changes no native code path.
    `cmd/mousa/mcp_tools.go` (accepted field, output-schema member and identity-type
    mapping, description), and the inspection cases in
    `cmd/mousa/mcp_trail_supersession_test.go`.
-3. **Documentation status and companion capture — documents updated, capture pending.**
-   The status notes for the inspection half are updated; the companion benchmark capture
-   that the paired gate below requires is still outstanding.
+3. **Documentation status and companion capture — accepted.**
+   The independent inspection observations above complete the paired milestone.
+   Product-local regressions remain separate evidence from the standalone client archive.
 
 ## Non-goals
 

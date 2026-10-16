@@ -90,6 +90,9 @@ supersession member. Opt-in usage and source-masked refusal boundaries are in th
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Semantic retrieval, hybrid ranking,
 secret filtering and full model-window budgeting remain planned.
 
+The [2026-10-13 independent MCP inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
+record synthetic native/stdio behavior, not retrieval quality or performance.
+
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
 The [research record](docs/RESEARCH.md) separates regression coverage from measured
 retrieval quality and performance.
