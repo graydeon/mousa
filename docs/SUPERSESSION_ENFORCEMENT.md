@@ -8,8 +8,10 @@ opted-out MCP response are unchanged. Directory queries and
 association-plus-supersession combinations are rejected.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
-[MCP supersession opt-in](MCP_SUPERSESSION.md); its independent client capture is
-outstanding.
+[MCP supersession opt-in](MCP_SUPERSESSION.md). The
+[2026-10-13 independent inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
+record its synthetic native/stdio client boundary separately from the older native
+and query-only captures; they do not measure retrieval quality or performance.
 
 `Store.EvaluateAndTraceSupersessionLexical` evaluates current authorization, reads
 source-scoped verified candidates, consults verified administration and builds

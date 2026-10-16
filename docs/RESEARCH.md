@@ -79,9 +79,41 @@ over the built executable and fresh temporary stores;
 [independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding).
 The capture records two fresh-store observations with 129 steps, 2,847 passing
 assertions and 39 stable selections each, plus replay and rejecting controls.
-The inspection opt-in has no independent client capture yet; that paired capture remains
-**NOT RUN**, and these observations
-make no semantic-truth, retrieval-quality, performance or native-host claim.
+
+The [2026-10-13 independent inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession),
+accepted with [product PR75](https://github.com/graydeon/mousa/pull/75) and
+[companion PR30](https://github.com/graydeon/mousa-benchmarks/pull/30), add two final
+fresh-store captures and offline replays. Each capture records 268 steps, 5,314 passing
+assertions and 60 stable historical selections. All 60 selections match between stores;
+a separate comparison of all 18 denied wrappers per store excludes only the fresh
+authorization ID and echoed requested trail ID, with every remaining field equal.
+Producing identities are validated within each capture before the protocol's enumerated
+fresh identity fields are excluded from historical cross-store comparison.
+The assertion count is not a count of independent relevance cases.
+
+The capture targets public product commit `5ffa0286b35ecf84b36abe53d029a78075c02b86`,
+tree `c73fb12a9ccdc6df65ad998a3039255a43dc6ad1`, built with Go 1.27.1,
+`GOWORK=off`, `CGO_ENABLED=0` and `go build -trimpath`. The capture-time companion
+HEAD is `2f419c47be796f6e647997e120fe5a364351e9ce`; runner and fixture bytes are
+separately hashed. The later evidence head `9a5a4433f0bdce707288c7e7b97fb986d5ce38ff`
+and companion merge `7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d` publish those bytes;
+the product merge `899449f8b000c7b35a4f98266efdfdf1119c1971` is not the observation
+pin. Earlier query-only and native captures keep their original pins and raw bytes.
+
+All 17 rehashed negative mutation controls reject at their named detectors, while two
+ordinary controls pass. Separately, a real extra-table-and-row write during a denied
+inspection makes capture and replay fail at
+`orphan-deny-unknown-true:only-bound-authorization-write`. These are specific detector
+checks, not general fault coverage. The [runner and frozen protocol](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/mcp-trail-supersession)
+provide reproduction instructions, comparison exclusions and retained failure receipts.
+
+This is synthetic native/stdio client evidence, not semantic truth, retrieval quality,
+latency/throughput, authentication, native-host acceptance or general physical database
+integrity. A matching rebuilt binary in the tested environment is not universal
+reproducible-build proof. Historical inspection verifies recorded consultation, not
+today's activation projection; current `indexed_now` fields are not frozen history.
+Startup refusal is distinct from live transaction rollback.
+
 The 2026-10-13 inspection evidence correction adds real stdio regressions in
 `cmd/mousa/mcp_trail_audit_test.go`: successful denial commits a response-bound decision
 and its input children with all existing rows unchanged; native JSONL association
