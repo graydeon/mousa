@@ -1,16 +1,17 @@
 # MCP supersession opt-in
 
-**Status: the `mousa_query` opt-in is implemented; the `mousa_trail` opt-in is
-proposed, not implemented.** This document specifies one explicit optional
+**Status: the `mousa_query` and `mousa_trail` opt-ins are implemented; their
+independent client captures are separate.** This document specifies one explicit optional
 `supersession` boolean on the existing `mousa_query` tool, and a matching opt-in on
 `mousa_trail` for inspecting what a query recorded. The current build accepts the
-argument on `mousa_query`, declares the count it reports and reuses the native
-transaction; the query cases of the acceptance matrix are covered by product
-regressions in `cmd/mousa/mcp_supersession_test.go`. `mousa_trail` still rejects the
-argument as `invalid_arguments` and MCP responses still omit every native-only
-supersession field there, so every opted-in inspection case remains **NOT RUN**.
-The independent query-only client capture is published in the benchmark archive below. The JSON blocks below are documentation examples with placeholder
-identities, not captured responses.
+argument on both tools, declares the count the query reports and the recorded member the
+inspection returns, and reuses the native transaction and the verified inspection read;
+the query cases of the acceptance matrix are covered by product regressions in
+`cmd/mousa/mcp_supersession_test.go` and the inspection cases by
+`cmd/mousa/mcp_trail_supersession_test.go`. The independent query-only client capture is
+published in the benchmark archive below; the required independent stdio inspection
+capture is named in section 6 and is still **NOT RUN**. The JSON blocks below are
+documentation examples with placeholder identities, not captured responses.
 
 The implemented native contract remains
 [Opt-in supersession enforcement](SUPERSESSION_ENFORCEMENT.md). This proposal adds a
@@ -26,8 +27,8 @@ result properties**, and keep the envelope identifier `mousa.mcp_result.v1`:
 |---|---|---|
 | `mousa_query` input | optional `supersession`: boolean (implemented) | supplied `true` |
 | `mousa_query` result | optional `supersession_excluded`: integer (implemented) | the caller opted in, including value `0` |
-| `mousa_trail` input | optional `supersession`: boolean (proposed) | supplied `true` |
-| `mousa_trail` result `historical` | optional `supersession`: object (proposed) | the caller opted in and the recorded trail is `mousa.source_trail.v4` |
+| `mousa_trail` input | optional `supersession`: boolean (implemented) | supplied `true` |
+| `mousa_trail` result `historical` | optional `supersession`: object (implemented) | the caller opted in and the recorded trail is `mousa.source_trail.v4` |
 
 Reasons, in detail below: a tool publishes one static output schema per session, that
 schema is closed, and a validating client rejects a response field the schema does not
@@ -38,19 +39,22 @@ compatibility guarantee.
 
 ## Current boundary
 
-The client boundary today, from the current source:
+The client boundary of the implemented build, from the current source:
 
 - `decodeMCPArguments` in `cmd/mousa/mcp_tools.go` accepts exactly the field names listed
-  per operation, which now include `supersession` for `mousa_query`. Any other name, a
-  duplicate name, a `null` value and a value of the wrong type are rejected before the
-  operation switch, and the call returns
+  per operation, which include `supersession` for `mousa_query` and `mousa_trail`. Any
+  other name, a duplicate name, a `null` value and a value of the wrong type are rejected
+  before the operation switch, and the call returns
   `mcpFailure(operation, "", "invalid_arguments", ...)` with no `result`.
 - `mcpOutputSchema` in the same file declares `supersession_excluded` for `mousa_query`
-  and still deletes `supersession` from the `mousa_trail` `historical` schema, so the
-  query count is declared to every client and the native inspection member is not.
+  and the recorded `supersession` member inside `mousa_trail`'s `historical` schema, and
+  maps the activation, declaration and representation identity types that member contains
+  to the existing lowercase hex string declaration. The other three output schemas are
+  unchanged from the query-only build.
 - `(*mcpApplication).call` in `cmd/mousa/mcp.go` runs `mousa_query` through
   `queryItemsForRequestWithSupersession` with the caller's boolean and a nil association
-  list, and still explicitly nils `inspection.Historical.Supersession` for `mousa_trail`.
+  list, and inspects the trail through `Store.InspectSourceTrail` in both cases, clearing
+  `inspection.Historical.Supersession` only when the caller did not opt in.
 - `mcpCommand` opens the canonical store once, before the server accepts requests. No
   tool call opens, creates or migrates a store, so an MCP argument has no store-open
   boundary to change.
@@ -106,14 +110,13 @@ take the existing default path. Only explicit `true` opts in.
 |---|---|---|
 | Field omitted | Legacy path; response property set unchanged | The field is optional and defaults to `false` |
 | `false` | Same path, property set and stable semantic values as omission | The opt-in is one boolean value, not a presence marker |
-| `true` | `queryItemsForRequestWithSupersession(..., nil, true)` | The existing CLI entry point already implements this behavior |
+| `true` | `queryItemsForRequestWithSupersession(..., nil, true)` on `mousa_query`; the recorded member is returned by `mousa_trail` | The existing CLI entry point already implements the query behavior, and the inspection read already verifies the member |
 | `null` | Rejected: `invalid_arguments` | The decoder refuses any null field value |
 | `"true"`, `"false"` | Rejected: `invalid_arguments` | A string is not the declared boolean type; no truthy coercion |
 | `1`, `0` | Rejected: `invalid_arguments` | A number is not the declared boolean type |
 | Repeated `supersession` key | Rejected: `invalid_arguments` | Existing duplicate-field rule |
 | Unknown field name alongside the opt-in | Rejected: `invalid_arguments` | Existing unknown-field rule |
 | `supersession` on `mousa_sync` or `mousa_status` | Rejected: `invalid_arguments` | Each operation declares its own accepted field list |
-| `supersession` on `mousa_trail` | Rejected until the inspection opt-in in section 5 exists | The field is meaningful only on a tool that declares it |
 | Arguments that are not an object, or that carry data after the object | Rejected: `invalid_arguments` | Existing arguments-object and trailing-data rules; a valid JSON-RPC frame cannot carry the second form, so it is asserted at the decoder boundary |
 
 **Reasons.** Strict typing keeps one representation per concept: the decoder's existing
@@ -123,14 +126,12 @@ decoder rather than on the declared schema. Omission and `false` must be
 indistinguishable because the repository treats a default query as the published
 compatibility boundary, not as a spelling to be detected.
 
-**Discovery.** The `mousa_query` input schema declares one optional property,
-`"supersession": {"type": "boolean"}`, whose description states that the flag withholds
-a candidate whose own representation is the selected declaration's exact predecessor pin
-for the configured JSONL source and that the default remains uncurated. Committed
-`mousa_query` declares it, the other three tools do not, and their published input and
-output schemas are unchanged; the completed contract also extends `mousa_trail` as
-section 5 describes. `mousa_sync` and `mousa_status` keep their current input and output
-schemas.
+**Discovery.** Each opted-in tool's input schema declares one optional property,
+`"supersession": {"type": "boolean"}`, whose description states the withholding rule for
+`mousa_query` and the recorded member for `mousa_trail`. Both declared tools carry it and
+neither makes it required; `mousa_sync` and `mousa_status` keep their accepted field
+lists, input schemas and output schemas unchanged, and the query-only build's three other
+output schemas stay byte-identical as section 5 records.
 
 **Unchanged boundaries for opted-out callers.** Source selection, the required fields,
 the error envelope with its `code`, `message`, `completed_items` and `failed_item`
@@ -139,11 +140,11 @@ list otherwise stay as they are. The store is opened once at process start, so n
 value affects store creation, migration or writability; unlike the CLI, MCP has no
 pre-open validation stage to preserve.
 
-**Acceptance requirement.** The boundary is proven, not assumed, for `mousa_query`: the
-declared input property, every rejected value in the table, the omitted/`false`
-property-set and stable-value equality, and the store-open boundary are covered by
-`cmd/mousa/mcp_supersession_test.go`. The equivalent inspection cases stay NOT RUN until
-that slice lands.
+**Acceptance requirement.** The boundary is proven, not assumed: the declared input
+properties, every rejected value in the table, the omitted/`false` property-set and
+stable-value equality, and the store-open boundary are covered for `mousa_query` by
+`cmd/mousa/mcp_supersession_test.go`, and the inspection cases in section 5 by
+`cmd/mousa/mcp_trail_supersession_test.go`.
 
 **Comparison boundary.** Independent query calls produce fresh `request_id`,
 `decision_id`, `trail_id`, `evaluated_at_usec` and `latency_micros`. Exclude exactly those
@@ -152,8 +153,11 @@ values separately. Compare every remaining field, including packet identity, evi
 identities/text/coordinates, reasons, counts and property presence. Do not normalize away
 new or unknown fields. For inspection, fresh `authorization_decision_id` belongs to the
 authorization wrapper, while the historical request/decision/trail identities remain
-recorded facts. Compare `indexed_now` only under unchanged index membership; after an item
-revision, assert its current meaning separately from the immutable recorded member.
+recorded facts: the inspection regressions compare every other property, compare the
+returned member against the stored record's own bytes, and bind those recorded identities
+to the query that wrote them rather than to the inspection's own decision. Compare
+`indexed_now` only under unchanged index membership; after an item revision, assert its
+current meaning separately from the immutable recorded member.
 
 ## 2. Source identity and administration
 
@@ -367,10 +371,11 @@ one schema use different declaration conventions.
 
 ## 5. Historical inspection
 
-**Decision (proposed, not implemented).** Add the same optional `supersession` boolean to
-the `mousa_trail` input, and declare the optional `historical.supersession` object
-property in that tool's output schema. When the caller opts in, the handler returns the member
-`InspectSourceTrail` already produces for a v4 record instead of discarding it.
+**Decision (implemented).** The same optional `supersession` boolean is declared on the
+`mousa_trail` input, and the optional `historical.supersession` object property is
+declared in that tool's output schema. When the caller opts in, the handler returns the member
+`InspectSourceTrail` already produces for a v4 record instead of discarding it; the store
+read verifies that member either way.
 
 | Input and record | Response |
 |---|---|
@@ -379,7 +384,8 @@ property in that tool's output schema. When the caller opts in, the handler retu
 | `supersession: true`, v1–v3 record | No member: those versions have none, so the response keeps today's property set |
 | `supersession: true`, authorization declined | No `historical` at all, no member, and the call is a successful result with the current decision reasons — denial must not become a tool error or reveal whether a trail exists |
 | `supersession: true`, unknown or other-source trail | `not_found`, unchanged |
-| `supersession: true`, damaged v4 record | `integrity` failure; the record is never repaired or partially returned |
+| `supersession: true`, damaged v4 record whose source ownership is established | `integrity` failure; the record is never repaired or partially returned |
+| Already-open inspection, missing decision parent needed to establish ownership | `not_found`, like an unknown or foreign identity; the unscoped canonical reader and fresh-open startup verifier reject the damage as `integrity` |
 
 **Reasons.** A separately opted-in inspection is the smallest change that keeps ordinary
 inspection compatible in shape and stable semantics: every existing caller of `mousa_trail` keeps exactly the
@@ -396,19 +402,45 @@ change a candidate's current `indexed_now` value; fresh authorization may change
 wrapper or decline disclosure. The recorded member, when authorization permits it,
 remains the one recorded at query time.
 
+**Authorization writes and refusal.** Successful inspection, including denial, commits
+one fresh authorization decision and its necessary input rows. The returned
+`authorization_decision_id` identifies that decision; denial returns its reasons but
+does not look up history or reveal existence. An unknown, foreign or damaged-history
+error instead rolls back the in-flight transaction, including its attempted decision.
+Neither path changes historical or administrative rows.
+
+Source-scoped inspection establishes ownership by joining the trail's typed decision
+parent. A trail has no independent source column. If that parent disappears through
+out-of-band damage after the inspector opens, neither an own-source nor a foreign-source
+orphan can establish ownership, so both remain `not_found`. Reading unverified record
+bytes or reporting integrity merely because a trail row exists would disclose foreign
+existence. This live-open refusal differs from fresh-open verification, which rejects
+the damaged store before serving requests, and from successful denial, which commits
+authorization without looking up even damaged history.
+
 **Output schema implication.** The declared member needs the identity types it contains
 (`mousa.SupersessionActivationID`, `mousa.SupersessionDeclarationID` and
 `mousa.RepresentationID`) mapped to the existing lowercase-hex string declaration
 (`{"type":"string","pattern":"^[0-9a-f]{64}$"}`) in `mcpOutputSchema`, exactly as
 `mousa.SourceTrailID`, `mousa.SegmentID` and `mousa.SHA256` already are. Without that
 mapping the derived schema would describe those identities as byte arrays, which is not
-what the payload emits. No shipped schema currently names those three types, so the
-completed implementation must leave `mousa_sync` and `mousa_status` schemas identical.
-The inspection slice must also leave the already-extended query schema unchanged from
-the query-only slice, while extending only the trail schema.
+what the payload emits. The two nullable identities derive `["null","string"]` with the
+same pattern, which is what a consulted-no-history or deactivated member emits. No shipped
+schema names those three types, so `mousa_sync` and `mousa_status` keep identical schemas.
+The implemented slice leaves the already-extended query schema unchanged from the
+query-only build and extends only the trail schema; the inspection regressions pin the
+accepted digests of the sync, status and query output schemas, so a shared declaration
+cannot silently change them.
 
-**Proposed inspection input and result** (not implemented; not produced by the current
-build):
+A default JSONL query records v1 for `original` packing and v2 for `exact-v1`,
+both without a member. MCP query does not produce associations, but native
+`query --source alpha --associations FILE` can create v3 history for the same
+JSONL source, and MCP inspection can read it under either packing policy.
+Only a v4 record carries the member; the opt-in fabricates no member for v1–v3.
+
+**Inspection input and result** (documentation example; the field set is what the
+committed build returns and the identities are placeholders rather than captured
+records):
 
 ```json
 {"source": "inspection-notes", "trail_id": "9999999999999999999999999999999999999999999999999999999999999999", "supersession": true}
@@ -481,10 +513,10 @@ holds. It contains no disposition for a denied or unconsulted record.
 ## 6. Acceptance and evidence
 
 The query cases below are covered by the committed product regressions in
-`cmd/mousa/mcp_supersession_test.go`, which run the built executable over stdio against
-fresh temporary SQLite stores. The inspection cases remain **NOT RUN** until that slice
-lands. Independent query-only client observations are published below; opted-in
-inspection capture remains **NOT RUN**. The
+`cmd/mousa/mcp_supersession_test.go` and the inspection cases by
+`cmd/mousa/mcp_trail_supersession_test.go`, which run the built executable over stdio
+against fresh temporary SQLite stores. Independent query-only client observations are
+published below; the required independent inspection capture remains **NOT RUN**. The
 store-level transaction and damage semantics are already covered by the existing product
 regressions in `internal/sqlite/trail_supersession_test.go` and
 `internal/sqlite/supersession_activation_test.go`; the cases here prove the client
@@ -494,7 +526,7 @@ boundary and do not duplicate those tests.
 
 | Case | What it proves | Status |
 |---|---|---|
-| Discovered schema | The optional boolean is declared on `mousa_query`, the query count is declared in its output schema, and the envelope enum is unchanged. Sync, status and trail schemas are unchanged, and the trail declares neither the input nor the member | Covered for the query half by `TestMCPSupersessionQueryDeclaresOptInSchema` |
+| Discovered schema | The optional boolean is declared on `mousa_query`, the query count is declared in its output schema, and the envelope enum is unchanged. The trail declares the same input and the optional recorded member, with its identity types mapped to lowercase hex; sync and status keep their definitions, and the accepted sync, status and query output schemas stay byte-identical | Covered by `TestMCPSupersessionQueryDeclaresOptInSchema` and `TestMCPSupersessionTrailDeclaresOptInSchema` |
 | Omitted and explicit false | Both preserve the property set and stable semantic values under an active declaration, with no `supersession_excluded`; apply only the enumerated per-call exclusions from section 1 and retain all raw values | Covered by `TestMCPSupersessionQueryOptInPreservesDefaultPropertySet` |
 | Strict input errors | `null`, `"true"`, `1`, `0`, a duplicate key, an unknown key, non-object arguments and trailing data are rejected with `invalid_arguments`, `isError: true` and no `result` | Covered by `TestMCPSupersessionQueryOptInInputBoundaries` |
 | Store-open boundary | Starting the server against an absent store path creates it before any call; a rejected-input call writes no decision or trail, and no tool call opens, creates or migrates a store of its own | Covered by `TestMCPSupersessionQueryOptInInputBoundaries` |
@@ -505,12 +537,19 @@ boundary and do not duplicate those tests.
 | Denial | No administrative lookup and no identity revealed; the recorded trail is v4 with `consulted: false`; the response carries the declared count as `0` and otherwise reports the same outcome, reasons and empty evidence as the default query | Covered by `TestMCPSupersessionQueryOptInDenialConsultsNothing` |
 | Corrupt recorded state | An activation projection naming a missing event fails the opted-in call with the storage `integrity` code, commits no decision or trail, repairs nothing, and leaves the default query path behaving as today | Covered by `TestMCPSupersessionQueryOptInCorruptAdministrationFailsClosed` |
 | Restart | Under unchanged index membership and allowing authorization, the recorded historical fields and supersession member are unchanged; the inspection authorization ID and fresh query request/decision/trail IDs vary and are validated separately | Covered by `TestMCPSupersessionQueryOptInRestartKeepsRecordedMember` |
-| Inspection opt-in | `supersession: true` returns the recorded member; omitted, `false` and v1–v3 records keep today's property set; a declined authorization returns no `historical` | NOT RUN |
-| Inspection after an activation change | A replacement activation or deactivation after the trail was recorded does not change the member | NOT RUN |
+| Inspection opt-in property set | Omitted and explicit `false` keep the filtered inspection under both packing policies; `supersession: true` adds exactly the recorded `historical.supersession` member and no other property, and the returned member equals the producing record's own member as canonical JSON | Covered by `TestMCPSupersessionTrailOptInPreservesDefaultPropertySet` |
+| Recorded members | The recorded member is returned for an active declaration, a verified absence of history, a deactivation and an unconsulted denial, and the recorded identities, consultation flag, disposition rows and pins are asserted against the fixture | Covered by `TestMCPSupersessionTrailOptInRecordedMembers` |
+| Legacy record versions | v1 (`original` packing), v2 (`exact-v1`) and native-created same-source v3 association history keep their historical properties and producing identities under omitted/false/true; none gains a member | Covered by `TestMCPSupersessionTrailOptInLegacyVersions` and `TestMCPSupersessionTrailNativeAssociationHistory` |
+| Strict input errors | `null`, `"true"`, `1`, `0`, a duplicate key, an unknown key, non-object arguments and trailing data are rejected with `invalid_arguments` and no `result`, and each rejected call is bracketed against the stored trail, candidate, declaration, activation and decision rows; `mousa_sync` and `mousa_status` still reject the field | Covered by `TestMCPSupersessionTrailOptInInputBoundaries` |
+| Declined authorization and unknown trails | Denial succeeds with current reasons and no history, committing exactly its response-bound decision and necessary input children while existing rows remain unchanged; unknown/foreign errors roll back their attempted decision | Covered by `TestMCPSupersessionTrailOptInAuthorizationBoundaries` and `TestMCPSupersessionTrailDeniedAudit` |
+| Inspection after an activation change | A restart, a replacement activation and a deactivation after the trail was recorded do not change the returned member, and the fresh wrapper authorization identity is validated separately | Covered by `TestMCPSupersessionTrailOptInRestartAndActivationChange` |
+| Damaged v4 records | A removed candidate row, a removed candidate segment, a removed recorded activation event, a removed recorded declaration and a damaged record all fail with `integrity` under the default and opted-in call, with no partial member, no repair and no committed audit row | Covered by `TestMCPSupersessionTrailOptInRefusesDamagedRecords` |
+| Missing decision parent | Already-open own/foreign orphan and unknown inspections return the same `not_found` without writes; denied inspection commits only authorization without reading damaged history; unscoped canonical reads and fresh-open verification reject the orphan as `integrity` | Covered by `TestMCPSupersessionTrailOrphanSourceMasking` |
 
-Ordinary inspection remains filtered in the meantime: `TestMCPSupersessionQueryOptInKeepsFilteredV4History`
-asserts that `mousa_trail` still rejects the opt-in input, returns no `supersession`
-member for a v4 record and treats its recorded selection as recorded.
+Ordinary inspection keeps its filter unless the caller opts in:
+`TestMCPSupersessionQueryOptInKeepsFilteredV4History` asserts that the default
+`mousa_trail` call returns no `supersession` member for a v4 record and treats its recorded
+selection as recorded.
 
 ### Independent stdio MCP client observations
 
@@ -524,17 +563,18 @@ recorded metadata with the frozen schedule. The real forbidden-write control fai
 capture and replay. Earlier archives retain their own runners and historical limits.
 
 This is synthetic stdio client-boundary evidence, not semantic truth, retrieval quality,
-performance, authentication or native-host acceptance. Ordinary inspection remains
-filtered; opted-in inspection is unimplemented and unmeasured. The next inspection
-milestone requires its own paired client capture. Product-local tests do not replace
-that evidence.
+performance, authentication or native-host acceptance. It covers the query half only. The
+inspection opt-in is implemented and covered by the product regressions above, but it has
+no independent stdio client observation yet: that capture remains **NOT RUN**, and the
+paired inspection milestone is not accepted until it is published against the product
+revision that ships this interface. Product-local tests do not replace that evidence.
 
-### Proposed inspection-capture requirements
+### Required inspection-capture requirements
 
-The following table specifies the future combined query-and-inspection milestone;
-it is not a list of observations from the published query-only archive. In particular,
-inspection opt-in remains unimplemented and unmeasured, and each isolation requirement
-must be demonstrated by that future capture rather than inferred from this one.
+The following table specifies the pending combined query-and-inspection capture; it is not
+a list of observations from the published query-only archive. Inspection opt-in is
+implemented but unmeasured, and each isolation requirement must be demonstrated by that
+capture rather than inferred from this one.
 
 Use a standalone standard-library runner that speaks MCP `2025-11-25` over the pinned
 executable's stdio in separate processes, with pilot, capture, replay and negative-control
@@ -556,23 +596,25 @@ capture above.
 
 ## 7. Open questions for review
 
-1. **Schema evolution or a new envelope version.** This proposal treats a declared
+Both implemented slices answer these three questions as the recommendation states, and the
+review may still change any of them.
+
+1. **Schema evolution or a new envelope version.** This document treats a declared
    optional property in a tool's static output schema as an additive change and keeps
    `mousa.mcp_result.v1`. The alternative is a second envelope identifier for opted-in
    responses, which would require one schema to describe two shapes or a separate tool,
    and would make the identifier depend on the caller's input. The committed query slice
-   exercises the first mechanism; question: does the same mechanism remain the intended
-   one for the inspection member and for later optional result fields?
-2. **A shared input name.** This proposal reuses `supersession` on both tools and no
+   exercises the first mechanism, and the inspection member uses it too.
+2. **A shared input name.** This document reuses `supersession` on both tools and no
    other name. The alternative is a distinct name on `mousa_trail` such as
    `include_supersession`, which would make one concept have two names in one tool
-   surface. Question: confirm the shared name for the inspection slice.
+   surface; the implemented inspection slice shares the name.
 3. **No query-level consultation mode.** The opted-in query response carries only the
    count, so a client cannot tell consulted-no-history from deactivation without reading
    the trail. The alternative is a consultation object on the query result, which would
    expose native-only identities to every opted-in query and duplicate what the recorded
-   member already says. Question: confirm that the count plus the recorded member is the
-   intended division of surfaces.
+   member already says. The implemented division keeps the count on the query result and
+   the full consultation on the recorded member.
 
 ## 8. Implementation slices
 
@@ -582,14 +624,14 @@ Each slice is independently reviewable and changes no native code path.
    (`mcpArguments`, `decodeMCPArguments`, `mcpOutputSchema`, `mcpToolDefinitions`),
    `cmd/mousa/mcp.go` (the `mousa_query` case), tests in
    `cmd/mousa/mcp_supersession_test.go` with the existing `TestMCP...` regressions in
-   `cmd/mousa/mcp_test.go` kept green. Covers every product-local query case above; the
-   inspection cases remain open.
-2. **Inspection opt-in.** `cmd/mousa/mcp.go` (the `mousa_trail` case),
+   `cmd/mousa/mcp_test.go` kept green. Covers every product-local query case above.
+2. **Inspection opt-in — implemented.** `cmd/mousa/mcp.go` (the `mousa_trail` case),
    `cmd/mousa/mcp_tools.go` (accepted field, output-schema member and identity-type
-   mapping, description), tests for the inspection cases.
-3. **Documentation status and companion capture.** Update the four status notes for the
-   inspection half and publish the companion benchmark capture that the paired gate
-   below requires.
+   mapping, description), and the inspection cases in
+   `cmd/mousa/mcp_trail_supersession_test.go`.
+3. **Documentation status and companion capture — documents updated, capture pending.**
+   The status notes for the inspection half are updated; the companion benchmark capture
+   that the paired gate below requires is still outstanding.
 
 ## Non-goals
 

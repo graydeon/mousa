@@ -33,6 +33,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
 | Supersession selection contract | Yes | Used by `query --source <id> --supersession <text>` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
 | Opt-in supersession trail and survivor packing | Yes | `query --source <id> --supersession <text>` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults | Independent companion evidence is separate from product tests; no latency claim |
+| MCP supersession opt-in | Yes | `mousa_query` and `mousa_trail` optional `supersession` boolean | Real MCP client round trips over the built executable and fresh stores: declared input and member in the discovered closed schemas, strict argument rejection before any store write, omitted/`false`/`true` property sets, the recorded no-history/denial/deactivation/active member, legacy records without a member, restart and later activation changes, damaged-record refusal without repair or an audit write, and unchanged sync/status/query definitions | Product-local client regressions; independent stdio inspection evidence is a separate companion capture |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
@@ -70,9 +71,11 @@ requests without committing their decision or trail.
 Both `original` and `exact-v1` packing operate on survivors. Only the accepted
 candidate's own exact predecessor representation matches; item labels, equal bytes,
 ancestor pins and successor availability do not. The local stdio MCP query tool
-implements the same explicit opt-in as an optional `supersession` boolean
-([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP administration, directory
-enforcement and association-plus-supersession combinations are unsupported.
+implements the same explicit opt-in as an optional `supersession` boolean, and its trail
+tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
+boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP
+administration, directory enforcement and association-plus-supersession combinations are
+unsupported.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
 Historical
@@ -191,6 +194,12 @@ is existing corruption: the read reports an integrity error for it rather than `
 identity that was never stored, including an unknown trail identity, still reports `not_found`, and
 the v1–v3 readers keep the codes they already reported for the same damage. Every other storage error
 keeps its own code; a v4 read never relabels a busy, unreadable or malformed store as corruption.
+
+Source-scoped inspection first establishes ownership through the typed decision parent.
+If that parent is missing in an already-open inspector, own-source and foreign-source
+orphans remain indistinguishable from unknown IDs: all return `not_found`. The
+unscoped canonical reader and fresh-open startup verifier reject that damage as
+`integrity`. No path repairs damage or releases partial history.
 
 ### Transaction-local consultation
 
@@ -388,18 +397,21 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`) | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; an opted-in response adds the withheld-candidate count `supersession_excluded` |
-| `mousa_trail` | `source`, `trail_id` | None | Existing filtered trail inspection with fresh authorization; no evidence text |
+| `mousa_trail` | `source`, `trail_id` | `supersession`: boolean (default `false`) | Existing filtered trail inspection with fresh authorization; no evidence text; an opted-in call adds the consultation member a `mousa.source_trail.v4` record carries |
 
-`mousa_query` accepts one supersession input today: the optional `supersession` boolean
-withholds an accepted candidate whose own representation is the selected declaration's
-exact predecessor pin for that configured source, and an opted-in response reports the
-declared count `supersession_excluded`, including zero. Omitted or `false` keeps the
-default retrieval and response property set, other values are `invalid_arguments`, and
-`mousa_sync`, `mousa_status` and `mousa_trail` reject the field. The records are prepared
-by native administration; MCP exposes no administration tool. The proposed inspection
-inputs, the result member they would add and the reasons for keeping the envelope at
+`mousa_query` accepts the optional `supersession` boolean, which withholds an accepted
+candidate whose own representation is the selected declaration's exact predecessor pin
+for that configured source; an opted-in response reports the declared count
+`supersession_excluded`, including zero. `mousa_trail` accepts the same boolean and
+returns the consultation member a `mousa.source_trail.v4` record carries: whether
+supersession was consulted, the nullable activation and declaration identities and the
+withholding rows. Omitted or `false` keeps the default retrieval and response property
+set, and a legacy trail has no member, so the opt-in adds none. Other values are
+`invalid_arguments`, and `mousa_sync` and `mousa_status` reject the field. The records are
+prepared by native administration; MCP exposes no administration tool. The client
+contract, the declared optional members and the reasons for keeping the envelope at
 `mousa.mcp_result.v1` are specified in
-[MCP supersession opt-in](MCP_SUPERSESSION.md); the inspection half is not implemented.
+[MCP supersession opt-in](MCP_SUPERSESSION.md).
 
 For example, call `mousa_sync` with:
 
@@ -464,10 +476,13 @@ Tool errors set MCP `isError: true`. Boundary codes include
 `invalid_arguments`, `source_not_permitted`, `ingestion_not_permitted`,
 `invalid_item`, `resource_limit`, `busy` and `cancelled`; canonical storage errors
 retain their existing codes, with `operation_failed` for other failures.
-Authorization exclusions are successful query/inspection results, not tool
-errors: they carry current decision reasons but no selected evidence or
-historical trail payload. An allowed request for another source's trail returns
-`not_found`.
+Authorization exclusions are successful query/inspection results, not tool errors.
+Denied inspection commits its fresh authorization decision and necessary input rows,
+returns that decision's ID and reasons, and performs no historical lookup. It releases
+no historical payload. Unknown or foreign-source inspection errors roll back their
+attempted authorization and return `not_found`; historical and administrative rows
+remain unchanged. MCP inspection can read native-created same-source v3 association
+history even though MCP query does not produce it.
 
 Unknown tools/methods and malformed protocol parameters use SDK JSON-RPC errors.
 Invalid JSON or an oversized inbound frame terminates the stdio session with a
@@ -994,7 +1009,8 @@ stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
 Directory and `--associations` combinations are rejected before writable open.
 MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
-boolean. MCP administration and opted-in trail inspection remain unavailable.
+boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
+the same optional boolean. MCP administration remains unavailable.
 
 Valid queries open the store writable and may create or migrate it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not

@@ -291,9 +291,9 @@ with the event it names fails integrity verification and is never rebuilt or rep
 by the read. The state is a verified snapshot rather than a reservation: a caller that
 transitions next still states its own expected predecessor and can still conflict if
 another caller wins first. Use `state` for the current projection and `get` for one historical event. There is
-no activation listing or per-source history command. MCP `mousa_query` accepts an
-optional `supersession` boolean; declaration and activation administration and
-opted-in trail inspection remain unavailable over MCP.
+no activation listing or per-source history command. MCP `mousa_query` and `mousa_trail`
+accept an optional `supersession` boolean; declaration and activation administration
+remain unavailable over MCP.
 
 The declaration and activation command groups are trusted local store administration,
 and none of them claims to authenticate a recorded actor or author. See the
@@ -331,6 +331,18 @@ Store, permitted sources and trusted caller are fixed at startup. Ingestion is
 disabled unless that source also has `--ingest-source`. The default stdio mode
 has no listener, directory import, shell, policy administration or withdrawal tool.
 
+`mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed
+authorization decision ID and reasons, but no history or existence disclosure.
+Unknown and foreign identities return `not_found` without committing the attempted
+decision. An already-open inspector also returns `not_found` for a trail whose missing
+decision parent prevents source ownership verification; fresh-open verification instead
+rejects that damaged store as `integrity`. Neither path repairs history.
+
+Native `query --source <id> --associations <file>` can produce v3 history that the
+configured same-source MCP inspector reads. Omitted, false and true `supersession`
+inputs all preserve its association metadata and producing identities without adding
+a supersession member.
+
 `--caller cli` uses the existing CLI retrieval policy, including source-scoped
 denials and withdrawal. This is trusted local configuration, not caller
 authentication or protection from someone who can modify the store. Other
@@ -344,11 +356,14 @@ is data, not instructions. See [tool schemas, limits, errors and lifecycle](CAPA
 
 Local stdio MCP exposes the same opt-in explicitly: `mousa_query` accepts an optional
 `supersession` boolean, and an opted-in response adds `supersession_excluded`, including
-zero. Omitting it or passing `false` keeps the default retrieval and response property
-set, `mousa_trail` still rejects the argument, and the records must be prepared by the
+zero. `mousa_trail` accepts the same boolean and returns the consultation member a
+`mousa.source_trail.v4` record carries: whether supersession was consulted, the nullable
+activation and declaration identities and the withholding rows, so a client can tell a
+consulted absence of history from a deactivation without reading the store. Omitting the
+field or passing `false` keeps the default retrieval and the filtered inspection, and a
+legacy trail carries no member. The records must be prepared by the
 native `supersession declaration put` and `supersession activation put` commands for the
-same configured source. See [MCP supersession opt-in](MCP_SUPERSESSION.md); the
-inspection half of that contract is proposed and not implemented.
+same configured source. See [MCP supersession opt-in](MCP_SUPERSESSION.md).
 
 The actual-executable MCP client regressions run with:
 
