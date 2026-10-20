@@ -79,9 +79,9 @@ checks, byte-budget packing, exact-content deduplication, declared associations 
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
 
 Revision-pinned supersession declarations and activation administration are available,
-together with an explicit native JSONL query opt-in
-(`query --source <id> --supersession <text>`) and the same opt-in on the local stdio MCP
-`mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
+together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
+JSONL (`query --source ID --supersession TEXT`) query opt-ins, and the same opt-in on
+the local stdio MCP `mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
 `mousa.source_trail.v4` record recorded. Default and opted-out queries remain
 uncurated; inspections preserve recorded selection and omit the member unless requested.
 Inspection reauthorizes access, including a committed decision on denial without
@@ -89,6 +89,10 @@ historical disclosure. Native-created v1–v3 history remains inspectable withou
 supersession member. Opt-in usage and source-masked refusal boundaries are in the
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Semantic retrieval, hybrid ranking,
 secret filtering and full model-window budgeting remain planned.
+
+The [directory supersession example](docs/USAGE.md#directory-supersession-example)
+shows how to discover revision pins, prepare declaration and activation records, and
+inspect the recorded reason for withholding a predecessor.
 
 The [2026-10-13 independent MCP inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
 record synthetic native/stdio behavior, not retrieval quality or performance.

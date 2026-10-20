@@ -28,9 +28,9 @@ administration are reachable natively through `supersession declaration put|get`
 and `supersession activation put|get`, and the verified current state for one source
 is inspectable read-only through `supersession activation state <source-id>`.
 
-Native JSONL queries can opt into exact revision-pin suppression with
-`query --source <id> --supersession <text>`, and the local stdio MCP `mousa_query` tool
-takes the same opt-in as an optional boolean. The MCP `mousa_trail` tool takes that
+Native directory queries (`query --supersession DIRECTORY TEXT`) and JSONL queries
+(`query --source ID --supersession TEXT`) can opt into exact revision-pin suppression.
+The local stdio MCP `mousa_query` tool takes the same opt-in as an optional boolean. The MCP `mousa_trail` tool takes that
 boolean too and returns the recorded consultation member of a v4 trail. The fresh store
 entry point
 `EvaluateAndTraceSupersessionLexical` evaluates authorization, verifies candidates,
@@ -40,8 +40,7 @@ exact predecessor pin is withheld. Successor availability does not gate suppress
 and no successor passage is manufactured. Both packing policies apply to survivors.
 
 Defaults are unchanged: recording an activation alone does not filter a default
-query, reinterpret a recorded member or move item pointers. MCP administration,
-directory enforcement and
+query, reinterpret a recorded member or move item pointers. MCP administration and
 association-plus-supersession queries are unsupported. Actor, time and reason labels
 do not authenticate authorship or establish factual truth.
 
@@ -85,7 +84,7 @@ duplicate omissions and retained-segment relationships. Queries that record
 a declared-association stage write v3, binding associated passages and
 omissions. Older trail bytes and identities remain unchanged.
 
-`query --source <id> --supersession <text>` always writes
+An opted-in directory or JSONL query always writes
 `mousa.source_trail.v4`, including denial, verified no-history and deactivation.
 Its closed `supersession` member binds consultation, nullable activation and
 declaration identities, and each withheld candidate's exact pins. Withheld candidates
@@ -141,7 +140,7 @@ Implemented and planned capabilities, marked per item:
 - optional semantic retrieval behind a narrow provider interface (planned);
 - inspectable hybrid ranking (planned);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit directory/JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection with opt-in exact-content deduplication (implemented in core/CLI); optional prompt-content token projection (Git documentation consumer only); truncation, approximate redundancy removal and model-window budgeting (planned);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);

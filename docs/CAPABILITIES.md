@@ -31,8 +31,8 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
-| Supersession selection contract | Yes | Used by `query --source <id> --supersession <text>` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
-| Opt-in supersession trail and survivor packing | Yes | `query --source <id> --supersession <text>` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults | Independent companion evidence is separate from product tests; no latency claim |
+| Supersession selection contract | Yes | `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
+| Opt-in supersession trail and survivor packing | Yes | Directory and JSONL `query --supersession` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults; directory resync, namespace isolation and historical pin inspection | Independent companion evidence is separate from product tests; no latency claim |
 | MCP supersession opt-in | Yes | `mousa_query` and `mousa_trail` optional `supersession` boolean | Real MCP client round trips over the built executable and fresh stores: declared input and member in the discovered closed schemas, strict argument rejection before any store write, omitted/`false`/`true` property sets, the recorded no-history/denial/deactivation/active member, legacy records without a member, restart and later activation changes, damaged-record refusal without repair or an audit write, and unchanged sync/status/query definitions | [Independent stdio inspection observations, 2026-10-13](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession); synthetic client behavior, not retrieval quality or performance |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
 | Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
@@ -59,9 +59,9 @@ one declaration per source, with an explicit expected predecessor and a verified
 current-state projection. Deactivation retains its event in history. Actor, time
 and reason are recorded labels, not authenticated authorship.
 
-Administration does not move item pointers or filter default queries. Native JSONL
-queries explicitly enable enforcement with
-`query --source <id> --supersession <text>`. The fresh store method
+Administration does not move item pointers or filter default queries. Native directory
+queries enable enforcement with `query --supersession DIRECTORY TEXT`; JSONL queries
+use `query --source ID --supersession TEXT`. The fresh store method
 `EvaluateAndTraceSupersessionLexical` evaluates authorization and lifecycle first,
 retrieves verified source-scoped candidates, consults administration through the
 same writer transaction and records v4 before canonical readback and commit.
@@ -74,8 +74,7 @@ ancestor pins and successor availability do not. The local stdio MCP query tool
 implements the same explicit opt-in as an optional `supersession` boolean, and its trail
 tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
 boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP
-administration, directory enforcement and association-plus-supersession combinations are
-unsupported.
+administration and association-plus-supersession combinations are unsupported.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
 Historical
@@ -1001,13 +1000,14 @@ selected `segment_id` values. Each evidence hit includes its text digest.
 use the length of `evidence` for the selected count. The old misleading
 `total_matches` field has been removed.
 
-For JSONL item sources, `--supersession` explicitly enables exact pinned-predecessor
+For directory and JSONL item sources, `--supersession` explicitly enables exact pinned-predecessor
 withholding after authorization and lifecycle verification and before packing.
 The opted-in store transaction reads the verified activation and declaration and
 always writes v4. Withheld text is not released, its recorded rank and canonical size
 stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
-Directory and `--associations` combinations are rejected before writable open.
+`--associations` combinations are rejected before writable open. Directory source and
+revision pin preparation is shown in the [native example](USAGE.md#directory-supersession-example).
 MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
 boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
 the same optional boolean. MCP administration remains unavailable.
