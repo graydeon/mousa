@@ -1,11 +1,11 @@
 # Opt-in supersession enforcement
 
-**Status: implemented in the fresh store retrieval entry point, the native JSONL
-query opt-in and the local stdio MCP tools.** Use
-`query --source <id> --supersession <text>` with flags before query text, or the MCP
-`mousa_query` tool with `supersession: true`. Defaults, legacy trail versions and every
-opted-out MCP response are unchanged. Directory queries and
-association-plus-supersession combinations are rejected.
+**Status: implemented in the fresh store retrieval entry point, native directory and
+JSONL query opt-ins and the local stdio MCP tools.** Use
+`query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT`
+with flags before positional arguments, or MCP `mousa_query` with `supersession: true`.
+Defaults, legacy trail versions and every opted-out MCP response are unchanged.
+Association-plus-supersession combinations are rejected.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md). The
@@ -31,6 +31,13 @@ declaration it recorded, not today's activation or item pointers.
 Declarations, activation history and verified current-state projection are separate
 administration; recording them never changes a default query or moves an item pointer.
 See the [supersession boundary](CAPABILITIES.md#supersession-core-boundary).
+
+For a complete native directory example, including exact source identity and revision
+pin preparation, see [Directory supersession example](USAGE.md#directory-supersession-example).
+Directory resolution retains the `mousa-local` namespace and absolute path; `--source`
+retains the distinct `mousa-jsonl` namespace. Both call the same enforced transaction.
+Resyncing a changed predecessor creates an unpinned revision; historical v4 inspection
+continues to verify the original pins.
 
 ## What exists today
 
@@ -234,12 +241,12 @@ or item pointers.
 - v1, v2 and v3 readers, identity derivations and bytes are unchanged, as are packet v1 and
   v2. No lifecycle reason is repurposed and no field is silently appended to an existing
   canonical schema; the new encoding has its own version and identity construction.
-- Native JSONL queries expose the boolean opt-in and native `trail` inspection includes
+- Native directory and JSONL queries expose the boolean opt-in and native `trail` inspection includes
   the recorded v4 member. The local stdio MCP tools expose the same opt-in:
   `mousa_query` reports the withheld count, and `mousa_trail` returns the recorded member
   of a v4 record. Opted-out responses keep today's property set, so ordinary inspection
   stays filtered, text-free and unchanged for a legacy record.
-  Directory and association combinations are unsupported.
+  Association combinations remain unsupported.
 - A store that contains v4 trails requires a binary that knows v4, exactly as v2 and v3
   records already do; no store schema version changes, because no object set changes.
 
@@ -526,8 +533,8 @@ a successful read. Denial precedes that guard and commits only fresh authorizati
 
 Enforcement is explicit, source-local and exact-pin-only. It does not implement semantic
 contradiction detection, authenticated authorship, factual truth or freshness, transitive
-supersession, automatic/default enforcement, directory enforcement or associated-passage
-enforcement; MCP administration remains unavailable
+supersession, automatic/default enforcement or associated-passage enforcement;
+MCP administration remains unavailable
 ([MCP supersession opt-in](MCP_SUPERSESSION.md)). Ranking, authorization, current item
 pointers, declarations and activation history are not rewritten by a query, and an
 inspection reinterprets no recorded selection.

@@ -112,8 +112,8 @@ query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --packing-policy original|exact-v1
                             exact-v1 omits byte-equal copies of selected passages
-  --supersession            withhold the exact active predecessor revision; requires --source
-                            and cannot be combined with --associations
+  --supersession            withhold the exact active predecessor revision (directory or --source);
+                            cannot be combined with --associations
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
@@ -209,7 +209,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
 	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
-	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession; requires --source")
+	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -222,9 +222,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		})
 		if associationSupplied {
 			return usageError{"supersession cannot be combined with associations"}
-		}
-		if *sourceID == "" {
-			return usageError{"supersession requires --source; directory queries are not supported"}
 		}
 	}
 	var declarations []mousa.AssociationDeclaration

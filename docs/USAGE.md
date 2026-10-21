@@ -80,9 +80,10 @@ nothing. Each duplicate keeps its own provenance and references the retained
 segment in the trail. Equal text is not independent corroboration or shared
 authorization. Default `--packing-policy original` retains repeated passages.
 
-For a JSONL source with a separately stored and activated supersession declaration:
+For a directory or JSONL source with a separately stored and activated declaration:
 
 ```sh
+./mousa -store local.sqlite query --supersession ./documents 'harbor inspection'
 ./mousa -store local.sqlite query --source inspection-notes --supersession 'harbor inspection'
 ./mousa -store local.sqlite query --source inspection-notes --supersession --packing-policy exact-v1 'harbor inspection'
 ```
@@ -90,9 +91,10 @@ For a JSONL source with a separately stored and activated supersession declarati
 Flags precede query text. Opted-in responses add `supersession_excluded`, including
 zero; defaults omit it. Suppression is distinct from lifecycle, budget and duplicate
 omissions, and an empty result reports budget omission before supersession exclusion,
-then lifecycle exclusion. `--supersession` requires `--source`, so a directory query
-or an `--associations` combination is rejected before the store opens. A valid query
-uses writable open and can create or migrate a store before a later operation fails;
+then lifecycle exclusion. An `--associations` combination is rejected before the store
+opens. Directory queries use their own source namespace, not the JSONL `--source`
+namespace; passing the directory path to `--source` queries a different source.
+A valid query uses writable open and can create or migrate a store before a later operation fails;
 rollback does not undo that open boundary. Only the opted-in query prepares and
 size-checks its expression before opening the store: a default or
 `--supersession=false` query keeps the established post-open expression error, and
@@ -298,6 +300,106 @@ remain unavailable over MCP.
 The declaration and activation command groups are trusted local store administration,
 and none of them claims to authenticate a recorded actor or author. See the
 [supersession boundary](CAPABILITIES.md#supersession-core-boundary).
+
+### Directory supersession example
+
+Build `./mousa` as above. This Python 3 example runs native commands against a fresh
+temporary directory and store. It discovers exact item and representation pins from
+default query evidence, then submits explicit declaration and activation JSON through
+the existing administration commands. No database access or model is involved.
+
+The CLI accepts complete records, not identity-free drafts. For these records, each
+identity is SHA-256 over an ordered tuple: each field has an unsigned 8-byte big-endian
+byte-length prefix. Schema and label fields are UTF-8; identity fields are raw 32-byte
+digests, not their hexadecimal display strings. A directory source uses the tuple
+`("mousa.source.v1", "mousa-local", absolute_directory_path)`; JSONL uses
+`"mousa-jsonl"` instead. Do not resolve symlinks or substitute the stream namespace.
+The preparation below implements only these existing encodings for this example;
+the native commands validate both the identities and stored pin ancestry.
+
+```sh
+python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+binary = str(Path("./mousa").absolute())
+with tempfile.TemporaryDirectory(prefix="mousa-directory-example-") as temporary:
+    root = Path(temporary) / "documents"
+    root.mkdir()
+    store = Path(temporary) / "evidence.sqlite"
+    (root / "old.md").write_text("cedar predecessor evidence", encoding="utf-8")
+    (root / "new.txt").write_text("cedar successor evidence", encoding="utf-8")
+
+    def command(*args, record=None):
+        result = subprocess.run(
+            [binary, "-store", str(store), *map(str, args)],
+            input=None if record is None else json.dumps(record),
+            text=True, capture_output=True, check=True)
+        return json.loads(result.stdout)
+
+    def identity(*fields):
+        digest = hashlib.sha256()
+        for field in fields:
+            value = field.encode("utf-8") if isinstance(field, str) else field
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+        return digest.hexdigest()
+
+    command("sync", root)
+    baseline = command("query", root, "cedar")
+    pins = {hit["item"]: hit["representation_id"] for hit in baseline["evidence"]}
+    source = identity("mousa.source.v1", "mousa-local", os.path.abspath(root))
+    declaration = dict(
+        schema="mousa.supersession_declaration.v1", source_id=source,
+        predecessor_item_id="old.md", predecessor_representation_id=pins["old.md"],
+        successor_item_id="new.txt", successor_representation_id=pins["new.txt"],
+        author="example.operator", basis="new.txt explicitly replaces old.md")
+    declaration["id"] = identity(
+        declaration["schema"], bytes.fromhex(source), "old.md",
+        bytes.fromhex(pins["old.md"]), "new.txt", bytes.fromhex(pins["new.txt"]),
+        declaration["author"], declaration["basis"])
+    command("supersession", "declaration", "put", record=declaration)
+    activation = dict(
+        schema="mousa.supersession_activation.v1", source_id=source,
+        expected_previous_activation_id=None, declaration_id=declaration["id"],
+        actor_id="example.operator", actor_version="1", occurred_at_usec=1,
+        reason="explicit directory replacement")
+    activation["id"] = identity(
+        activation["schema"], bytes.fromhex(source), b"",
+        bytes.fromhex(declaration["id"]))
+    command("supersession", "activation", "put", record=activation)
+    disabled = command("query", "--supersession=false", root, "cedar")
+    assert disabled["evidence"] == baseline["evidence"]
+    for packing in ("original", "exact-v1"):
+        selected = command("query", "--supersession", "--packing-policy", packing,
+                           root, "cedar")
+        assert [hit["item"] for hit in selected["evidence"]] == ["new.txt"]
+        inspected = command("trail", root, selected["trail_id"])
+        print(json.dumps(inspected["historical"]["supersession"], indent=2))
+    (root / "old.md").write_text("cedar revised predecessor evidence", encoding="utf-8")
+    command("sync", root)
+    revised = command("query", "--supersession", root, "cedar")
+    assert revised["supersession_excluded"] == 0
+    assert {hit["item"] for hit in revised["evidence"]} == {"old.md", "new.txt"}
+    historical = command("trail", root, selected["trail_id"])
+    assert historical["historical"]["supersession"]["activation_id"] == activation["id"]
+PY
+```
+
+Each printed v4 member names the producing activation, declaration, predecessor and
+successor pins. Declaration alone changes no selection; activation affects only
+opted-in queries. An updated predecessor has a different representation and is not
+withheld by the old pin. Removing or updating the successor does not revoke the
+declaration. A later deactivation names the current activation as
+`expected_previous_activation_id` and sets `declaration_id` to null; reactivation
+names that deactivation and the declaration. Null identity tuple fields are empty
+bytes. Read `supersession activation state SOURCE_ID` before preparing a subsequent
+transition; a competing transition can still cause a conflict. Historical `trail`
+inspection reauthorizes access and preserves the producing pins, not today's state.
 
 Integrity checks, authorization, current activation, and factual truth are separate
 properties. Classification records are not automatic categorization or
