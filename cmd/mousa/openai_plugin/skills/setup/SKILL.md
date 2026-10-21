@@ -16,3 +16,9 @@ On supported desktop hosts, explain that composer mentions search Mousa evidence
 Do not create a tunnel, deploy an endpoint, install credentials, publish a plugin, run a model/provider test or change host configuration without explicit authorization. The local generated package is not a public directory submission. Connection and actual host extension rendering must be checked on the host, not inferred from this skill.
 
 The bundled skills guide client setup and evidence use. They do not grant administration access or turn internal development contracts into MCP capabilities. Check the configured tool schema and current capability documentation before promising an interface. Native declaration and activation commands are separate from these client tools. A discovered mousa_query schema may expose the optional supersession boolean: true enables exact pinned-predecessor withholding, while omission or false preserves the uncurated default. A discovered mousa_trail schema may expose the same optional boolean: true returns the consultation a v4 Source Trail recorded, while omission or false keeps the filtered inspection. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior.
+
+Caller-supplied vector retrieval is a separate native CLI workflow, not an MCP
+query mode or a bundled embedding service. Before external embedding generation,
+confirm authorization to share the exported normalized passage bytes with that
+producer. Mousa makes no model/provider network call. Use native `trail` for v5
+vector facts; the filtered MCP history view does not expose them.

@@ -126,6 +126,95 @@ versions, and reading a stored trail re-verifies every released passage against
 canonical store content. See the
 [associated context contract](CAPABILITIES.md#declared-associated-context).
 
+### Caller-supplied vector workflow
+
+Build `./mousa` as above. Export the exact current normalized passages for your
+external embedding producer, then import its vectors. Use the same source selector
+for all three operations:
+
+```sh
+./mousa -store local.sqlite vector inputs ./documents > inputs.json
+./mousa -store local.sqlite vector import ./documents < embeddings.json
+./mousa -store local.sqlite query --vector-space SPACE_ID ./documents < query-vector.json
+./mousa -store local.sqlite trail ./documents TRAIL_ID
+```
+
+Replace `SPACE_ID` with import's returned `space_id`, and `TRAIL_ID` with query's
+returned `trail_id`. For a JSONL source, replace `./documents` with `--source ID`.
+Put all flags before directory arguments. Vector queries take no text argument;
+stdin contains `{"schema":"mousa.vector_query.v1","values":[1,0]}` for a
+two-dimensional space. Those numbers alone assert no natural-language meaning.
+
+The import object has `schema: "mousa.vector_import.v1"`, a `space` declaration
+and an `embeddings` array. Each embedding copies exactly the exported `source_id`,
+`segment_id`, `representation_id`, `representation_sha256` and `content_sha256`,
+then adds `values`. Do not use raw file bytes when the export reports normalized
+bytes. Import rejects stale/foreign pins, nonfinite or zero vectors, dimension
+mismatch, duplicate segments, conflicting retries and malformed input. It does
+not grant access. See [bounds, identity and v5 history](CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
+
+This runnable Python 3 example only drives native commands and constructs synthetic
+vectors. Python is not a product runtime requirement; a real producer supplies its
+own embeddings. The fixture proves protocol and cosine arithmetic, not model quality
+or automatic natural-language semantic search. The useful runbook shares no query
+term with `unplug`.
+
+```sh
+python3 - <<'PY'
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+binary = str(Path("./mousa").resolve())
+with tempfile.TemporaryDirectory() as temporary:
+    store = str(Path(temporary) / "vectors.sqlite")
+    def call(*args, value=None):
+        data = None if value is None else json.dumps(value)
+        result = subprocess.run([binary, "-store", store, *args],
+                                input=data, text=True, capture_output=True, check=True)
+        return json.loads(result.stdout)
+    call("sync", "--source", "synthetic-vectors",
+         value={"id": "runbook", "text": "Drain sockets before stopping the host."})
+    lexical = call("query", "--source", "synthetic-vectors", "unplug")
+    assert lexical["evidence"] == []
+    exported = call("vector", "inputs", "--source", "synthetic-vectors")
+    assert exported["decision_outcome"] == "allow"
+    pins = ("source_id", "segment_id", "representation_id",
+            "representation_sha256", "content_sha256")
+    embeddings = [{**{key: passage[key] for key in pins}, "values": [1, 0]}
+                  for passage in exported["passages"]]
+    imported = call("vector", "import", "--source", "synthetic-vectors", value={
+        "schema": "mousa.vector_import.v1",
+        "space": {"schema": "mousa.vector_space.v1", "provider": "synthetic",
+                  "model": "arithmetic-fixture", "version": "1",
+                  "dimensions": 2, "metric": "cosine"},
+        "embeddings": embeddings})
+    query = {"schema": "mousa.vector_query.v1", "values": [1, 0]}
+    args = ("query", "--vector-space", imported["space_id"],
+            "--source", "synthetic-vectors")
+    selected = call(*args, value=query)
+    assert selected["evidence"][0]["text"] == exported["passages"][0]["text"]
+    assert selected["evidence"][0]["cosine"] == 1
+    history = call("trail", "--source", "synthetic-vectors", selected["trail_id"])
+    assert history["historical"]["vector"]["query_vector_id"] == selected["query_vector_id"]
+    call("sync", "--source", "synthetic-vectors",
+         value={"id": "runbook", "text": "Use the replacement switch."})
+    stale = call(*args, value=query)
+    assert (stale["indexed"], stale["missing"], stale["evidence"]) == (0, 1, [])
+    print(json.dumps({"selected": selected, "history": history,
+                      "after_revision": stale}, indent=2))
+PY
+```
+
+Each call reopens the persistent store. Source revisions/deletions deactivate old
+vectors without rewriting them; re-export and import vectors for the new passage
+pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
+triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
+with vector queries. Explicit query-term policy, associations and supersession
+flags are rejected in vector mode. MCP query/resource search remains lexical;
+native `trail` supplies the v5 vector facts absent from its filtered MCP view.
+
 ### CLI client example
 
 For a persistent documentation lookup, see the

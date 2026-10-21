@@ -21,6 +21,12 @@ complete context window.
 
 ## Current development boundary
 
+Native callers can export authorized current normalized passages, import embeddings
+from an external producer and query one declared vector space by exact CPU cosine
+similarity. The [vector workflow](USAGE.md#caller-supplied-vector-workflow) works for
+directory and JSONL sources. Generation stays external; synthetic examples do not
+establish embedding-model quality, semantic equivalence or factual truth.
+
 The internal Go core now stores source-local supersession declarations pinned to
 exact predecessor and successor item revisions, plus immutable activation history
 and a verified current-state projection. Declaration and activation-event
@@ -65,11 +71,11 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **1. Ingest** | Register source material with its origin, identity, and policy metadata. | Implemented. |
 | **2. Normalize** | Convert input into a stable representation while preserving the original source. | Implemented for UTF-8 text. |
 | **3. Segment** | Produce deterministic, addressable chunks. | Implemented for byte-range text segments. |
-| **4. Index** | Build portable lexical and optional semantic search structures. | Lexical (SQLite FTS5) implemented; semantic retrieval is planned, not implemented. |
-| **5. Match** | Retrieve candidate evidence for a request. | Implemented for lexical matching. |
-| **6. Rank** | Order candidates using inspectable relevance and policy signals. | Implemented for BM25 order plus source-lifecycle policy; hybrid ranking is planned. |
+| **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
+| **5. Match** | Retrieve candidate evidence for a request. | Lexical matching and explicit single-source vector queries implemented. |
+| **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25 or exact cosine ordering; hybrid fusion remains planned. |
 | **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit native JSONL query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
-| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Implemented for enforced lexical retrieval; see the narrower field list below. |
+| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Enforced lexical and native vector retrieval; versioned selection facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Core and CLI use a released-text byte budget. The Git documentation consumer offers an optional prompt-content token projection; model-window accounting is not implemented. |
 
 Each stage has one responsibility and a visible boundary. The pipeline can be tested stage by stage, and no single model, provider, or harness owns the result.
@@ -91,6 +97,15 @@ declaration identities, and each withheld candidate's exact pins. Withheld candi
 keep their accepted disposition, original rank and canonical size, but release no text,
 consume no budget and seed no retained duplicate set. The packet identity still binds
 the released selection, so an unchanged selection has the same packet identity.
+
+Native vector queries write `mousa.source_trail.v5` instead. Its closed `vector`
+member records the declared space, exact query vector and identity, current eligible
+and indexed counts, and ordered embedding/source/content pins and cosine scores.
+It has no lexical expression, associations or supersession consultation. Original
+and exact-v1 byte packing use the same packet v1 identity domain for the released
+selection. Native history reauthorizes and checks recorded producing embeddings,
+not today's vectors or current item pointers. Lexical defaults and earlier bytes
+remain unchanged; the MCP history projection does not expose these vector facts.
 
 Canonical read and startup verification check the recorded administration and candidate
 content. A missing canonical parent named by v4 is an integrity failure; an unknown

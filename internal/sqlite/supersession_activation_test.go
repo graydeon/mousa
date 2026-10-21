@@ -774,9 +774,6 @@ func TestSupersessionActivationMigrationExactBytesHashAndObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 14 {
-		t.Fatalf("embedded migrations = %d, want 14", len(migrations))
-	}
 	if migrations[12].version != 13 || migrations[12].name != "supersession_activations" {
 		t.Fatalf("migration 13 = %#v, want version 13 name supersession_activations", migrations[12])
 	}
@@ -860,7 +857,7 @@ func TestSupersessionActivationMigrationUpgradesPriorVersionWithoutChangingRecor
 
 	// Synthesize version 12: it has no activation tables and no composite parent-key index on the
 	// declaration table, and this slice must change no canonical record or declaration on the way.
-	if _, err := store.db.ExecContext(ctx, `DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP INDEX supersession_declarations_id_source_idx; DELETE FROM schema_migrations WHERE version > 12`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DROP INDEX segments_vector_order_idx; DROP INDEX local_items_vector_current_idx; DROP TABLE embeddings; DROP TABLE vector_spaces; DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP INDEX supersession_declarations_id_source_idx; DELETE FROM schema_migrations WHERE version > 12`); err != nil {
 		t.Fatal(err)
 	}
 	if err := verifyVersion(ctx, store.db, migrations, 12, true, false); err != nil {
@@ -1105,7 +1102,7 @@ func TestSupersessionActivationSourceIndexUpgradePreservesHistory(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.db.ExecContext(ctx, `DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version = 14`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DROP INDEX segments_vector_order_idx; DROP INDEX local_items_vector_current_idx; DROP TABLE embeddings; DROP TABLE vector_spaces; DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version >= 14`); err != nil {
 		t.Fatal(err)
 	}
 	if err := verifyVersion(ctx, store.db, migrations, 13, true, false); err != nil {

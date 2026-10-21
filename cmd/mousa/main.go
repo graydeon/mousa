@@ -46,6 +46,8 @@ func main() {
 		err = queryCommand(ctx, *storePath, rest)
 	case "trail":
 		err = trailCommand(ctx, *storePath, rest)
+	case "vector":
+		err = vectorCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "withdraw":
@@ -83,6 +85,10 @@ commands:
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
   trail <dir> <trail-id>      inspect authorized historical metadata, never text (JSON)
   trail --source <id> <id>    inspect a JSONL source's trail (JSON)
+  vector inputs <dir>       export authorized current normalized passages and pins (JSON)
+  vector inputs --source <id>
+  vector import <dir>       import one bounded vector batch from stdin (JSON)
+  vector import --source <id>
   access <dir> allow|deny     set this CLI caller's source-scoped access policy (JSON)
   access --source <id> allow|deny
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
@@ -112,6 +118,8 @@ query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --packing-policy original|exact-v1
                             exact-v1 omits byte-equal copies of selected passages
+  --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
+                            cannot combine with policy, associations or supersession flags
   --supersession            withhold the exact active predecessor revision (directory or --source);
                             cannot be combined with --associations
   --associations <file>      opt-in declared-association JSON file
@@ -210,8 +218,28 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
 	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
 	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession")
+	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	vectorMode := false
+	flags.Visit(func(option *flag.Flag) {
+		if option.Name == "vector-space" {
+			vectorMode = true
+		}
+	})
+	if vectorMode {
+		incompatible := false
+		flags.Visit(func(option *flag.Flag) {
+			switch option.Name {
+			case "policy", "associations", "supersession":
+				incompatible = true
+			}
+		})
+		if incompatible {
+			return usageError{"vector mode cannot be combined with policy, associations or supersession flags"}
+		}
+		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing)
 	}
 	if *supersession {
 		associationSupplied := false

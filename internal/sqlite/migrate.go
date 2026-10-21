@@ -138,6 +138,13 @@ var requiredObjectsV14 = append(append([]string(nil), requiredObjectsV13...),
 	"index:supersession_activations_source_idx",
 )
 
+var requiredObjectsV15 = append(append([]string(nil), requiredObjectsV14...),
+	"index:local_items_vector_current_idx",
+	"index:segments_vector_order_idx",
+	"table:embeddings",
+	"table:vector_spaces",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -336,6 +343,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV13
 	} else if wantVersion == 14 {
 		requiredObjects = requiredObjectsV14
+	} else if wantVersion == 15 {
+		requiredObjects = requiredObjectsV15
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -424,6 +433,11 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 	}
 	if wantVersion >= 13 {
 		if err := verifySupersessionActivationRecords(ctx, db); err != nil {
+			return err
+		}
+	}
+	if wantVersion >= 15 {
+		if err := verifyVectorRecords(ctx, db); err != nil {
 			return err
 		}
 	}

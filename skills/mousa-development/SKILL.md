@@ -21,6 +21,16 @@ Reuse the supplied SQLite transaction for candidate, administrative and provenan
 
 Historical trail reads verify recorded immutable evidence and current authorization without reinterpreting selection under today's activation projection. Preserve canonical candidate sizes and ranks when withholding; suppressed candidates consume no packing budget and cannot become retained duplicates. Keep unavailable historical text verification limits explicit.
 
+For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
+Native `vector inputs`, `vector import` and `query --vector-space` form one supported
+workflow; embedding inference stays external and never holds a canonical transaction.
+The source/segment/space slot is immutable; vector identities bind supplied values
+and canonical revision pins. Fresh authorization/current-pointer selection and v5
+trace persistence share one writer snapshot. Historical verification reads recorded
+producing embeddings rather than current vectors. Keep cosine separate from BM25,
+report coverage and reject vector policy/association/supersession flags. MCP query
+and resources remain lexical; its closed history projection omits v5 vector facts.
+
 ## Prove and deliver the change
 
 Use focused regression checks that fail for the intended behavior before the fix and pass afterward. Missing symbols are compile-stage evidence, not behavioral proof. Use real temporary SQLite stores for storage and transaction claims, explicit ordering for snapshot tests, and recomputed identities for corruption tests when a stale ID would obscure the invariant. Retain independent golden expectations and negative observations.

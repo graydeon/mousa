@@ -570,7 +570,7 @@ func TestSupersessionDeclarationMigrationUpgradesPriorVersionWithoutChangingReco
 
 	// Synthesize version 11: it has no supersession tables, and this slice must not change any
 	// canonical record or lexical evidence on the way to the current version.
-	if _, err := store.db.ExecContext(ctx, `DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP TABLE supersession_declarations; DELETE FROM schema_migrations WHERE version > 11`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DROP INDEX segments_vector_order_idx; DROP INDEX local_items_vector_current_idx; DROP TABLE embeddings; DROP TABLE vector_spaces; DROP TABLE supersession_activation_state; DROP TABLE supersession_activations; DROP TABLE supersession_declarations; DELETE FROM schema_migrations WHERE version > 11`); err != nil {
 		t.Fatal(err)
 	}
 	if err := verifyVersion(ctx, store.db, migrations, 11, true, false); err != nil {
