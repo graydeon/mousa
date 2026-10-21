@@ -120,6 +120,8 @@ query options (before positional arguments):
                             exact-v1 omits byte-equal copies of selected passages
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
                             cannot combine with policy, associations or supersession flags
+  --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
+                            supports --policy; no vector-space/associations/supersession flags
   --supersession            withhold the exact active predecessor revision (directory or --source);
                             cannot be combined with --associations
   --associations <file>      opt-in declared-association JSON file
@@ -219,6 +221,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
 	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession")
 	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
+	hybridSpace := flags.String("hybrid-space", "", "RRF lexical/vector space identity; query text argument and vector JSON on stdin")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -228,6 +231,24 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			vectorMode = true
 		}
 	})
+	hybridMode := false
+	flags.Visit(func(option *flag.Flag) {
+		if option.Name == "hybrid-space" {
+			hybridMode = true
+		}
+	})
+	if hybridMode {
+		incompatible := vectorMode
+		flags.Visit(func(option *flag.Flag) {
+			if option.Name == "associations" || option.Name == "supersession" {
+				incompatible = true
+			}
+		})
+		if incompatible {
+			return usageError{"hybrid mode cannot be combined with vector-space, associations or supersession flags"}
+		}
+		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing)
+	}
 	if vectorMode {
 		incompatible := false
 		flags.Visit(func(option *flag.Flag) {

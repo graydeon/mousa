@@ -215,6 +215,81 @@ with vector queries. Explicit query-term policy, associations and supersession
 flags are rejected in vector mode. MCP query/resource search remains lexical;
 native `trail` supplies the v5 vector facts absent from its filtered MCP view.
 
+### Hybrid lexical and vector query
+
+After importing embeddings, combine text and a supplied vector explicitly:
+
+```sh
+./mousa -store local.sqlite query --hybrid-space SPACE_ID --policy dedup \
+  --packing-policy exact-v1 ./documents "Drain sockets" < query-vector.json
+./mousa -store local.sqlite query --hybrid-space SPACE_ID --source SOURCE_ID \
+  "Drain sockets" < query-vector.json
+```
+
+`query-vector.json` uses the existing `mousa.vector_query.v1` object. Query text
+does not attest which text generated that vector. Unknown/mismatched spaces and
+invalid input reject; zero current vectors is reported as hybrid coverage, not
+a fallback. Associations/supersession/vector-only flags cannot be combined with
+hybrid mode. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
+defines candidate bounds, rank domains, errors and historical verification limits.
+
+This runnable example creates lexical-only `c`, vector-only `b` and overlapping
+`a`. Each call starts the native executable afresh. The overlapping passage ranks
+second in each branch but wins fusion: `2/62 = 0.03225806451612903`, versus `1/61`
+for each branch's first hit. A 40-byte budget selects `a`, whereas lexical-only
+selects `c` and vector-only selects `b`. Synthetic vectors prove arithmetic only.
+
+```sh
+python3 - <<'PY'
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+binary = str(Path("./mousa").resolve())
+with tempfile.TemporaryDirectory() as temporary:
+    store = str(Path(temporary) / "hybrid.sqlite")
+    selector = ["--source", "synthetic-hybrid"]
+    def call(*args, value=None):
+        result = subprocess.run([binary, "-store", store, *args],
+            input=None if value is None else json.dumps(value),
+            text=True, capture_output=True, check=True)
+        return json.loads(result.stdout)
+    for item, text in {
+        "a": "Drain sockets before stopping the host.",
+        "b": "Radishes prefer damp soil.",
+        "c": "Drain sockets."
+    }.items():
+        call("sync", *selector, value={"id": item, "text": text})
+    exported = call("vector", "inputs", *selector)
+    pins = ("source_id", "segment_id", "representation_id",
+            "representation_sha256", "content_sha256")
+    embeddings = [{**{key: p[key] for key in pins},
+                   "values": [1, 0] if p["item"] == "b" else [0, 1]}
+                  for p in exported["passages"] if p["item"] != "c"]
+    imported = call("vector", "import", *selector, value={
+        "schema": "mousa.vector_import.v1",
+        "space": {"schema": "mousa.vector_space.v1", "provider": "synthetic",
+                  "model": "hybrid-arithmetic", "version": "1",
+                  "dimensions": 2, "metric": "cosine"},
+        "embeddings": embeddings})
+    query = {"schema": "mousa.vector_query.v1", "values": [1, 0]}
+    selected = call("query", "--hybrid-space", imported["space_id"],
+                    "--budget-bytes", "40", *selector, "Drain", value=query)
+    assert [p["item"] for p in selected["evidence"]] == ["a"]
+    assert (selected["hybrid"]["eligible"], selected["hybrid"]["indexed"]) == (3, 2)
+    history = call("trail", *selector, selected["trail_id"])
+    assert history["historical"]["hybrid"] == selected["hybrid"]
+    print(json.dumps({"selected": selected, "history": history}, indent=2))
+PY
+```
+
+Native v6 history records both branch contributions and the fixed
+`rrf-equal-k60-v1` policy. Both byte packers apply after fusion; exact-v1 handles
+byte-equal passages with different identities separately from the identity union.
+No automatic embeddings, retrieval-quality, semantic-truth or model-window claim
+follows. MCP query/resource interfaces remain lexical.
+
 ### CLI client example
 
 For a persistent documentation lookup, see the

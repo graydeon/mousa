@@ -54,6 +54,7 @@ type SourceTrailView struct {
 	Supersession         *mousa.SupersessionSelection `json:"supersession,omitempty"`
 	// Native callers expose vector history explicitly; the MCP view stays closed.
 	Vector *mousa.VectorSelection `json:"-"`
+	Hybrid *mousa.HybridSelection `json:"-"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -125,6 +126,11 @@ func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.Policy
 			Expression: trail.Expression, BudgetBytes: trail.BudgetBytes,
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
+		}
+		if trail.Schema == mousa.SourceTrailSchemaV6 {
+			view.Schema = trail.Schema
+			view.PackingPolicy = trail.PackingPolicy
+			view.Hybrid = trail.Hybrid
 		}
 		if trail.Schema == mousa.SourceTrailSchemaV5 {
 			view.Schema = trail.Schema
