@@ -132,7 +132,7 @@ type SourceTrail struct {
 	RequestID            string                 `json:"request_id"`
 	DecisionID           string                 `json:"decision_id"`
 	Outcome              string                 `json:"outcome"`
-	Expression           string                 `json:"expression"`
+	Expression           string                 `json:"expression,omitempty"`
 	BudgetBytes          uint64                 `json:"budget_bytes"`
 	UsedBytes            uint64                 `json:"used_bytes"`
 	PacketID             string                 `json:"packet_id"`
@@ -141,6 +141,7 @@ type SourceTrail struct {
 	Associated           []TrailAssociated      `json:"associated,omitempty"`
 	AssociationOmissions []AssociationOmission  `json:"association_omissions,omitempty"`
 	Supersession         *SupersessionSelection `json:"supersession,omitempty"`
+	Vector               *VectorSelection       `json:"vector,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -364,6 +365,12 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV5 {
+		return trail.validateVectorTrail()
+	}
+	if trail.Vector != nil {
+		return newValidationError("vector", ValidationCodeInvalidSchema, "field requires source trail v5", nil)
+	}
 	if !isSourceTrailSchema(trail.Schema) {
 		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
@@ -483,6 +490,9 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
+	if trail.Schema == SourceTrailSchemaV5 {
+		return vectorTrailIdentity(trail)
+	}
 	if !isSourceTrailSchema(trail.Schema) {
 		return SourceTrailID{}, newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
@@ -628,6 +638,9 @@ func EncodeSourceTrail(trail SourceTrail) ([]byte, error) {
 func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	if err := rejectDuplicateJSONKeys(data); err != nil {
 		return SourceTrail{}, err
+	}
+	if vectorTrailSchema(data) {
+		return decodeVectorSourceTrail(data)
 	}
 	var wire struct {
 		Schema        string          `json:"schema"`

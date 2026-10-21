@@ -394,13 +394,14 @@ func TestSupersessionQueryWritableOpenMigrationAndDeniedCorruptionBoundary(t *te
 	source, declaration, _ := activationPins(t, run, "query/open-boundary")
 	activateQueryDeclaration(t, run, source, nil, &declaration, 1)
 	run.run(false, "access", "--source", "query/open-boundary", "deny")
-	rawExec(t, run.store, `DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version = 14`)
+	currentVersion := schemaVersion(t, run.store)
+	rawExec(t, run.store, `DROP INDEX segments_vector_order_idx; DROP INDEX local_items_vector_current_idx; DROP TABLE embeddings; DROP TABLE vector_spaces; DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version >= 14`)
 	if version := schemaVersion(t, run.store); version != 13 {
 		t.Fatalf("older fixture version = %d", version)
 	}
 	_, denied := supersessionQuery(t, run, "query/open-boundary", mousa.PackingOriginal, "oldterm", 8192, true)
 	requireSupersessionCounts(t, denied, "policy_excluded", 0, 0, 0, 0, 0)
-	if version := schemaVersion(t, run.store); version != 14 {
+	if version := schemaVersion(t, run.store); version != currentVersion {
 		t.Fatalf("valid query did not migrate at writable open: %d", version)
 	}
 	if _, err := os.Stat(run.store + ".pre-migrate-v13-to-v14.sqlite"); err != nil {

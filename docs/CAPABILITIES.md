@@ -22,6 +22,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
+| Caller-supplied exact vector retrieval | Yes | `vector inputs`, `vector import`, `query --vector-space`; directory and JSONL selectors | Synthetic cosine/tie arithmetic, strict imports, current-only source pins, partial coverage, restart, both packing policies, v5 history, corruption and transaction ordering | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Declared associated context | Yes | Opt-in `query --associations <file>` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and its bounded development cases; no general retrieval-quality claim |
@@ -35,7 +36,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Opt-in supersession trail and survivor packing | Yes | Directory and JSONL `query --supersession` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults; directory resync, namespace isolation and historical pin inspection | Independent companion evidence is separate from product tests; no latency claim |
 | MCP supersession opt-in | Yes | `mousa_query` and `mousa_trail` optional `supersession` boolean | Real MCP client round trips over the built executable and fresh stores: declared input and member in the discovered closed schemas, strict argument rejection before any store write, omitted/`false`/`true` property sets, the recorded no-history/denial/deactivation/active member, legacy records without a member, restart and later activation changes, damaged-record refusal without repair or an audit write, and unchanged sync/status/query definitions | [Independent stdio inspection observations, 2026-10-13](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession); synthetic client behavior, not retrieval quality or performance |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
-| Semantic/hybrid retrieval, model inference, answer generation | No | No | Not implemented | None |
+| Hybrid retrieval, embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
 | OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries | None; live identity-provider/deployment interoperability not verified |
@@ -50,6 +51,98 @@ keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
+
+## Caller-supplied exact vector retrieval
+
+The [native workflow and synthetic example](USAGE.md#caller-supplied-vector-workflow)
+exports current normalized passage bytes, imports caller-produced embeddings and
+queries one source in one explicitly named space. Lexical queries keep their
+previous default, fields, packet identities and v1–v4 trail encodings. Mousa does
+not run a model, call a provider, use a GPU or need another runtime/store.
+
+`vector inputs` evaluates fresh CLI source authorization and lifecycle before
+reading any passage bytes. An allow returns exact normalized `text`, `item`,
+`source_id`, `segment_id`, `representation_id`, `representation_sha256`,
+`content_sha256`, byte coordinates and segmentation policy. A deny or withdrawal
+returns an empty passage array and the fresh decision metadata, without source
+text or coverage. External producers run after this transaction closes.
+
+`vector import` reads exactly one `mousa.vector_import.v1` JSON object from stdin;
+it is not JSONL. The closed object has `schema`, `space` and `embeddings`. A space
+has exactly `schema: "mousa.vector_space.v1"`, `provider`, `model`, `version`,
+`dimensions` and `metric: "cosine"`. Provider/model/version are nonempty UTF-8
+labels of at most 256 bytes each. They are caller declarations, not authenticated
+facts or proof of which model ran. Change the version or model label when vectors
+change; equal dimensions do not make declarations interchangeable.
+
+Each embedding has exactly the five exported identity/content pins and `values`,
+an array of finite float64 numbers with the declared dimension and nonzero norm.
+Missing, null, unknown, case-aliased, duplicate or trailing members, duplicate
+segments, invalid numbers and oversized input reject. Every pin must match an
+existing current passage of the selected active source. Import is trusted local
+administration, not a retrieval access grant. It changes no policy or current item.
+The whole batch is atomic. Exact retries are safe; different values for an existing
+source/segment/space reject as an immutable conflict.
+
+Migration 15 adds `vector_spaces` and `embeddings` to canonical SQLite, plus
+indexes for bounded current-item and passage enumeration. Space identities bind
+the complete descriptor; embedding identities bind space, source, segment,
+representation/content pins and supplied values. A unique source/segment/space
+slot prevents replacement under a different content identity. Canonical reads and
+startup scans verify bytes, identities, projections and immutable source ancestry
+without repairing corruption. No old record or migration is rewritten.
+
+`query --vector-space SPACE_ID` takes one `mousa.vector_query.v1` object on stdin,
+with exactly `schema` and `values`, and takes no text argument. Explicit malformed,
+unknown or dimension-mismatched spaces reject; there is no lexical fallback.
+The query-vector identity binds the declared space and exact supplied values, not
+an asserted natural-language meaning. Exact CPU cosine sorts descending, then by
+canonical segment ID ascending. Per-operand scaling avoids norm overflow and
+underflow; scores are clamped to [-1, 1]. There is no score threshold or top-k
+truncation: all indexed current passages within the source bound are considered.
+Zero and negative scores remain eligible for packing.
+
+The vector response is `mousa.vector_result.v1`, not the lexical response shape.
+It reports `mode: "vector"`, space/query-vector identities, fresh decision metadata,
+packet/trail IDs, `eligible`, `indexed`, `missing`, packing budget/use and selected
+evidence with an explicit `cosine` score. Missing current vectors are not silently
+treated as lexical matches: partial coverage still searches the indexed subset;
+zero coverage reports `no_indexed_passages`. An empty source reports `no_passages`.
+Denial discloses no source coverage. Original and exact-v1 packing preserve the
+existing whole-passage, skip-if-too-large and byte-equal retained-copy rules.
+
+Every vector query writes `mousa.source_trail.v5`, including denied and empty
+queries. Its closed `vector` member binds the descriptor, space/query-vector
+identities, query values, observed eligible/indexed counts and every ranked
+embedding/source/segment/representation/content pin and cosine score. The usual
+candidate rows bind rank, size, selected flags and packing omissions; v5 has no
+lexical expression, associations or supersession member. Packet v1 identities
+continue to bind the released selection rather than retrieval mode. Native `trail`
+reauthorizes before releasing v5 metadata and rechecks scores against recorded
+immutable embeddings, never today's current pointers. Resync/deletion/withdrawal
+cannot make an old vector release retired text. History retains producing records,
+not retired passage bytes; byte-equality verification remains limited to retained
+indexed text, as for earlier trails. Authorization, current selection, packing and
+trail persistence share one immediate writer transaction.
+
+| Resource | Bound |
+|---|---|
+| Source per export/import/query | 100 active items, 100 current passages; larger sources reject, not truncate |
+| Normalized source passage bytes | 262,144 total; item labels at most 4,096 bytes |
+| Dimensions | 1–2,048 |
+| Import | 1–100 embeddings; at most 8 MiB JSON |
+| Query input | At most 128 KiB JSON |
+| Vector released-text budget | 1–262,144 bytes; default 8,192 |
+| Arithmetic work | At most 204,800 coordinate pairs per query |
+| Native vector output | Below 8 MiB including escaped text, bounded labels and metadata; text budget excludes JSON overhead |
+
+These bounds apply to selection, not the existing full-store startup integrity
+scan. No hybrid fusion, ANN index, automatic embeddings or model-window accounting
+is implemented. Vector mode rejects explicit `--policy`, `--associations` or
+`--supersession` flags; ordinary lexical combinations keep their current behavior.
+MCP query and resource search remain lexical. The unchanged filtered MCP history
+view does not expose v5 vector facts; use native `trail` for the complete vector
+selection. No SDK or connector framework is introduced.
 
 ## Supersession core boundary
 

@@ -332,6 +332,14 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 	if err := rows.Close(); err != nil {
 		return mousa.SourceTrail{}, classify("get source trail candidates", err)
 	}
+	if trail.Schema == mousa.SourceTrailSchemaV5 {
+		if err := verifyVectorTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
+			return mousa.SourceTrail{}, err
+		}
+		if err := verifyTrailContent(ctx, q, trail, decision.Request.SourceID); err != nil {
+			return mousa.SourceTrail{}, lexicalStructuralError("verify vector trail content", err)
+		}
+	}
 	if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 {
 		if err := verifyTrailContent(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err

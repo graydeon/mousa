@@ -24,15 +24,32 @@ and explicit native JSONL supersession enforcement. Declaration/activation admin
 and read-only current-state inspection are implemented. The fresh opted-in store path
 consults administration inside the retrieval transaction and emits v4; default queries
 are unchanged, and the local stdio MCP query tool exposes the same opt-in explicitly
-while its opted-out responses keep the previous property set. Directory and
-association-plus-supersession enforcement are
-unsupported. Canonical read and startup verification validate recorded v4 history.
+while its opted-out responses keep the previous property set.
+Association-plus-supersession enforcement remains unsupported. Native directory
+enforcement is also implemented. Canonical read and startup verification validate
+recorded v4 history.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
 tokenizer; this does not bound the full packet or a model's context window. No answering
 pipeline exists, so no RAG/answer-quality benchmark is applicable. Memory benchmarks
 and FreshStack await their corresponding capabilities; see the
 [implemented and planned capabilities](OVERVIEW.md#foundation).
+
+## Caller-supplied vector evidence boundary
+
+Native export/import/query commands implement exact cosine retrieval over a bounded
+single source and explicitly declared space. The [runnable synthetic example](USAGE.md#caller-supplied-vector-workflow)
+demonstrates a no-query-word-overlap selection, native v5 trail/packet readback and
+stale-revision exclusion. Product regressions cover cosine cases and ties, both
+packing policies, strict inputs, source/space/content isolation, restart, lifecycle
+and authorization, canonical corruption rejection and writer ordering/rollback.
+
+Constructed vectors establish protocol and ranking arithmetic only. No embedding
+model was run; provider/model/version labels are caller declarations. This is not
+an automatic natural-language semantic-search, retrieval-quality or performance
+measurement. No hybrid fusion, ANN, answering pipeline or model-window accounting
+is implemented. Independent public-head native observations belong in the companion
+repository; historical lexical or supersession captures do not validate this path.
 
 ## Supersession contract evidence
 

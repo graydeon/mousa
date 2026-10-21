@@ -244,7 +244,7 @@ func TestSupersessionActivationStateExitsForInvalidInvocationAbsentStoreAndOlder
 	olderSource, olderDeclaration, _ := activationPins(t, older, "activation/state-version13")
 	olderInitial := activationJSON(t, olderSource, nil, &olderDeclaration, "example.operator", "console/1.0", 1759622400000000, nil)
 	requireApplied(t, older, olderInitial)
-	rawExec(t, olderPath, `DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version = 14`)
+	rawExec(t, olderPath, `DROP INDEX segments_vector_order_idx; DROP INDEX local_items_vector_current_idx; DROP TABLE embeddings; DROP TABLE vector_spaces; DROP INDEX supersession_activations_source_idx; DELETE FROM schema_migrations WHERE version >= 14`)
 	if version := schemaVersion(t, olderPath); version != 13 {
 		t.Fatalf("older store fixture reports schema version %d, want 13", version)
 	}
