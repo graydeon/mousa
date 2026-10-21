@@ -17,8 +17,8 @@ Do not create a tunnel, deploy an endpoint, install credentials, publish a plugi
 
 The bundled skills guide client setup and evidence use. They do not grant administration access or turn internal development contracts into MCP capabilities. Check the configured tool schema and current capability documentation before promising an interface. Native declaration and activation commands are separate from these client tools. A discovered mousa_query schema may expose the optional supersession boolean: true enables exact pinned-predecessor withholding, while omission or false preserves the uncurated default. A discovered mousa_trail schema may expose the same optional boolean: true returns the consultation a v4 Source Trail recorded, while omission or false keeps the filtered inspection. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior.
 
-Caller-supplied vector retrieval is a separate native CLI workflow, not an MCP
-query mode or a bundled embedding service. Before external embedding generation,
-confirm authorization to share the exported normalized passage bytes with that
+Caller-supplied vector and hybrid retrieval are separate native CLI workflows,
+not MCP query modes or bundled embedding services. Before external embedding
+generation, confirm authorization to share exported normalized bytes with that
 producer. Mousa makes no model/provider network call. Use native `trail` for v5
-vector facts; the filtered MCP history view does not expose them.
+vector and v6 hybrid facts; the filtered MCP history view omits them.

@@ -31,6 +31,14 @@ producing embeddings rather than current vectors. Keep cosine separate from BM25
 report coverage and reject vector policy/association/supersession flags. MCP query
 and resources remain lexical; its closed history projection omits v5 vector facts.
 
+For hybrid changes, read [native hybrid retrieval](../../docs/CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval).
+`query --hybrid-space` combines prepared lexical text and an explicitly supplied
+query vector in one immediate snapshot. v6 records separate BM25/cosine branch
+ranks, canonical pins and equal-weight RRF(k60); both packers consume fused order.
+Preserve v1–v5 bytes and vector-only behavior. Verify immutable producing facts
+in history without rerunning lexical search or asserting past coverage completeness.
+MCP remains lexical and omits hybrid facts.
+
 ## Prove and deliver the change
 
 Use focused regression checks that fail for the intended behavior before the fix and pass afterward. Missing symbols are compile-stage evidence, not behavioral proof. Use real temporary SQLite stores for storage and transaction claims, explicit ordering for snapshot tests, and recomputed identities for corruption tests when a stale ID would obscure the invariant. Retain independent golden expectations and negative observations.

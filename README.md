@@ -25,8 +25,8 @@ logical backbone rather than the exact order of database operations.
 
 Search defaults to lexical retrieval. Native callers can also export authorized
 passages, import externally produced vectors and query one declared space by exact
-cosine similarity. Automatic embeddings, hybrid ranking, factual freshness and
-semantic conflict checks remain planned.
+cosine similarity or fuse lexical and vector matches with reciprocal rank fusion.
+Automatic embeddings, factual freshness and semantic conflict checks remain planned.
 [Explore each stage and its implementation boundary →](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone)
 
 > **Pre-alpha.** CLI and local stdio MCP are available. Build from source with
@@ -39,7 +39,7 @@ Mousa makes that context smaller and easier to inspect:
 
 | Your need | What Mousa gives you |
 |---|---|
-| Find useful passages | Source-scoped lexical search, or opt-in exact cosine retrieval with caller-supplied vectors. |
+| Find useful passages | Source-scoped lexical, exact cosine, or hybrid RRF retrieval with caller-supplied vectors. |
 | Control context size | An explicit released-text byte budget and optional exact-content deduplication. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
@@ -76,6 +76,8 @@ be imported without opening the store.
 
 For externally generated embeddings, see the [native vector workflow](docs/USAGE.md#caller-supplied-vector-workflow).
 Mousa performs no model inference or network calls for this path.
+Use [native hybrid retrieval](docs/USAGE.md#hybrid-lexical-and-vector-query) to combine
+query text and an explicitly supplied vector in one ranked, packed result.
 
 ## What works today?
 
@@ -93,8 +95,8 @@ Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Native-created v1–v3 history remains inspectable without a
 supersession member. Opt-in usage and source-masked refusal boundaries are in the
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Native caller-supplied vector retrieval
-uses a separate v5 trail. Hybrid ranking, automatic embedding generation, secret
-filtering and full model-window budgeting remain planned.
+uses a separate v5 trail; hybrid selection records branch contributions in v6.
+Automatic embedding generation, secret filtering and full model-window budgeting remain planned.
 
 The [directory supersession example](docs/USAGE.md#directory-supersession-example)
 shows how to discover revision pins, prepare declaration and activation records, and

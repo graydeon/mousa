@@ -68,7 +68,7 @@ func vectorTrailIdentity(trail SourceTrail) (SourceTrailID, error) {
 
 func (trail SourceTrail) validateVectorTrail() error {
 	invalid := func() error { return errors.New("invalid v5 vector trail bindings, coverage or order") }
-	if trail.Schema != SourceTrailSchemaV5 || trail.Expression != "" || trail.Supersession != nil || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 || trail.Vector == nil {
+	if trail.Schema != SourceTrailSchemaV5 || trail.Expression != "" || trail.Supersession != nil || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 || trail.Vector == nil || trail.Hybrid != nil {
 		return invalid()
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {

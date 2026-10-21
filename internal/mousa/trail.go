@@ -142,6 +142,7 @@ type SourceTrail struct {
 	AssociationOmissions []AssociationOmission  `json:"association_omissions,omitempty"`
 	Supersession         *SupersessionSelection `json:"supersession,omitempty"`
 	Vector               *VectorSelection       `json:"vector,omitempty"`
+	Hybrid               *HybridSelection       `json:"hybrid,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -365,6 +366,12 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV6 {
+		return trail.validateHybridTrail()
+	}
+	if trail.Hybrid != nil {
+		return newValidationError("hybrid", ValidationCodeInvalidSchema, "field requires source trail v6", nil)
+	}
 	if trail.Schema == SourceTrailSchemaV5 {
 		return trail.validateVectorTrail()
 	}
@@ -490,6 +497,9 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
+	if trail.Schema == SourceTrailSchemaV6 {
+		return vectorTrailIdentity(trail)
+	}
 	if trail.Schema == SourceTrailSchemaV5 {
 		return vectorTrailIdentity(trail)
 	}
@@ -638,6 +648,9 @@ func EncodeSourceTrail(trail SourceTrail) ([]byte, error) {
 func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	if err := rejectDuplicateJSONKeys(data); err != nil {
 		return SourceTrail{}, err
+	}
+	if hybridTrailSchema(data) {
+		return decodeHybridSourceTrail(data)
 	}
 	if vectorTrailSchema(data) {
 		return decodeVectorSourceTrail(data)

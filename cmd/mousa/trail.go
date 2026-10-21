@@ -38,6 +38,18 @@ func trailCommand(ctx context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if inspection.Historical != nil && inspection.Historical.Hybrid != nil {
+		historical := struct {
+			*sqlite.SourceTrailView
+			Hybrid *mousa.HybridSelection `json:"hybrid"`
+		}{SourceTrailView: inspection.Historical, Hybrid: inspection.Historical.Hybrid}
+		return emit(struct {
+			Source  string `json:"source"`
+			TrailID string `json:"trail_id"`
+			sqlite.TrailInspection
+			Historical any `json:"historical"`
+		}{Source: label, TrailID: id.String(), TrailInspection: inspection, Historical: historical})
+	}
 	if inspection.Historical != nil && inspection.Historical.Vector != nil {
 		// Keep the lexical/MCP projection unchanged. Native v5 history has
 		// vector facts instead of an empty lexical expression.

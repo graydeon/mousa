@@ -23,6 +23,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
 | Caller-supplied exact vector retrieval | Yes | `vector inputs`, `vector import`, `query --vector-space`; directory and JSONL selectors | Synthetic cosine/tie arithmetic, strict imports, current-only source pins, partial coverage, restart, both packing policies, v5 history, corruption and transaction ordering | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
+| Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space` with query text and supplied vector; directory and JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history, corruption and writer rollback | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Declared associated context | Yes | Opt-in `query --associations <file>` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and its bounded development cases; no general retrieval-quality claim |
@@ -36,7 +37,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Opt-in supersession trail and survivor packing | Yes | Directory and JSONL `query --supersession` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults; directory resync, namespace isolation and historical pin inspection | Independent companion evidence is separate from product tests; no latency claim |
 | MCP supersession opt-in | Yes | `mousa_query` and `mousa_trail` optional `supersession` boolean | Real MCP client round trips over the built executable and fresh stores: declared input and member in the discovered closed schemas, strict argument rejection before any store write, omitted/`false`/`true` property sets, the recorded no-history/denial/deactivation/active member, legacy records without a member, restart and later activation changes, damaged-record refusal without repair or an audit write, and unchanged sync/status/query definitions | [Independent stdio inspection observations, 2026-10-13](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession); synthetic client behavior, not retrieval quality or performance |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
-| Hybrid retrieval, embedding inference, answer generation | No | No | Not implemented | None |
+| Embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
 | OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries | None; live identity-provider/deployment interoperability not verified |
@@ -137,12 +138,82 @@ trail persistence share one immediate writer transaction.
 | Native vector output | Below 8 MiB including escaped text, bounded labels and metadata; text budget excludes JSON overhead |
 
 These bounds apply to selection, not the existing full-store startup integrity
-scan. No hybrid fusion, ANN index, automatic embeddings or model-window accounting
-is implemented. Vector mode rejects explicit `--policy`, `--associations` or
+scan. No ANN index, automatic embeddings or model-window accounting is implemented.
+Vector mode rejects explicit `--policy`, `--associations` or
 `--supersession` flags; ordinary lexical combinations keep their current behavior.
 MCP query and resource search remain lexical. The unchanged filtered MCP history
 view does not expose v5 vector facts; use native `trail` for the complete vector
 selection. No SDK or connector framework is introduced.
+
+## Native hybrid lexical and vector retrieval
+
+`query --hybrid-space SPACE_ID [--policy original|dedup] SOURCE TEXT` takes the
+same strict `mousa.vector_query.v1` stdin object as vector-only mode. Use either
+a directory argument or `--source ID`, not both. See the
+[runnable example](USAGE.md#hybrid-lexical-and-vector-query). Text is an independent
+caller input; Mousa does not verify that the supplied vector was generated from it.
+Explicit hybrid mode rejects any `--vector-space`, `--associations` or
+`--supersession` flag, including false/empty values. Existing lexical combinations
+and vector-only outputs remain unchanged. No embedding work or network call runs.
+
+`EvaluateAndTraceHybrid` uses one immediate writer transaction for fresh policy
+and lifecycle, current passage pins, both branches, fusion, packing and trail
+persistence/readback. The vector source bounds above also bound hybrid selection:
+100 active items/current passages, 256 KiB normalized bytes, 1–2048 dimensions,
+128 KiB query JSON and 1–262144 released-text bytes. Larger sources reject rather
+than truncate. Both branches share this verified current passage universe.
+
+The lexical branch uses `PrepareLexicalTerms`: original preserves repeated terms,
+dedup removes them before the established bounded quoted-OR preparation. Later
+terms stop at the expression limit; an oversized first term or no preparable
+terms rejects. Hybrid CLI preparation errors are usage errors (exit 2) before
+opening the store; unknown spaces and dimension mismatches are store errors
+(exit 1). A valid prepared expression with no matches still runs the vector branch.
+Every matching current passage participates (at most 100), ranked by ascending
+actual FTS5 BM25, then canonical segment ID. Every current indexed vector in the
+named space participates (at most 100), ranked by descending exact cosine, then
+canonical segment ID. Zero and negative cosine have no hidden threshold.
+Ranks are consecutive from one within each complete branch, before packing.
+
+The identity union cannot exceed current passages. Policy `rrf-equal-k60-v1`
+adds `1/(60+lexical_rank)` and `1/(60+vector_rank)` where present, with equal
+weights and zero for an absent branch. Fused order is descending `rrf`, then
+ascending canonical segment ID. This is neither a probability nor BM25 plus
+cosine. `lexical.bm25`, `vector.cosine` and their branch ranks retain separate
+names; a vector-only hit has no lexical contribution.
+
+The response `mousa.hybrid_result.v1` reports `mode: "hybrid"`, the producing
+`hybrid` selection, decision/packet/trail IDs, missing coverage, packing and selected
+source-linked evidence with fused `rank` and `rrf`. The selection records `eligible`
+current passages and `indexed` current vectors. Partial coverage leaves unembedded
+passages eligible lexically. A known space with zero current vectors still yields
+an explicit hybrid result, never an ordinary lexical fallback. Unknown/mismatched
+spaces or damaged records fail. Outcome is `evidence`, `no_passages`,
+`no_candidates`, `budget_omitted` or `policy_excluded`. Denial/withdrawal records
+an audit trail but returns no source-derived coverage/candidate facts (counts zero).
+
+Both packers consume the fused order. Identity union happens before byte packing;
+equal bytes under distinct segment IDs remain distinct candidates. `original`
+packs each fitting passage; `exact-v1` omits copies of the true first retained
+byte-equal passage, freeing budget for later candidates. Oversized/unselected
+passages consume no released-text budget and never seed retained duplicates.
+Packet v1 identity semantics are unchanged.
+
+Each hybrid query writes closed `mousa.source_trail.v6` history. It binds request
+text, prepared terms/expression and term policy, fusion policy, space descriptor,
+query vector/identity, observed coverage, candidate branch membership/ranks/scores,
+canonical source/segment/representation/content pins, fused order and packing.
+Native `trail` reauthorizes and verifies immutable producing pins/embeddings and
+cosine, recorded ranks/RRF/order, content coordinates and packet accounting.
+It does not search again or consult today's current pointers to reinterpret selection.
+Recorded lexical BM25 depends on the producing FTS corpus and cannot be recomputed
+from later index state. Past eligible completeness, lexical matching completeness,
+missing-vector absence and activation timing are recorded observations, not
+reconstructible proofs. Hashes bind those observations; they do not prove them.
+Retired passage bytes are not archived; exact byte-duplicate verification is
+limited to retained text, as in earlier versions. Startup verifies v6 without
+relaxing v1–v5 readers or canonical bytes. MCP query/resources remain lexical and
+the unchanged filtered history interface omits hybrid contribution facts.
 
 ## Supersession core boundary
 

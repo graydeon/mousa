@@ -47,9 +47,20 @@ and authorization, canonical corruption rejection and writer ordering/rollback.
 Constructed vectors establish protocol and ranking arithmetic only. No embedding
 model was run; provider/model/version labels are caller declarations. This is not
 an automatic natural-language semantic-search, retrieval-quality or performance
-measurement. No hybrid fusion, ANN, answering pipeline or model-window accounting
-is implemented. Independent public-head native observations belong in the companion
-repository; historical lexical or supersession captures do not validate this path.
+measurement. No ANN, answering pipeline or model-window accounting is implemented.
+Independent public-head native observations belong in the companion repository;
+historical lexical or supersession captures do not validate this path.
+
+Native hybrid retrieval now combines the established lexical branch and supplied
+vector branch with equal-weight reciprocal rank fusion, fixed k=60. The
+[runnable example](USAGE.md#hybrid-lexical-and-vector-query) makes an overlapping
+second-ranked hit outrank either branch's first hit; v6 history records the actual
+branch ranks, BM25/cosine and fused selection. Regression cases cover canonical-ID
+ties, partial/zero current coverage, both packers, lifecycle/revision isolation,
+historical producing-record checks and writer rollback. These are synthetic
+arithmetic/protocol checks, not embedding-model or retrieval-quality acceptance.
+Recorded lexical BM25 and historical completeness cannot be independently
+reconstructed from today's changed index; hashes do not prove past absence.
 
 ## Supersession contract evidence
 
