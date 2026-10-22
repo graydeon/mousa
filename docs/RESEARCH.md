@@ -52,6 +52,13 @@ digest corruption, missing/corrupt cache, process protocol failure and cancellat
 Counts are measured producer evidence; hashes alone cannot prove a tokenizer ran.
 Normal history requires no Python, and retired text remains unarchived.
 Explicit recount refuses when original selected bytes are unavailable.
+Mixed-ancestry SQLite regressions cover lifecycle rejections before, between and
+after accepted candidates under both packers, ordinary history and official
+recount. Native serializer regressions check query/history aligned facts and
+canonical no-alias preservation. Public ingestion cannot construct arbitrary
+multi-source derivations; ordinary single-source native captures do not establish
+this internal graph case. Canonical v7 facts remain recorded; released token
+arrays contain only accepted candidates with consecutive release ranks.
 
 Caller-declared prompt/output reservations provide bounded arithmetic, not
 authenticated model-window safety. No model was called and no answer quality,

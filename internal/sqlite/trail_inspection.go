@@ -54,10 +54,10 @@ type SourceTrailView struct {
 	AssociationOmissions []mousa.AssociationOmission  `json:"association_omissions,omitempty"`
 	Supersession         *mousa.SupersessionSelection `json:"supersession,omitempty"`
 	// Native callers expose vector history explicitly; the MCP view stays closed.
-	Vector            *mousa.VectorSelection `json:"-"`
-	Hybrid            *mousa.HybridSelection `json:"-"`
-	Token             *mousa.TokenSelection  `json:"-"`
-	TokenVerification string                 `json:"-"`
+	Vector            *mousa.VectorSelection    `json:"-"`
+	Hybrid            *mousa.HybridSelection    `json:"-"`
+	Token             *mousa.TokenSelectionView `json:"-"`
+	TokenVerification string                    `json:"-"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -145,7 +145,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 		if trail.Schema == mousa.SourceTrailSchemaV7 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
-			view.Token, view.Vector, view.Hybrid = trail.Token, trail.Vector, trail.Hybrid
+			view.Token, view.Vector, view.Hybrid = mousa.ReleasedTokenSelection(trail), trail.Vector, trail.Hybrid
 		}
 		if counter != nil && trail.Token == nil {
 			return errors.New("token verification requires a token-aware trail")

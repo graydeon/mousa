@@ -125,6 +125,12 @@ of `context`, including headers/separators; `token.rendered_sha256` hashes those
 exact UTF-8 bytes, before JSON string escaping. `used_bytes` still counts only
 selected evidence text, not rendering headers, separators or JSON overhead.
 `token.limit` is the effective allowance, and `token.budget` retains declarations.
+The released `token.candidate_ids` aligns `proposed_tokens` and lexical `lexical`
+facts with accepted candidates, including unselected budget/duplicate omissions.
+Lexical ranks count only accepted order, not original search positions. A null
+proposed count means that accepted passage was not counted (for example, a
+duplicate); a lifecycle-rejected candidate has no slot at all. Query and history
+use this filtered view, not the full canonical v7 producing record.
 
 For externally supplied vectors, use the same exported passages, immutable
 space and query-vector JSON from the [vector workflow](#caller-supplied-vector-workflow):

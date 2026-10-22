@@ -113,6 +113,10 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 		trail, decision, rendered = got.Trail, got.Decision, got.Context
 		verified = got.Verified
 	}
+	return emitTokenQuery(mode, label, budget, packing, trail, decision, rendered, verified)
+}
+
+func emitTokenQuery(mode, label string, budget uint64, packing string, trail mousa.SourceTrail, decision mousa.PolicyDecision, rendered string, verified []mousa.VerifiedLexicalCandidate) error {
 	if trail.Token == nil {
 		return errors.New("missing token selection record")
 	}
@@ -144,12 +148,12 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 		BudgetBytes     uint64                       `json:"budget_bytes"`
 		UsedBytes       uint64                       `json:"used_bytes"`
 		PackingPolicy   string                       `json:"packing_policy"`
-		Token           *mousa.TokenSelection        `json:"token"`
+		Token           *mousa.TokenSelectionView    `json:"token"`
 		Context         string                       `json:"context"`
 		Evidence        []tokenEvidence              `json:"evidence"`
 		Vector          *mousa.VectorSelection       `json:"vector,omitempty"`
 		Hybrid          *mousa.HybridSelection       `json:"hybrid,omitempty"`
-	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, trail.Token, rendered, evidence, trail.Vector, trail.Hybrid})
+	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, mousa.ReleasedTokenSelection(trail), rendered, evidence, trail.Vector, trail.Hybrid})
 }
 
 func startTokenCounter(ctx context.Context, python, cache string) (*tokenizer.Counter, error) {

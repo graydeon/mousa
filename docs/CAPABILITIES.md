@@ -103,6 +103,18 @@ backend; retired original bytes make that explicit recount unavailable.
 Neither current content nor a hash can replace those missing historical bytes.
 Historical BM25 and past coverage completeness retain their existing limits.
 
+Native query and normal/recount history release a `TokenSelectionView`, not the
+canonical `TokenSelection`. Its `candidate_ids`, `proposed_tokens` and (for lexical
+mode) `lexical` arrays align only with historically accepted candidates, including
+accepted budget/duplicate omissions. Lexical ranks are consecutive within this
+accepted order; BM25 and proposed counts retain their accepted producing values.
+Rejected candidates leave no identity, null slot or original ordinal in those
+arrays. The deliberate history `lifecycle_excluded` aggregate remains available.
+Vector/hybrid producing arrays already require accepted candidates only. Measured
+rendering/count/digest and budget declarations do not change. Canonical internal
+reads retain every producing fact; projection never edits the record or its
+identity. Fresh inspection still records its authorization audit evidence.
+
 Caps, process/work limits, reservation arithmetic, errors and unsupported explicit
 association/supersession combinations are specified in the usage guide. Window
 and reservation values are caller declarations, not authenticated provider/model

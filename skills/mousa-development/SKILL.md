@@ -51,6 +51,12 @@ evidence, while retained rendering digests are rederived. Explicit authorized
 recount needs every original selected byte; retired text remains unarchived.
 Run optional-feature checks with a pinned prepared backend and report skips
 separately. MCP token integration remains pending.
+Native query/history expose `TokenSelectionView`: accepted candidate identities
+align compact proposed-count and lexical arrays, with accepted-order lexical ranks.
+Keep rejected slots and original search ordinals out of release views. Accepted
+budget/duplicate omissions still have legitimate metadata. Internal canonical
+`TokenSelection` retains all producing facts; never mutate or rehash it to filter
+an inspection. Fresh inspection may append authorization evidence.
 
 
 ## Prove and deliver the change

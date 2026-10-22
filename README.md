@@ -85,6 +85,8 @@ This opt-in counts the complete versioned rendering with official
 `tiktoken==0.12.0`, `o200k_base`, ordinary-text encoding. It requires a prepared
 local Python environment/cache; queries never download vocabulary assets.
 Ordinary queries and the CGO-disabled Go build do not require Python.
+Native query and history token facts use an accepted-candidate release view;
+canonical v7 producing facts remain intact for integrity checks.
 
 ## What works today?
 

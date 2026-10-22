@@ -71,13 +71,17 @@ func trailCommand(ctx context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
+	return emitTrailInspection(label, id, inspection)
+}
+
+func emitTrailInspection(label string, id mousa.SourceTrailID, inspection sqlite.TrailInspection) error {
 	if inspection.Historical != nil && inspection.Historical.Token != nil {
 		historical := struct {
 			*sqlite.SourceTrailView
-			Token             *mousa.TokenSelection  `json:"token"`
-			Vector            *mousa.VectorSelection `json:"vector,omitempty"`
-			Hybrid            *mousa.HybridSelection `json:"hybrid,omitempty"`
-			TokenVerification string                 `json:"token_verification"`
+			Token             *mousa.TokenSelectionView `json:"token"`
+			Vector            *mousa.VectorSelection    `json:"vector,omitempty"`
+			Hybrid            *mousa.HybridSelection    `json:"hybrid,omitempty"`
+			TokenVerification string                    `json:"token_verification"`
 		}{inspection.Historical, inspection.Historical.Token, inspection.Historical.Vector, inspection.Historical.Hybrid, inspection.Historical.TokenVerification}
 		return emit(struct {
 			Source  string `json:"source"`
