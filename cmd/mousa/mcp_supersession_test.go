@@ -136,7 +136,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 	requireMCPSchemaProperties(t, historical, []string{
 		"id", "request_id", "decision_id", "decision_outcome", "decision_reasons", "expression",
 		"budget_bytes", "used_bytes", "packet_id", "lifecycle_excluded", "candidates", "schema",
-		"packing_policy", "associated", "association_omissions", "supersession",
+		"packing_policy", "associated", "association_omissions", "supersession", "vector", "hybrid",
 	})
 	for _, schema := range []*jsonschema.Schema{query, trail} {
 		encoded, err := json.Marshal(schema)
@@ -163,7 +163,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 		"mousa_sync":   {"items", "segment_policy", "source"},
 		"mousa_status": {"source"},
 		"mousa_query":  {"budget_bytes", "packing_policy", "policy", "query", "source", "supersession"},
-		"mousa_trail":  {"source", "supersession", "trail_id"},
+		"mousa_trail":  {"retrieval_details", "source", "supersession", "trail_id"},
 	} {
 		got := make([]string, 0, len(properties[name]))
 		for property := range properties[name] {

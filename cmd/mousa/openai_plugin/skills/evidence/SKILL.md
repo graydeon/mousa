@@ -19,14 +19,16 @@ Ingestion is a separate, explicit operation. Never call mousa_sync unless the us
 
 Supersession declarations and activation are administered through the native CLI. When the discovered mousa_query schema declares supersession, pass the optional boolean true for an explicitly requested supersession query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer that a newer item replaces an older one or prove that contradictory guidance was resolved. When the discovered mousa_trail schema declares supersession, pass true to read the consultation a v4 trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities and the withholding rows. Legacy trails carry no member, and the member reports recorded evidence rather than today's activation state. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior. Explain conflicting released passages using their provenance.
 
-The native CLI also supports caller-supplied vector export/import/query and
-explicit hybrid lexical/vector retrieval (`query --hybrid-space`), with full v5
-vector and v6 hybrid history. The configured MCP query and resource search remain
-lexical; its filtered trail projection omits vector and hybrid contribution facts.
-Use the documented native workflow only for an authorized local source and
-external embedding producer. Query text does not attest how a vector was generated.
-Keep branch BM25/cosine and fused RRF distinct; synthetic vectors and declared
-provider/model/version establish no model execution or semantic truth.
+When discovery declares `mousa_vector_query`, supply source, space_id, values and
+budget_bytes for a space the operator already prepared through native vector
+export/import. `mousa_hybrid_query` additionally requires independent lexical
+query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
+uses the same byte packers; supersession, associations and token inputs reject.
+No embedding service is bundled. Query text does not attest how values were
+generated; declared labels and synthetic vectors establish no semantic truth.
+Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6 or safe v7
+vector/hybrid facts under fresh authorization. Default history omits those facts.
+OpenAI mention/resource search stays lexical.
 
 Native `query --context-tokens` separately selects evidence under the exact
 returned rendered-context count using a prepared official local tokenizer, with

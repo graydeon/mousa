@@ -17,11 +17,13 @@ Do not create a tunnel, deploy an endpoint, install credentials, publish a plugi
 
 The bundled skills guide client setup and evidence use. They do not grant administration access or turn internal development contracts into MCP capabilities. Check the configured tool schema and current capability documentation before promising an interface. Native declaration and activation commands are separate from these client tools. A discovered mousa_query schema may expose the optional supersession boolean: true enables exact pinned-predecessor withholding, while omission or false preserves the uncurated default. A discovered mousa_trail schema may expose the same optional boolean: true returns the consultation a v4 Source Trail recorded, while omission or false keeps the filtered inspection. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior.
 
-Caller-supplied vector and hybrid retrieval are separate native CLI workflows,
-not MCP query modes or bundled embedding services. Before external embedding
+Caller-supplied vector and hybrid MCP tools require an operator-prepared space
+and embeddings imported through the native workflow. Before external embedding
 generation, confirm authorization to share exported normalized bytes with that
-producer. Mousa makes no model/provider network call. Use native `trail` for v5
-vector and v6 hybrid facts; the filtered MCP history view omits them.
+producer. Mousa makes no model/provider network call. Discover the explicit
+mousa_vector_query / mousa_hybrid_query tools and the independent optional
+retrieval_details flag on mousa_trail; do not infer support from a native flag.
+OpenAI mention/resource search stays lexical.
 
 Native token packing is optional and needs an explicitly prepared local Python
 venv/cache with official `tiktoken==0.12.0`/`o200k_base`. Preparation may download public

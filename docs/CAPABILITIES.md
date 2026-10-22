@@ -22,8 +22,8 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
-| Caller-supplied exact vector retrieval | Yes | `vector inputs`, `vector import`, `query --vector-space`; directory and JSONL selectors | Synthetic cosine/tie arithmetic, strict imports, current-only source pins, partial coverage, restart, both packing policies, v5 history, corruption and transaction ordering | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
-| Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space` with query text and supplied vector; directory and JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history, corruption and writer rollback | Synthetic arithmetic/protocol only; no model-quality acceptance |
+| Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` preparation; `query --vector-space`; MCP `mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
+| Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Native rendered-context token packing | Yes | `query --context-tokens`, optional declared window/reservations; directory/JSONL lexical/vector/hybrid | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history/recount, authorization and rollback | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
@@ -126,8 +126,8 @@ Caps, process/work limits, reservation arithmetic, errors and unsupported explic
 association/supersession combinations are specified in the usage guide. Window
 and reservation values are caller declarations, not authenticated provider/model
 facts. Only the returned context is counted; unknown final prompts and JSON/tool
-framing outside it are not. MCP query/resources remain lexical and unchanged;
-token-aware MCP integration is pending.
+framing outside it are not. MCP token-budget execution remains unsupported;
+MCP retrieval-details inspection exposes no token metadata or tokenizer paths.
 
 ## Caller-supplied exact vector retrieval
 
@@ -217,9 +217,9 @@ These bounds apply to selection, not the existing full-store startup integrity
 scan. No ANN index, automatic embeddings or authenticated model-window guarantee is implemented.
 Vector mode rejects explicit `--policy`, `--associations` or
 `--supersession` flags; ordinary lexical combinations keep their current behavior.
-MCP query and resource search remain lexical. The unchanged filtered MCP history
-view does not expose v5 vector facts; use native `trail` for the complete vector
-selection. No SDK or connector framework is introduced.
+MCP `mousa_vector_query` uses the same native transaction for configured JSONL
+sources. `mousa_trail` can release recorded vector facts with `retrieval_details`.
+OpenAI mention/resource search stays lexical. No SDK or connector framework is introduced.
 
 ## Native hybrid lexical and vector retrieval
 
@@ -288,8 +288,8 @@ missing-vector absence and activation timing are recorded observations, not
 reconstructible proofs. Hashes bind those observations; they do not prove them.
 Retired passage bytes are not archived; exact byte-duplicate verification is
 limited to retained text, as in earlier versions. Startup verifies v6 without
-relaxing v1–v5 readers or canonical bytes. MCP query/resources remain lexical and
-the unchanged filtered history interface omits hybrid contribution facts.
+relaxing v1–v5 readers or canonical bytes. MCP `mousa_hybrid_query` uses the same
+native transaction; opted-in history releases recorded branch/fusion facts.
 
 ## Supersession core boundary
 
@@ -636,7 +636,9 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`) | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; an opted-in response adds the withheld-candidate count `supersession_excluded` |
-| `mousa_trail` | `source`, `trail_id` | `supersession`: boolean (default `false`) | Existing filtered trail inspection with fresh authorization; no evidence text; an opted-in call adds the consultation member a `mousa.source_trail.v4` record carries |
+| `mousa_trail` | `source`, `trail_id` | Independent `supersession` and `retrieval_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation or vector/hybrid facts that exist |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing facts and producing decision/trail/packet IDs |
+| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing policy | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
 
 `mousa_query` accepts the optional `supersession` boolean, which withholds an accepted
 candidate whose own representation is the selected declaration's exact predecessor pin
@@ -651,6 +653,54 @@ prepared by native administration; MCP exposes no administration tool. The clien
 contract, the declared optional members and the reasons for keeping the envelope at
 `mousa.mcp_result.v1` are specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md).
+
+### MCP supplied-vector retrieval and recorded details
+
+The two explicit tools use `EvaluateAndTraceVector` / `EvaluateAndTraceHybrid`,
+not subprocess retrieval or a second ranking implementation. An operator first
+exports authorized normalized passages and imports externally produced embeddings
+through the native workflow. MCP accepts a canonical nonzero lowercase hex
+`space_id` and 1–2048 finite float64 query `values` with nonzero norm; it never
+accepts an embedding executable, endpoint or filesystem path. Query values pass
+through the native strict query-vector decoder, limited to 128 KiB including its
+schema wrapper. Budgets are integers from 1 through 262144 bytes for these tools.
+The same 100-item/passage, current-revision, dimension and space bounds apply.
+Partial coverage searches the indexed subset; no indexed vectors gives
+`no_indexed_passages` in vector mode. Hybrid may still select lexical-only hits.
+There is no silent lexical fallback for wrong spaces or dimensions.
+
+Both use the exact configured JSONL source alias and trusted startup caller,
+fresh policy/lifecycle authorization and one native writer transaction. Missing
+configured source records retain the native `integrity` error; empty existing
+sources report `no_passages`. Unconfigured aliases reject before store use.
+Denial/withdrawal releases no evidence, source coverage or candidate facts.
+Unsupported supersession, associations and token-budget arguments reject even
+when false or empty. Vector-only queries also reject lexical policy/query fields.
+Unknown, duplicate, missing, null and wrong-type input members reject before
+mutation. Original packing remains the default; exact-v1 uses native byte equality
+and retained-copy semantics after ranking. Oversized passages are skipped.
+
+Within `mousa.mcp_result.v1`, closed discovered schemas describe the selected
+source/segment/representation pins, normalized coordinates, text/digests, rank,
+cosine or branch/fusion facts, producing identities and packing budget/use/
+omission counts. Identities are lowercase hex strings, never byte arrays.
+The `vector` / `hybrid` projection includes the declared space, query-vector
+identity, observed coverage and ordered candidate pins/ranking facts, not
+embedding values or the supplied query values.
+
+`mousa_trail` with `retrieval_details: true` obtains these same facts from the
+verified recorded producing view, including native-created v5/v6 histories.
+It does not rerun ranking or reinterpret coverage under today's space/index.
+Omission or false preserves the exact default released property set; a trail
+without those facts has no added member. Supersession remains independent.
+Fresh authorization precedes historical lookup; denied inspection discloses no
+history or existence. Restart and revision replacement preserve recorded facts,
+while `indexed_now` can change. Retired passage bytes remain unarchived, and
+historical completeness/BM25 are producing observations, not reconstructed proof.
+For native v7, only the corresponding verified vector/hybrid fields are available.
+TokenSelection, rejected token metadata and token execution are not exposed.
+See the [runnable synthetic MCP example](USAGE.md#mcp-vector-and-hybrid-example).
+
 
 For example, call `mousa_sync` with:
 
@@ -739,7 +789,7 @@ requests/items remain durable; inspect status after reconnecting.
 | Decoded UTF-8 text per item | 256 KiB |
 | Item ID | 4,096 UTF-8 bytes; nonempty, no NUL |
 | Query text | 4,096 UTF-8 bytes; nonempty |
-| Released-text budget | Integer from 1 through 65,536 bytes |
+| Released-text budget | Lexical: integer 1–65,536 bytes; vector/hybrid: integer 1–262,144 bytes |
 | Lexical candidates | 100, preserving the existing query contract |
 | Concurrent tool calls admitted | 8; excess calls return `busy` |
 | Tool-call deadline, including time waiting for the store | 30 seconds |
@@ -774,8 +824,9 @@ model-driven agent run or a comparative measurement.
 
 The MVP follows the [OpenAI MCP Extensions specification](https://github.com/openai/mcp-extensions/blob/e314720a0daac326217d1f123fcf51647868fa9f/docs/spec.md)
 and its Bits & Bolts registration/onboarding example. Enable it explicitly with
-`--openai-extensions`. The base four tools are unchanged; one additional
-`mousa_mentions` tool and an evidence resource template are advertised.
+`--openai-extensions`. The six base tools retain their contracts; one additional
+`mousa_mentions` tool and an evidence resource template are advertised. Mention
+and resource search remain lexical.
 
 `mousa_mentions` accepts only `{ "query": "cedar" }`. The tool advertises
 `_meta["openai/extensions"]["mentions/search"]: {}` and app visibility through

@@ -181,6 +181,10 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Inspect Mousa source status"
 		case "mousa_query":
 			definition.Title = "Retrieve Mousa evidence"
+		case "mousa_vector_query":
+			definition.Title = "Retrieve Mousa vector evidence"
+		case "mousa_hybrid_query":
+			definition.Title = "Retrieve Mousa hybrid evidence"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
 		}
@@ -294,6 +298,20 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 				result = evidence
 			}
 		}
+	case "mousa_vector_query", "mousa_hybrid_query":
+		var request mousa.PolicyEvaluationRequest
+		request, err = callerRetrievalRequest(source.ID, a.caller)
+		if err == nil {
+			var traced sqlite.TracedVectorResult
+			if operation == "mousa_vector_query" {
+				traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+			} else {
+				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+			}
+			if err == nil {
+				result = mcpRetrievalProjection(args.Source, traced)
+			}
+		}
 	case "mousa_trail":
 		var request mousa.PolicyEvaluationRequest
 		request, err = callerRetrievalRequest(source.ID, a.caller)
@@ -306,7 +324,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			if inspection.Historical != nil && !args.Supersession {
 				inspection.Historical.Supersession = nil
 			}
-			result = mcpTrailResult{Source: args.Source, TrailID: args.TrailID.String(), TrailInspection: inspection}
+			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails)
 		}
 	default:
 		return nil, fmt.Errorf("unregistered tool %q", operation)
