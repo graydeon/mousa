@@ -68,6 +68,157 @@ released-text budget, defaulting to 8,192 bytes; JSON overhead and model tokens 
 not covered. Queries distinguish no matches, policy/lifecycle exclusion, and budget
 omission. See the [query and inspection contract](CAPABILITIES.md#query-policy-packing-and-tracing).
 
+## Native token-aware context packing
+
+`query --context-tokens N` selects whole evidence passages against the token
+count of the exact returned `context` string, not a client-side trim of a
+byte-packed result. Directory and JSONL selectors support lexical, vector-only
+and hybrid modes, with either `original` or `exact-v1` packing.
+
+### Prepare the optional runtime
+
+The standard Go executable and ordinary queries need no Python. Token mode uses
+a caller-selected local interpreter, default `python3`, with official
+`tiktoken==0.12.0`. Prepare its vocabulary explicitly while network access is
+available. These Unix commands install only into a dedicated venv and cache:
+
+```sh
+TOKEN_PY="$HOME/.local/share/mousa-tokenizer/bin/python"
+TOKEN_CACHE="$HOME/.cache/mousa/tiktoken"
+python3 -m venv "$HOME/.local/share/mousa-tokenizer"
+"$TOKEN_PY" -m pip install 'tiktoken==0.12.0'
+TIKTOKEN_CACHE_DIR="$TOKEN_CACHE" "$TOKEN_PY" -c \
+  'import tiktoken; print(tiktoken.get_encoding("o200k_base").name)'
+```
+
+Preparation may download public package/vocabulary files. Queries do not:
+the embedded helper refuses a missing or corrupt prepared vocabulary before
+receiving source text, with download and socket entry points disabled.
+No provider credentials or model/service calls are used. The backend name is an
+encoding declaration, not an assertion about an unverified model's tokenizer.
+Pass `--tokenizer-cache` for a nondefault cache; otherwise Mousa uses
+`mousa/tiktoken` beneath the operating system's user cache directory.
+
+### Query and inspect
+
+After the quick-start directory sync:
+
+```sh
+./mousa -store local.sqlite query --context-tokens 512 \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+  --packing-policy exact-v1 ./documents 'harbor inspection'
+```
+
+An independently runnable JSONL example:
+
+```sh
+printf '%s\n' '{"id":"harbor","text":"The harbor inspection is on Friday."}' |
+  ./mousa -store token-example.sqlite sync --source token-notes
+./mousa -store token-example.sqlite query --context-tokens 256 \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+  --source token-notes 'harbor'
+```
+
+The result has schema `mousa.token_result.v1`, `context`, selected `evidence`,
+`token`, `trail_id` and `packet_id`. `token.measured_tokens` covers all UTF-8 bytes
+of `context`, including headers/separators; `token.rendered_sha256` hashes those
+exact UTF-8 bytes, before JSON string escaping. `used_bytes` still counts only
+selected evidence text, not rendering headers, separators or JSON overhead.
+`token.limit` is the effective allowance, and `token.budget` retains declarations.
+The released `token.candidate_ids` aligns `proposed_tokens` and lexical `lexical`
+facts with accepted candidates, including unselected budget/duplicate omissions.
+Lexical ranks count only accepted order, not original search positions. A null
+proposed count means that accepted passage was not counted (for example, a
+duplicate); a lifecycle-rejected candidate has no slot at all. Query and history
+use this filtered view, not the full canonical v7 producing record.
+
+For externally supplied vectors, use the same exported passages, immutable
+space and query-vector JSON from the [vector workflow](#caller-supplied-vector-workflow):
+
+```sh
+printf '%s\n' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
+  ./mousa -store local.sqlite query --context-tokens 512 \
+    --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+    --vector-space "$SPACE_ID" ./documents
+printf '%s\n' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
+  ./mousa -store local.sqlite query --context-tokens 512 \
+    --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+    --hybrid-space "$SPACE_ID" ./documents 'harbor inspection'
+```
+
+The two-coordinate example requires a prepared two-dimensional space. Substitute
+the caller's actual vector for other dimensions; Mousa does not generate it.
+
+Normal inspection needs no tokenizer, including after restart:
+
+```sh
+./mousa -store token-example.sqlite trail --source token-notes TRAIL_ID
+./mousa -store token-example.sqlite trail --verify-tokens \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+  --source token-notes TRAIL_ID
+```
+
+Replace `TRAIL_ID` with the query's identifier. The second form explicitly recounts
+the selected rendering when every original selected passage is still retained.
+It refuses retired, unarchived bytes rather than substituting today's text.
+Both forms reauthorize the source; denied inspection discloses no history.
+Normal `token_verification` distinguishes verified retained rendering digests
+from unavailable retired text; the stored count remains producer evidence.
+Only `official_recount_verified` reports an actual new tokenizer recount.
+
+Token query `outcome` uses this precedence: a denied request is
+`policy_excluded`; selected evidence is `evidence`; no canonical candidates is
+`no_candidates`; candidates with no verified accepted disposition is
+`lifecycle_excluded`. Otherwise, accepted candidates existed but none fit the
+byte or token constraints, so the result is `budget_omitted`. In a mixed
+accepted/rejected list, lifecycle rejection does not turn a genuine accepted
+budget omission into `lifecycle_excluded`. Rejected identities, ranks and count
+slots remain absent from the released token arrays in every case.
+
+### Rendering, reservations and limits
+
+`mousa.context_text.v1` renders each selected passage as:
+
+```text
+[source=SOURCE_ID segment=SEGMENT_ID sha256=CONTENT_SHA256]
+UNCHANGED_PASSAGE_TEXT
+```
+
+The IDs/digest are lowercase 64-character hexadecimal strings. The header ends
+with one LF; passage text is unchanged, with no added trailing LF. Two LF bytes
+separate passages in selected candidate order. No selected passage means the
+empty string. Literal special-token-looking text is ordinary evidence text.
+The renderer is a counting/provenance format, not an instruction-escaping format.
+
+Optional `--context-window W --prompt-reserve P --output-reserve O` combines the
+explicit cap with `W-P-O` using overflow-safe subtraction. Cap range is
+1..524288; window/reservations are 0..1000000000. Reservations require a positive
+window and must fit it; an allowance of zero produces an empty context.
+For example, `--context-tokens 512 --context-window 1024 --prompt-reserve 400
+--output-reserve 300` allows at most 324 context tokens. These are caller
+declarations: application prompt/tool/JSON framing outside the returned string
+is not counted, and no universal model-window safety is claimed.
+
+Token mode caps the released-text budget at 262144 bytes, candidate count at 100,
+aggregate accepted candidate text at 262144 bytes, rendered text at 524288 bytes,
+aggregate counter input at 32 MiB, and the counter lifetime at 15 seconds
+(including writer-lock waits after initialization). Every attempted addition
+counts the entire proposed rendering; passage counts are never summed.
+Oversized passages are skipped and later candidates are tried. `exact-v1`
+deduplicates against selected byte-equal passages only; skipped passages consume
+no released budget and do not suppress later copies.
+
+Token-specific options without `--context-tokens`, and explicit association or
+supersession flags with token mode, reject even when set to false/empty.
+Vector-only mode still rejects explicit query-term policy; hybrid permits it.
+Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
+timeout or cancellation fail closed without a partial successful response or
+partially committed query decision/trail. MCP query/resources remain unchanged;
+native token packing is not exposed through MCP yet.
+
+
+## Byte packing and associations
+
 `--packing-policy exact-v1` separately enables exact-content deduplication:
 
 ```sh

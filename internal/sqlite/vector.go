@@ -310,11 +310,17 @@ type TracedVectorResult struct {
 	Decision mousa.PolicyDecision
 	Trail    mousa.SourceTrail
 	Passages []VectorPassage
+	Context  string
+	Verified []mousa.VerifiedLexicalCandidate
 }
 
 // EvaluateAndTraceVector uses fresh policy and current source pins in the same
 // immediate transaction as the immutable cosine selection and packet record.
 func (store *Store) EvaluateAndTraceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
+	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil)
+}
+
+func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery) (TracedVectorResult, error) {
 	if err := store.requireWritable("query vector"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -408,6 +414,13 @@ func (store *Store) EvaluateAndTraceVector(ctx context.Context, request mousa.Po
 		trail, err := mousa.NewVectorSourceTrail(request, decision, selection, candidates, budget, packing)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build vector trail", err)
+		}
+		if token != nil {
+			result.Verified = candidates
+			trail, result.Context, err = mousa.PackTokenContext(trail, request.SourceID, candidates, token.Budget, token.Counter)
+			if err != nil {
+				return err
+			}
 		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err

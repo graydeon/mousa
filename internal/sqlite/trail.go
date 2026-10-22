@@ -332,6 +332,11 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 	if err := rows.Close(); err != nil {
 		return mousa.SourceTrail{}, classify("get source trail candidates", err)
 	}
+	if trail.Schema == mousa.SourceTrailSchemaV7 {
+		if err := verifyTokenTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
+			return mousa.SourceTrail{}, err
+		}
+	}
 	if trail.Schema == mousa.SourceTrailSchemaV6 {
 		if err := verifyHybridTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err

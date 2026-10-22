@@ -143,6 +143,7 @@ type SourceTrail struct {
 	Supersession         *SupersessionSelection `json:"supersession,omitempty"`
 	Vector               *VectorSelection       `json:"vector,omitempty"`
 	Hybrid               *HybridSelection       `json:"hybrid,omitempty"`
+	Token                *TokenSelection        `json:"token,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -366,6 +367,12 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV7 {
+		return trail.validateTokenTrail()
+	}
+	if trail.Token != nil {
+		return errors.New("token field requires source trail v7")
+	}
 	if trail.Schema == SourceTrailSchemaV6 {
 		return trail.validateHybridTrail()
 	}
@@ -497,6 +504,9 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
+	if trail.Schema == SourceTrailSchemaV7 {
+		return vectorTrailIdentity(trail)
+	}
 	if trail.Schema == SourceTrailSchemaV6 {
 		return vectorTrailIdentity(trail)
 	}
@@ -649,11 +659,18 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	if err := rejectDuplicateJSONKeys(data); err != nil {
 		return SourceTrail{}, err
 	}
-	if hybridTrailSchema(data) {
-		return decodeHybridSourceTrail(data)
+	var header struct {
+		Schema string `json:"schema"`
 	}
-	if vectorTrailSchema(data) {
-		return decodeVectorSourceTrail(data)
+	if json.Unmarshal(data, &header) == nil {
+		switch header.Schema {
+		case SourceTrailSchemaV7:
+			return decodeTokenSourceTrail(data)
+		case SourceTrailSchemaV6:
+			return decodeHybridSourceTrail(data)
+		case SourceTrailSchemaV5:
+			return decodeVectorSourceTrail(data)
+		}
 	}
 	var wire struct {
 		Schema        string          `json:"schema"`

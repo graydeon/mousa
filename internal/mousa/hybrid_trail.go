@@ -2,7 +2,6 @@ package mousa
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"math"
 	"sort"
@@ -218,13 +217,6 @@ func (trail SourceTrail) validateHybridTrail() error {
 		return invalid()
 	}
 	return nil
-}
-
-func hybridTrailSchema(data []byte) bool {
-	var header struct {
-		Schema string `json:"schema"`
-	}
-	return json.Unmarshal(data, &header) == nil && header.Schema == SourceTrailSchemaV6
 }
 
 func decodeHybridSourceTrail(data []byte) (SourceTrail, error) {

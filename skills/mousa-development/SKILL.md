@@ -39,6 +39,26 @@ Preserve v1–v5 bytes and vector-only behavior. Verify immutable producing fact
 in history without rerunning lexical search or asserting past coverage completeness.
 MCP remains lexical and omits hybrid facts.
 
+For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
+and its runtime preparation/limits in the usage guide. Native token mode writes
+v7 and packet v3; preserve v1–v6/default wire bytes. Count the whole proposed
+versioned rendering through the bounded official offline process, after fresh
+authorization and within the same writer snapshot. Reap/verify the worker before
+canonical insertion. Skipped passages neither spend released budget nor seed
+duplicates. Keep byte equality separate from the retrieval identity union.
+Normal canonical reads need no Python: measured counts are recorded producer
+evidence, while retained rendering digests are rederived. Explicit authorized
+recount needs every original selected byte; retired text remains unarchived.
+Run optional-feature checks with a pinned prepared backend and report skips
+separately. MCP token integration remains pending.
+Native query/history expose `TokenSelectionView`: accepted candidate identities
+align compact proposed-count and lexical arrays, with accepted-order lexical ranks.
+Keep rejected slots and original search ordinals out of release views. Accepted
+budget/duplicate omissions still have legitimate metadata. Internal canonical
+`TokenSelection` retains all producing facts; never mutate or rehash it to filter
+an inspection. Fresh inspection may append authorization evidence.
+
+
 ## Prove and deliver the change
 
 Use focused regression checks that fail for the intended behavior before the fix and pass afterward. Missing symbols are compile-stage evidence, not behavioral proof. Use real temporary SQLite stores for storage and transaction claims, explicit ordering for snapshot tests, and recomputed identities for corruption tests when a stale ID would obscure the invariant. Retain independent golden expectations and negative observations.

@@ -3,8 +3,8 @@
 # Useful context. A trail back to its source.
 
 **Mousa turns local documents into compact, source-linked context for agents and applications.**
-Search your material, set a byte budget, and receive passages with an inspectable
-record of how they were selected.
+Search your material, set a byte budget or opt into a rendered-context token cap,
+and receive passages with an inspectable record of how they were selected.
 
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) · [Capabilities](docs/CAPABILITIES.md) · [Public benchmarks](https://github.com/graydeon/mousa-benchmarks)
 
@@ -40,7 +40,7 @@ Mousa makes that context smaller and easier to inspect:
 | Your need | What Mousa gives you |
 |---|---|
 | Find useful passages | Source-scoped lexical, exact cosine, or hybrid RRF retrieval with caller-supplied vectors. |
-| Control context size | An explicit released-text byte budget and optional exact-content deduplication. |
+| Control context size | A released-text byte budget, optional exact-content deduplication, and native whole-context token packing with a prepared local tokenizer. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
 | Use your own tools | One Go executable, SQLite storage, JSON output and local stdio MCP. |
@@ -79,6 +79,17 @@ Mousa performs no model inference or network calls for this path.
 Use [native hybrid retrieval](docs/USAGE.md#hybrid-lexical-and-vector-query) to combine
 query text and an explicitly supplied vector in one ranked, packed result.
 
+For an exact returned context string under a token cap, use
+[`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing).
+This opt-in counts the complete versioned rendering with official
+`tiktoken==0.12.0`, `o200k_base`, ordinary-text encoding. It requires a prepared
+local Python environment/cache; queries never download vocabulary assets.
+Ordinary queries and the CGO-disabled Go build do not require Python.
+Native query and history token facts use an accepted-candidate release view;
+canonical v7 producing facts remain intact for integrity checks.
+Token outcomes distinguish lifecycle-only rejection from an accepted candidate
+omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
+
 ## What works today?
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
@@ -96,7 +107,10 @@ historical disclosure. Native-created v1–v3 history remains inspectable withou
 supersession member. Opt-in usage and source-masked refusal boundaries are in the
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Native caller-supplied vector retrieval
 uses a separate v5 trail; hybrid selection records branch contributions in v6.
-Automatic embedding generation, secret filtering and full model-window budgeting remain planned.
+Native token-aware lexical/vector/hybrid selection records measured rendering
+and reservation facts in v7. MCP token packing, automatic embedding generation
+and secret filtering remain pending. Caller-declared reservations do not prove
+full model-window safety.
 
 The [directory supersession example](docs/USAGE.md#directory-supersession-example)
 shows how to discover revision pins, prepare declaration and activation records, and
