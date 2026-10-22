@@ -133,9 +133,9 @@ class Client:
         self.request("notifications/initialized", {}, notification=True)
         tools, _ = self.request("tools/list", {})
         entries = tools.get("tools") if isinstance(tools, dict) else None
-        if not isinstance(entries, list) or len(entries) != 4 or any(
+        if not isinstance(entries, list) or len(entries) != 6 or any(
                 not isinstance(tool, dict) or not isinstance(tool.get("name"), str) for tool in entries) or {
-                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail"}:
+                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail", "mousa_vector_query", "mousa_hybrid_query"}:
             raise ValueError("unexpected native MCP tools")
         return elapsed
 

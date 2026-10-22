@@ -79,6 +79,11 @@ Mousa performs no model inference or network calls for this path.
 Use [native hybrid retrieval](docs/USAGE.md#hybrid-lexical-and-vector-query) to combine
 query text and an explicitly supplied vector in one ranked, packed result.
 
+MCP clients can use [`mousa_vector_query` and `mousa_hybrid_query`](docs/USAGE.md#mcp-vector-and-hybrid-example)
+with an operator-prepared space and caller-supplied query values. Both use the
+configured JSONL source allowlist. `mousa_trail` adds recorded vector/hybrid facts
+only when `retrieval_details` is true; default lexical tools and inspection stay unchanged.
+
 For an exact returned context string under a token cap, use
 [`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing).
 This opt-in counts the complete versioned rendering with official
@@ -105,7 +110,7 @@ uncurated; inspections preserve recorded selection and omit the member unless re
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Native-created v1–v3 history remains inspectable without a
 supersession member. Opt-in usage and source-masked refusal boundaries are in the
-[usage guide](docs/USAGE.md#local-usage-cmdmousa). Native caller-supplied vector retrieval
+[usage guide](docs/USAGE.md#local-usage-cmdmousa). Caller-supplied vector retrieval
 uses a separate v5 trail; hybrid selection records branch contributions in v6.
 Native token-aware lexical/vector/hybrid selection records measured rendering
 and reservation facts in v7. MCP token packing, automatic embedding generation

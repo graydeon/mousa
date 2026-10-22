@@ -94,6 +94,25 @@ arithmetic/protocol checks, not embedding-model or retrieval-quality acceptance.
 Recorded lexical BM25 and historical completeness cannot be independently
 reconstructed from today's changed index; hashes do not prove past absence.
 
+## MCP vector and hybrid evidence boundary
+
+Explicit `mousa_vector_query` and `mousa_hybrid_query` tools now expose those native
+transactions for configured JSONL sources. Product executable/stdio regressions
+check independently known cosine order, an overlapping second-ranked hit winning
+RRF(k60), both packers, duplicate/budget skips, strict boundary types, canonical
+identity strings, partial/stale coverage, source/caller authorization and closed
+discovered schemas. Default lexical definitions and trail property sets stay intact.
+Opted-in `retrieval_details` reads verified producing v5/v6 and safe v7
+vector/hybrid facts after fresh authorization, not a ranking recomputed on today's
+index. MCP exposes no token selection metadata or tokenizer process paths.
+
+The [runnable synthetic client](../examples/mcp_retrieval.py) exercises the public
+workflow without a model. A separate public-head stdio capture and fresh-store
+reproduction belong in the companion repository; old native and MCP archives
+retain their own pins. Protocol/arithmetic and authorization observations do not
+establish semantic quality, ANN, embedding inference, latency or model-window safety.
+
+
 ## Supersession contract evidence
 
 The [public contract capture](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)

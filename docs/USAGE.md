@@ -363,8 +363,8 @@ vectors without rewriting them; re-export and import vectors for the new passage
 pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
 triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
 with vector queries. Explicit query-term policy, associations and supersession
-flags are rejected in vector mode. MCP query/resource search remains lexical;
-native `trail` supplies the v5 vector facts absent from its filtered MCP view.
+flags are rejected in vector mode. MCP has a separate `mousa_vector_query` tool
+and opted-in recorded retrieval-details inspection; resource search stays lexical.
 
 ### Hybrid lexical and vector query
 
@@ -439,7 +439,7 @@ Native v6 history records both branch contributions and the fixed
 `rrf-equal-k60-v1` policy. Both byte packers apply after fusion; exact-v1 handles
 byte-equal passages with different identities separately from the identity union.
 No automatic embeddings, retrieval-quality, semantic-truth or model-window claim
-follows. MCP query/resource interfaces remain lexical.
+follows. MCP also exposes explicit vector/hybrid tools; resource search stays lexical.
 
 ### CLI client example
 
@@ -743,7 +743,8 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The four tools are `mousa_sync`, `mousa_status`, `mousa_query` and `mousa_trail`.
+The six tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_vector_query` and `mousa_hybrid_query`.
 Store, permitted sources and trusted caller are fixed at startup. Ingestion is
 disabled unless that source also has `--ingest-source`. The default stdio mode
 has no listener, directory import, shell, policy administration or withdrawal tool.
@@ -791,6 +792,56 @@ CGO_ENABLED=0 go test ./cmd/mousa -run TestMCP -count=1 -v
 MCP acceptance is deterministic client/server verification, not a model-driven
 agent or retrieval-quality measurement. A stable public SDK and general
 connectors remain unsupported.
+
+### MCP vector and hybrid example
+
+Build `./mousa`, then run this synthetic standard-library Python example on Linux:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 examples/mcp_retrieval.py --mousa ./mousa
+```
+
+The example creates a fresh temporary store, syncs three JSONL items through the
+native CLI, exports current passage pins and imports hand-assigned two-coordinate
+vectors. It then negotiates stdio MCP, discovers tools, calls both new query tools,
+and inspects each producing trail with `retrieval_details: true`. The vector-only
+hit is `vector.md`; the overlapping `overlap.md` wins hybrid equal-weight RRF(k60)
+despite ranking second in each branch. Printed JSON includes selected evidence
+and matching history identities. Temporary data and receipts are removed on exit.
+These vectors demonstrate arithmetic, not semantic retrieval quality.
+
+For real use, an authorized external embedding producer must supply vectors for
+the exported current normalized passages and the operator must import them first.
+Mousa generates no embeddings and makes no model/provider call. Share exported
+text only with an authorized producer. Replaced revisions need new pinned embeddings.
+Use the returned space ID with your MCP client's `tools/call`:
+
+```json
+{"name":"mousa_vector_query","arguments":{"source":"inspection-notes","space_id":"SPACE_ID","values":[1,0],"budget_bytes":4096}}
+```
+
+Replace `SPACE_ID` with the imported lowercase hex identity and use query values
+matching that space's dimensions. For hybrid, use `mousa_hybrid_query` and add
+`"query":"harbor inspection","policy":"original"` to the arguments. Text and vector
+are independent caller inputs. Optional `packing_policy:"exact-v1"` deduplicates
+byte-equal retained passages; omitted packing uses `original`.
+
+Call `mousa_trail` with the same configured source, returned `trail_id` and
+`retrieval_details:true` for verified producing vector/hybrid facts, including
+native-created v5/v6 records. Omission/false keeps default history unchanged.
+Current authorization can withhold history; later index/revision changes never
+rerank the original record. The independent `supersession` opt-in still works.
+Native v7 vector/hybrid facts can be inspected, but no token metadata, token-budget
+execution or caller-selected tokenizer path is exposed over MCP.
+
+Only exact configured JSONL aliases are permitted, including when a label looks
+like a path. No directory read permission follows. Native bounds and precise
+space/dimension/current-coverage errors apply, without lexical fallback.
+Supersession/association/token combinations on these query tools reject rather
+than being ignored. Refresh cached closed schemas through `tools/list`.
+OpenAI mentions/resources retain their lexical contract.
+
 
 ### Bounded project-history consumer
 
