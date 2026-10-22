@@ -40,9 +40,9 @@ in history without rerunning lexical search or asserting past coverage completen
 MCP `mousa_hybrid_query` reuses this transaction. Its retrieval-details history
 opt-in projects the verified producing view without reranking. Preserve default
 lexical query and trail property sets, canonical hex identities and closed schemas;
-OpenAI mention/resource search stays lexical. MCP exposes neither embeddings
-administration nor token execution/metadata; v7 details use only verified safe
-vector/hybrid fields, never canonical rejected TokenSelection metadata.
+OpenAI mention/resource search stays lexical and byte-only. MCP exposes neither
+embedding administration nor tokenizer paths as tool arguments. v7 retrieval
+details use verified safe vector/hybrid fields.
 
 For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
 and its runtime preparation/limits in the usage guide. Native token mode writes
@@ -55,7 +55,10 @@ Normal canonical reads need no Python: measured counts are recorded producer
 evidence, while retained rendering digests are rederived. Explicit authorized
 recount needs every original selected byte; retired text remains unarchived.
 Run optional-feature checks with a pinned prepared backend and report skips
-separately. MCP token integration remains pending.
+separately. MCP context_tokens uses these same native transactions with trusted
+startup-only tokenizer-python/cache; token_details independently releases recorded
+safe facts without recounting. Omitted token fields preserve byte defaults and
+Python independence; invalid budgets reject before mutation.
 Native query/history expose `TokenSelectionView`: accepted candidate identities
 align compact proposed-count and lexical arrays, with accepted-order lexical ranks.
 Keep rejected slots and original search ordinals out of release views. Accepted

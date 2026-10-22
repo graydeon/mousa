@@ -85,12 +85,13 @@ configured JSONL source allowlist. `mousa_trail` adds recorded vector/hybrid fac
 only when `retrieval_details` is true; default lexical tools and inspection stay unchanged.
 
 For an exact returned context string under a token cap, use
-[`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing).
+[`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing)
+or the three [MCP query tools with `context_tokens`](docs/USAGE.md#mcp-token-budget-example).
 This opt-in counts the complete versioned rendering with official
 `tiktoken==0.12.0`, `o200k_base`, ordinary-text encoding. It requires a prepared
 local Python environment/cache; queries never download vocabulary assets.
 Ordinary queries and the CGO-disabled Go build do not require Python.
-Native query and history token facts use an accepted-candidate release view;
+Query and opted-in history token facts use an accepted-candidate release view;
 canonical v7 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
@@ -112,10 +113,11 @@ historical disclosure. Native-created v1–v3 history remains inspectable withou
 supersession member. Opt-in usage and source-masked refusal boundaries are in the
 [usage guide](docs/USAGE.md#local-usage-cmdmousa). Caller-supplied vector retrieval
 uses a separate v5 trail; hybrid selection records branch contributions in v6.
-Native token-aware lexical/vector/hybrid selection records measured rendering
-and reservation facts in v7. MCP token packing, automatic embedding generation
-and secret filtering remain pending. Caller-declared reservations do not prove
-full model-window safety.
+Native and MCP token-aware lexical/vector/hybrid selection records measured
+rendering and reservation facts in v7. MCP `mousa_trail` exposes those recorded
+facts only with `token_details: true`, without recounting.
+Automatic embedding generation and secret filtering remain pending.
+Caller-declared reservations do not prove full model-window safety.
 
 The [directory supersession example](docs/USAGE.md#directory-supersession-example)
 shows how to discover revision pins, prepare declaration and activation records, and

@@ -100,7 +100,7 @@ func mcpQueryValuesExcept(t *testing.T, report map[string]any, skip []string) ma
 }
 
 func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
-	query, err := mcpOutputSchema[evidenceResult]("mousa_query")
+	query, err := mcpOutputSchema[mcpLexicalResult]("mousa_query")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 		"decision_outcome", "decision_reasons", "evaluated_at_usec", "trail_id", "packet_id",
 		"outcome", "matched_candidates", "candidate_limit", "lifecycle_excluded", "budget_omitted",
 		"duplicate_omitted", "supersession_excluded", "packing_policy", "used_bytes", "budget_bytes",
-		"association_omissions", "evidence", "latency_micros",
+		"association_omissions", "evidence", "latency_micros", "context", "token",
 	})
 	if slices.Contains(result.Required, "supersession_excluded") {
 		t.Fatal("the optional query count became a required result property")
@@ -136,7 +136,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 	requireMCPSchemaProperties(t, historical, []string{
 		"id", "request_id", "decision_id", "decision_outcome", "decision_reasons", "expression",
 		"budget_bytes", "used_bytes", "packet_id", "lifecycle_excluded", "candidates", "schema",
-		"packing_policy", "associated", "association_omissions", "supersession", "vector", "hybrid",
+		"packing_policy", "associated", "association_omissions", "supersession", "vector", "hybrid", "token",
 	})
 	for _, schema := range []*jsonschema.Schema{query, trail} {
 		encoded, err := json.Marshal(schema)
@@ -162,8 +162,8 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 	for name, want := range map[string][]string{
 		"mousa_sync":   {"items", "segment_policy", "source"},
 		"mousa_status": {"source"},
-		"mousa_query":  {"budget_bytes", "packing_policy", "policy", "query", "source", "supersession"},
-		"mousa_trail":  {"retrieval_details", "source", "supersession", "trail_id"},
+		"mousa_query":  {"budget_bytes", "context_tokens", "output_reserve_tokens", "packing_policy", "policy", "prompt_reserve_tokens", "query", "source", "supersession", "window_tokens"},
+		"mousa_trail":  {"retrieval_details", "source", "supersession", "token_details", "trail_id"},
 	} {
 		got := make([]string, 0, len(properties[name]))
 		for property := range properties[name] {

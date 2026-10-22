@@ -110,6 +110,8 @@ commands:
                             --openai-extensions enables evidence mentions/resources
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; add --ingest-source <id> to permit writes
+                            --tokenizer-python <path> --tokenizer-cache <dir> enables
+                            optional whole-rendering token budgets; prepared offline backend only
   plugin --out <new-dir> --source <id> --consent-to-share
                             create a consent-bound local desktop/Codex marketplace
 

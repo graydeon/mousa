@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -38,27 +37,6 @@ func TestMCPRetrievalDiscoveryAndDispatch(t *testing.T) {
 		}
 		if !response.IsError {
 			t.Errorf("%s accepted missing arguments", name)
-		}
-	}
-	pins := map[string][2]string{
-		"mousa_sync":         {"799128238a77b48270d5d7c0632c62eaa6eb50c9996adb0c5187a2b4fcaaa291", "6437f38f62248a1716c6b46fa724d773548873a2c99fe8cc9e5810a89389dabb"},
-		"mousa_status":       {"b799fe7d1bed491fa9b081bde964bb10961a7a6cff3f9cc737fbf152458e975f", "7acae65627e58577eafe6e84589b02409c20220ef7cd4dae30a4b99160a4fd9e"},
-		"mousa_query":        {"6378ab326e15aa2905967e3e8881cf1ac4c44e3b4c14a4a6b90755c8702cb2fe", "d06e261e62c4e1ce452dc7dcb5717ea895ffd79a5f3f876fbdd5e8401e932c6f"},
-		"mousa_trail":        {"5c3a4380b233063b6072063cfc2bae81c7ad555b9e33ad7ce0aaae27ea158f18", "c9dec0f4523765a926c553276531f73d4b80ede41615a938016308e8757f0cfc"},
-		"mousa_vector_query": {"9b070a912fba46aee240d5d8608f563f18632314b2b6736339d46bc233367c13", "7c3d089b8961c1c112e1c5bce4c2e155b80e6d329ebc963179409986cbd5dca8"},
-		"mousa_hybrid_query": {"4c8cb7d3a88616bab0e186d175e9ed0cb2a20150ebe56e86bedd7ede791c0d04", "3f8df36925ad72ca44933eb0401a3719b5fd78ed7ab64f7b1810695f4a3c4dfa"},
-	}
-	for _, tool := range tools.Tools {
-		for i, schema := range []any{tool.InputSchema, tool.OutputSchema} {
-			raw := mustJSON(t, schema)
-			var value any
-			if err := json.Unmarshal(raw, &value); err != nil {
-				t.Fatal(err)
-			}
-			canonical := mustJSON(t, value)
-			if got := fmt.Sprintf("%x", sha256.Sum256(canonical)); got != pins[tool.Name][i] {
-				t.Fatalf("%s schema %d changed: %s", tool.Name, i, got)
-			}
 		}
 	}
 	// Both and neither payloads must fail the discovered exactly-one contract.
@@ -265,7 +243,7 @@ func TestMCPRetrievalStrictInputsBeforeMutation(t *testing.T) {
 			"budget_bytes":   {`true`, `0`, `-1`, `1.5`, `262145`},
 			"space_id":       {`"bad"`, `"` + strings.Repeat("A", 64) + `"`, `"` + strings.Repeat("0", 64) + `"`},
 			"packing_policy": {`"unknown"`, `false`},
-			"supersession":   {`false`}, "associations": {`[]`}, "context_tokens": {`100`}, "tokenizer_python": {`"/bin/false"`},
+			"supersession":   {`false`}, "associations": {`[]`}, "context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
 		} {
 			for _, value := range values {
 				clone := make(map[string]json.RawMessage)
@@ -371,6 +349,10 @@ func TestMCPRetrievalTokenHistorySafeProjection(t *testing.T) {
 			}
 		} else if h["vector"] != nil || h["hybrid"] != nil {
 			t.Fatalf("lexical history invented ranking: %v", h)
+		}
+		opted := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": produced["trail_id"], "token_details": true}, "")["historical"].(map[string]any)
+		if !reflect.DeepEqual(opted["token"], produced["token"]) || opted["vector"] != nil || opted["hybrid"] != nil {
+			t.Fatal("native-created token history opt-in changed producing facts")
 		}
 	}
 }

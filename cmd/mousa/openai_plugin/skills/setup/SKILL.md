@@ -25,8 +25,11 @@ mousa_vector_query / mousa_hybrid_query tools and the independent optional
 retrieval_details flag on mousa_trail; do not infer support from a native flag.
 OpenAI mention/resource search stays lexical.
 
-Native token packing is optional and needs an explicitly prepared local Python
-venv/cache with official `tiktoken==0.12.0`/`o200k_base`. Preparation may download public
-assets; queries are offline and fail closed without them. Ordinary Go/MCP use
-does not require Python. The MCP tools do not expose native token packing;
-request separate authorization before preparing or using an additional runtime.
+Token packing is optional and needs an explicitly prepared local Python
+venv/cache with official `tiktoken==0.12.0`/`o200k_base`. Preparation may download
+public assets; queries are offline and fail closed without them. Ordinary Go/MCP
+use does not require Python. The operator configures both --tokenizer-python and
+--tokenizer-cache at MCP startup, never in tool arguments. Request separate
+authorization before preparing an additional runtime. Discover context_tokens
+on query tools and token_details on mousa_trail; missing backend is an explicit
+tool error, not permission to install packages or fetch assets on demand.

@@ -104,13 +104,26 @@ identity strings, partial/stale coverage, source/caller authorization and closed
 discovered schemas. Default lexical definitions and trail property sets stay intact.
 Opted-in `retrieval_details` reads verified producing v5/v6 and safe v7
 vector/hybrid facts after fresh authorization, not a ranking recomputed on today's
-index. MCP exposes no token selection metadata or tokenizer process paths.
+index. MCP tokenizer paths remain exclusively trusted startup configuration.
 
 The [runnable synthetic client](../examples/mcp_retrieval.py) exercises the public
 workflow without a model. A separate public-head stdio capture and fresh-store
 reproduction belong in the companion repository; old native and MCP archives
 retain their own pins. Protocol/arithmetic and authorization observations do not
 establish semantic quality, ANN, embedding inference, latency or model-window safety.
+
+MCP lexical/vector/hybrid queries also accept explicit whole-rendering token
+budgets through the native v7 transactions. Product stdio checks independently
+count returned context with official `encode_ordinary` under both packers,
+exercise exact fit/one-token-short and byte pressure, reservation arithmetic,
+strict inputs, denial and recorded history after restart/replacement. A deterministic
+worker fault and cancellation after receiving a proposed rendering establish
+bounded errors, reap and no committed producing record at the application seam;
+they do not establish whole-store immutability across startup or inspection audits.
+`token_details` returns recorded accepted-only facts, not an MCP recount.
+The [runnable token client](USAGE.md#mcp-token-budget-example) requires explicit
+operator preparation. Separate public-head observations belong in the companion
+repository; historical archives keep their own pins and evidence boundaries.
 
 
 ## Supersession contract evidence

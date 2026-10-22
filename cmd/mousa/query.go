@@ -52,6 +52,10 @@ func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Sto
 	if err != nil {
 		return nil, err
 	}
+	return lexicalEvidenceProjection(ctx, store, source, request, expression, policy, packingPolicy, traced, declarations, supersession)
+}
+
+func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, expression, policy, packingPolicy string, traced sqlite.TracedLexicalResult, declarations []mousa.AssociationDeclaration, supersession bool) (*evidenceResult, error) {
 	result := &evidenceResult{
 		RequestID: request.ID.String(), DecisionID: traced.Decision.ID.String(),
 		DecisionOutcome: string(traced.Decision.Outcome), DecisionReasons: traced.Decision.ReasonCodes,

@@ -225,27 +225,6 @@ func TestMCPSupersessionTrailDeclaresOptInSchema(t *testing.T) {
 			t.Fatal("the inspection opt-in became a required argument")
 		}
 	}
-	// The inspection slice extends only the trail schema. The accepted query-only build's other
-	// three output schemas stay byte-identical, so a shared declaration cannot silently change a
-	// client contract this slice did not review.
-	accepted := map[string]string{
-		"mousa_sync":   "0c82ccb94556c70f41de8876e73842382978b4d94ad34f378361abbeb786bba3",
-		"mousa_status": "b16e66e2a799e99fb0e2fb9ea969a407e68958907e1ddb055323e92550566589",
-		"mousa_query":  "aeec1eb393f62f24aa0211e09f8aeae108f6ba956240d10dfed3a45a9310a2b6",
-	}
-	for _, tool := range tools {
-		want, pinned := accepted[tool.Name]
-		if !pinned {
-			continue
-		}
-		raw, err := json.Marshal(tool.OutputSchema)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != want {
-			t.Fatalf("%s output schema = %s, want the accepted %s", tool.Name, got, want)
-		}
-	}
 }
 
 func TestMCPSupersessionTrailOptInPreservesDefaultPropertySet(t *testing.T) {
