@@ -22,3 +22,9 @@ not MCP query modes or bundled embedding services. Before external embedding
 generation, confirm authorization to share exported normalized bytes with that
 producer. Mousa makes no model/provider network call. Use native `trail` for v5
 vector and v6 hybrid facts; the filtered MCP history view omits them.
+
+Native token packing is optional and needs an explicitly prepared local Python
+venv/cache with official `tiktoken==0.12.0`/`o200k_base`. Preparation may download public
+assets; queries are offline and fail closed without them. Ordinary Go/MCP use
+does not require Python. The MCP tools do not expose native token packing;
+request separate authorization before preparing or using an additional runtime.

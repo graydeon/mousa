@@ -27,3 +27,10 @@ Use the documented native workflow only for an authorized local source and
 external embedding producer. Query text does not attest how a vector was generated.
 Keep branch BM25/cosine and fused RRF distinct; synthetic vectors and declared
 provider/model/version establish no model execution or semantic truth.
+
+Native `query --context-tokens` separately selects evidence under the exact
+returned rendered-context count using a prepared official local tokenizer, with
+v7 history. MCP query/resources do not expose token packing or its native count
+fields. Use only discovered MCP arguments; do not forward native tokenizer or
+reservation flags. For authorized native use, read the usage guide and distinguish
+the returned-context cap from unknown application/model prompt framing.

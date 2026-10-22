@@ -35,6 +35,31 @@ pipeline exists, so no RAG/answer-quality benchmark is applicable. Memory benchm
 and FreshStack await their corresponding capabilities; see the
 [implemented and planned capabilities](OVERVIEW.md#foundation).
 
+## Native token packing evidence boundary
+
+Native directory/JSONL lexical, supplied-vector and hybrid queries can now select
+whole passages against the exact returned versioned rendering. The optional local
+backend is official `tiktoken==0.12.0`, encoding `o200k_base`, ordinary-text
+encoding. Its name does not establish the tokenizer of an unverified model.
+The [usage guide](USAGE.md#native-token-aware-context-packing) separates explicit
+runtime/cache preparation from offline query execution.
+
+Product checks cover native boundary fit and pressure changing canonical selection,
+original/exact-v1 duplicate behavior, multilingual/control/special-looking text,
+independent official recount of returned contexts, SQLite restart/history,
+fresh authorization/revision restrictions, writer ordering and rollback, retained
+digest corruption, missing/corrupt cache, process protocol failure and cancellation.
+Counts are measured producer evidence; hashes alone cannot prove a tokenizer ran.
+Normal history requires no Python, and retired text remains unarchived.
+Explicit recount refuses when original selected bytes are unavailable.
+
+Caller-declared prompt/output reservations provide bounded arithmetic, not
+authenticated model-window safety. No model was called and no answer quality,
+semantic relevance, performance or universal model-token equivalence is claimed.
+Earlier consumer-only token captures keep their producing pins and do not
+establish native token selection. Independent native observations are maintained
+separately in the companion repository.
+
 ## Caller-supplied vector evidence boundary
 
 Native export/import/query commands implement exact cosine retrieval over a bounded
@@ -47,7 +72,7 @@ and authorization, canonical corruption rejection and writer ordering/rollback.
 Constructed vectors establish protocol and ranking arithmetic only. No embedding
 model was run; provider/model/version labels are caller declarations. This is not
 an automatic natural-language semantic-search, retrieval-quality or performance
-measurement. No ANN, answering pipeline or model-window accounting is implemented.
+measurement. No ANN, answering pipeline or authenticated model-window guarantee is implemented.
 Independent public-head native observations belong in the companion repository;
 historical lexical or supersession captures do not validate this path.
 

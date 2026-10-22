@@ -26,6 +26,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space` with query text and supplied vector; directory and JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history, corruption and writer rollback | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
+| Native rendered-context token packing | Yes | `query --context-tokens`, optional declared window/reservations; directory/JSONL lexical/vector/hybrid | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history/recount, authorization and rollback | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
 | Declared associated context | Yes | Opt-in `query --associations <file>` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and its bounded development cases; no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
@@ -44,14 +45,70 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Stable SDK, general connectors, public pairing relay | No supported interface | No | Not implemented as supported interfaces | None |
 
 The [Git documentation consumer](../examples/docs/README.md) is a separate
-Python CLI example, not a core or `cmd/mousa` token-budget feature. Its opt-in
-`ask --context-tokens` counts a rendered prompt with pinned `o200k_base`; the
-returned byte-packed packet, message framing and reserved output are outside
-that cap. The [pinned development case](https://github.com/graydeon/mousa-benchmarks/tree/4a9a477907b7f0eb7af708118e50c047ba9b2a5d/results/2026-09-29-context-512)
+Python CLI example. Its opt-in `ask --context-tokens` counts its own rendered
+prompt with pinned `o200k_base`; unlike native token packing, it does not change
+the byte-packed canonical packet. Message framing and reserved output remain
+outside that example's cap.
+The [pinned development case](https://github.com/graydeon/mousa-benchmarks/tree/4a9a477907b7f0eb7af708118e50c047ba9b2a5d/results/2026-09-29-context-512)
 keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
+
+## Native token-aware packing
+
+The [preparation and runnable queries](USAGE.md#native-token-aware-context-packing)
+use official `tiktoken==0.12.0`, `o200k_base`, `encode_ordinary` through one bounded
+local process per token query. The helper is embedded in the pure-Go executable;
+Python is optional and invoked by argv, never a shell. The immutable encoder is
+loaded and its exact backend identity handshaken before source text is sent.
+The pinned loader's vocabulary SHA256 check remains active; missing/corrupt cache
+cannot fall back to a download. No daemon, model service or provider credentials
+are involved. Ordinary queries, startup and canonical reads need no tokenizer.
+
+Token mode preserves existing lexical order, cosine order or hybrid identity
+union/RRF order. Fresh authorization, current eligibility, retrieval, token
+selection, insertion and canonical readback share one immediate writer snapshot.
+Only freshly authorized verified text reaches the counter. Denial/withdrawal
+enumerates no candidates and releases no context or source-derived count facts.
+Current revisions and vector space/content pins retain their existing restrictions.
+
+Each addition measures the entire proposed `mousa.context_text.v1` rendering,
+including provenance headers and two-LF passage separators. The exact string,
+UTF-8 byte digest and measured ordinary-text count are returned together.
+The independent released-text byte budget excludes headers/separators.
+Oversized passages are skipped without trimming; later candidates are tried.
+Original packing retains byte-equal passages when they fit; exact-v1 compares
+actual bytes against selected passages only. Identity union is separate from
+byte equality. Unselected passages consume neither released-text nor rendered
+token allowance and never seed the retained duplicate set.
+
+`mousa.source_trail.v7` records mode, existing vector/hybrid producing facts or
+aligned lexical rank/BM25 facts, backend/rendering identities, source, cap/window/
+reservation declarations, effective allowance, ordered selections, measured
+proposed-rendering counts, exact omissions and final digest/count/byte accounting.
+Omissions distinguish `bytes`, `tokens`, `rendered_bytes` and `duplicate`; lifecycle
+rejection remains separate. Packet v3 binds the complete token selection under
+its own domain; v1–v6 encodings, default responses and packet identities do not
+change. No context text is archived and no parallel canonical store is introduced.
+A denied v7 trail carries no candidates, proposed source counts or selected text;
+canonical validation rejects candidate facts even when identities are recomputed.
+
+Canonical reads/startup validate identities, projections, policy/source parents,
+retrieval facts, packing accounting and the rendered digest when all selected
+bytes remain retained, without Python. A recorded measured count is producer
+evidence, not proof of tokenizer execution. Native `trail --verify-tokens`
+reauthorizes and independently recounts retained selected bytes with a ready
+backend; retired original bytes make that explicit recount unavailable.
+Neither current content nor a hash can replace those missing historical bytes.
+Historical BM25 and past coverage completeness retain their existing limits.
+
+Caps, process/work limits, reservation arithmetic, errors and unsupported explicit
+association/supersession combinations are specified in the usage guide. Window
+and reservation values are caller declarations, not authenticated provider/model
+facts. Only the returned context is counted; unknown final prompts and JSON/tool
+framing outside it are not. MCP query/resources remain lexical and unchanged;
+token-aware MCP integration is pending.
 
 ## Caller-supplied exact vector retrieval
 
@@ -138,7 +195,7 @@ trail persistence share one immediate writer transaction.
 | Native vector output | Below 8 MiB including escaped text, bounded labels and metadata; text budget excludes JSON overhead |
 
 These bounds apply to selection, not the existing full-store startup integrity
-scan. No ANN index, automatic embeddings or model-window accounting is implemented.
+scan. No ANN index, automatic embeddings or authenticated model-window guarantee is implemented.
 Vector mode rejects explicit `--policy`, `--associations` or
 `--supersession` flags; ordinary lexical combinations keep their current behavior.
 MCP query and resource search remain lexical. The unchanged filtered MCP history

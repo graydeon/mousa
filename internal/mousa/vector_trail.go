@@ -3,7 +3,6 @@ package mousa
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"math"
 )
@@ -163,11 +162,4 @@ func decodeVectorSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	trail := SourceTrail{Schema: wire.Schema, ID: wire.ID, RequestID: wire.RequestID, DecisionID: wire.DecisionID, Outcome: wire.Outcome, BudgetBytes: wire.BudgetBytes, UsedBytes: wire.UsedBytes, PacketID: wire.PacketID, Candidates: wire.Candidates, PackingPolicy: wire.PackingPolicy, Vector: wire.Vector}
 	return trail, trail.Validate()
-}
-
-func vectorTrailSchema(data []byte) bool {
-	var header struct {
-		Schema string `json:"schema"`
-	}
-	return json.Unmarshal(data, &header) == nil && header.Schema == SourceTrailSchemaV5
 }

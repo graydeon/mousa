@@ -15,6 +15,10 @@ import (
 // vector in one source/space. Authorization, both branches, packing and readback
 // share the immediate writer snapshot; a denied request enumerates neither branch.
 func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil)
+}
+
+func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery) (TracedVectorResult, error) {
 	if err := store.requireWritable("query hybrid"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -160,6 +164,13 @@ func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.Po
 		trail, err := mousa.NewHybridSourceTrail(request, decision, expression, h, candidates, budget, packing)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build hybrid trail", err)
+		}
+		if token != nil {
+			result.Verified = candidates
+			trail, result.Context, err = mousa.PackTokenContext(trail, request.SourceID, candidates, token.Budget, token.Counter)
+			if err != nil {
+				return err
+			}
 		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err
