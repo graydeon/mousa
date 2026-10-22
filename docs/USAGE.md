@@ -166,6 +166,15 @@ Normal `token_verification` distinguishes verified retained rendering digests
 from unavailable retired text; the stored count remains producer evidence.
 Only `official_recount_verified` reports an actual new tokenizer recount.
 
+Token query `outcome` uses this precedence: a denied request is
+`policy_excluded`; selected evidence is `evidence`; no canonical candidates is
+`no_candidates`; candidates with no verified accepted disposition is
+`lifecycle_excluded`. Otherwise, accepted candidates existed but none fit the
+byte or token constraints, so the result is `budget_omitted`. In a mixed
+accepted/rejected list, lifecycle rejection does not turn a genuine accepted
+budget omission into `lifecycle_excluded`. Rejected identities, ranks and count
+slots remain absent from the released token arrays in every case.
+
 ### Rendering, reservations and limits
 
 `mousa.context_text.v1` renders each selected passage as:

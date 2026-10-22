@@ -136,3 +136,79 @@ func TestNativeTokenProjectionRejectsParallelMetadata(t *testing.T) {
 		t.Fatalf("denied history: %v", hidden)
 	}
 }
+
+func TestNativeTokenQueryOutcomes(t *testing.T) {
+	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
+		for _, tc := range []struct {
+			name     string
+			rows     []mousa.TrailCandidate
+			denied   bool
+			want     string
+			accepted int
+			evidence int
+		}{
+			{name: "all-lifecycle-rejected", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateRejected}}, want: "lifecycle_excluded"},
+			{name: "no-match", want: "no_candidates"},
+			{name: "denied", denied: true, want: "policy_excluded"},
+			{name: "selected", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateAccepted, Selected: true, FinalRank: 1}}, want: "evidence", accepted: 1, evidence: 1},
+			{name: "token-budget", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateAccepted, Omission: "tokens"}}, want: "budget_omitted", accepted: 1},
+			{name: "byte-budget", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateAccepted, Omission: "bytes"}}, want: "budget_omitted", accepted: 1},
+			{name: "mixed-token-budget", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateRejected}, {Disposition: mousa.CandidateAccepted, Omission: "tokens"}}, want: "budget_omitted", accepted: 1},
+			{name: "mixed-byte-budget", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateAccepted, Omission: "bytes"}, {Disposition: mousa.CandidateRejected}}, want: "budget_omitted", accepted: 1},
+			{name: "mixed-selected", rows: []mousa.TrailCandidate{{Disposition: mousa.CandidateRejected}, {Disposition: mousa.CandidateAccepted, Selected: true, FinalRank: 1}}, want: "evidence", accepted: 1, evidence: 1},
+		} {
+			t.Run(packing+"/"+tc.name, func(t *testing.T) {
+				trail := mousa.SourceTrail{Candidates: tc.rows, PackingPolicy: packing, Token: &mousa.TokenSelection{Mode: "lexical", Budget: mousa.TokenBudget{Cap: 1}, Limit: 1}}
+				verified := make([]mousa.VerifiedLexicalCandidate, len(tc.rows))
+				for i := range trail.Candidates {
+					id := mousa.SegmentID{byte(i + 1)}
+					trail.Candidates[i].SegmentID = id
+					trail.Token.Lexical = append(trail.Token.Lexical, mousa.TokenLexicalFact{Rank: i + 1, BM25: -10})
+					var count *uint64
+					if trail.Candidates[i].Omission == "tokens" {
+						n := uint64(100)
+						count = &n
+					}
+					trail.Token.ProposedTokens = append(trail.Token.ProposedTokens, count)
+					verified[i] = mousa.VerifiedLexicalCandidate{Segment: mousa.Segment{ID: id, Selector: mousa.NewTextByteRangeSelector(0, 8)}, Text: "evidence"}
+				}
+				decision := mousa.PolicyDecision{Outcome: mousa.PolicyOutcomeAllow}
+				if tc.denied {
+					decision.Outcome = mousa.PolicyOutcomeDeny
+				}
+				context := ""
+				if tc.evidence > 0 {
+					context = "evidence"
+				}
+				before, _ := json.Marshal(trail)
+				result := captureTokenProjection(t, func() error {
+					return emitTokenQuery("lexical", "source", 1, packing, trail, decision, context, verified)
+				})
+				if result["outcome"] != tc.want {
+					t.Errorf("outcome=%v want %s", result["outcome"], tc.want)
+				}
+				if len(result["evidence"].([]any)) != tc.evidence || result["context"] != context {
+					t.Fatalf("released evidence: %v", result)
+				}
+				token := result["token"].(map[string]any)
+				for _, key := range []string{"candidate_ids", "lexical", "proposed_tokens"} {
+					if tc.accepted == 0 && token[key] == nil {
+						continue
+					}
+					if rows, ok := token[key].([]any); !ok || len(rows) != tc.accepted {
+						t.Fatalf("%s contains rejected slots: %v", key, token[key])
+					}
+				}
+				if tc.accepted == 1 {
+					if token["lexical"].([]any)[0].(map[string]any)["rank"] != float64(1) {
+						t.Fatal("released original rejected ordinal")
+					}
+				}
+				after, _ := json.Marshal(trail)
+				if !bytes.Equal(before, after) {
+					t.Fatal("classification mutated canonical facts")
+				}
+			})
+		}
+	}
+}

@@ -158,3 +158,40 @@ func TestTokenHistoryProjectionPositionsAndRecount(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenAllMatchingAncestryRejected(t *testing.T) {
+	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
+		t.Run(packing, func(t *testing.T) {
+			store := openLexicalStore(t)
+			defer store.Close()
+			ctx := t.Context()
+			request, active := seedEnforcedRetrieval(t, store, "root passage")
+			other := addVerifiedLexicalDocument(t, store, "withdrawn-ancestor", "ancestor passage")
+			putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(active.representation.ID), mousa.NewRepresentationDerivationInput(other.representation.ID)}, "token.rejected", []byte("sharedterm rejected merge"), true)
+			withdrawVerifiedSource(t, store, other.source.ID, "withdraw-ancestor", 200)
+			traced, text, err := store.EvaluateAndTraceTokenLexical(ctx, request, "sharedterm", "original", 1024, packing, tokenOptions(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if traced.Decision.Outcome != mousa.PolicyOutcomeAllow || len(traced.Trail.Candidates) != 1 || traced.Trail.Candidates[0].Disposition != mousa.CandidateRejected || traced.Trail.Candidates[0].Selected || text != "" {
+				t.Fatalf("verified lifecycle rejection: %+v context=%q", traced, text)
+			}
+			for _, recount := range []bool{false, true} {
+				req := testEvaluationRequest(t, request.SourceID, fmt.Sprintf("all-rejected-%v", recount))
+				var inspection TrailInspection
+				if recount {
+					inspection, err = store.InspectSourceTrailWithTokens(ctx, req, traced.Trail.ID, tokenOptions(t).Counter)
+				} else {
+					inspection, err = store.InspectSourceTrail(ctx, req, traced.Trail.ID)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				h := inspection.Historical
+				if h == nil || h.LifecycleExcluded != 1 || len(h.Candidates) != 0 || len(h.Token.CandidateIDs) != 0 || len(h.Token.Lexical) != 0 || len(h.Token.ProposedTokens) != 0 {
+					t.Fatalf("all-rejected history: %+v", h)
+				}
+			}
+		})
+	}
+}

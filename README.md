@@ -87,6 +87,8 @@ local Python environment/cache; queries never download vocabulary assets.
 Ordinary queries and the CGO-disabled Go build do not require Python.
 Native query and history token facts use an accepted-candidate release view;
 canonical v7 producing facts remain intact for integrity checks.
+Token outcomes distinguish lifecycle-only rejection from an accepted candidate
+omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
 ## What works today?
 

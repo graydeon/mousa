@@ -121,7 +121,11 @@ func emitTokenQuery(mode, label string, budget uint64, packing string, trail mou
 		return errors.New("missing token selection record")
 	}
 	evidence := make([]tokenEvidence, 0, len(trail.Candidates))
+	accepted := 0
 	for i, row := range trail.Candidates {
+		if row.Disposition == mousa.CandidateAccepted {
+			accepted++
+		}
 		if row.Selected {
 			candidate := verified[i]
 			evidence = append(evidence, tokenEvidence{candidate.Segment, row.FinalRank, candidate.Text})
@@ -134,6 +138,8 @@ func emitTokenQuery(mode, label string, budget uint64, packing string, trail mou
 		outcome = "evidence"
 	} else if len(trail.Candidates) == 0 {
 		outcome = "no_candidates"
+	} else if accepted == 0 {
+		outcome = "lifecycle_excluded"
 	}
 	return emit(struct {
 		Schema          string                       `json:"schema"`

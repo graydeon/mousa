@@ -115,6 +115,13 @@ rendering/count/digest and budget declarations do not change. Canonical internal
 reads retain every producing fact; projection never edits the record or its
 identity. Fresh inspection still records its authorization audit evidence.
 
+Token query outcomes distinguish authorized all-lifecycle-rejected candidates
+(`lifecycle_excluded`) from no candidates (`no_candidates`) and accepted
+candidates omitted by a byte or token budget (`budget_omitted`). Policy denial
+takes precedence as `policy_excluded`; any selected evidence yields `evidence`.
+Mixed accepted/rejected lists follow the accepted selection or budget outcome,
+without releasing rejected positional details.
+
 Caps, process/work limits, reservation arithmetic, errors and unsupported explicit
 association/supersession combinations are specified in the usage guide. Window
 and reservation values are caller declarations, not authenticated provider/model
