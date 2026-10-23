@@ -94,7 +94,7 @@ This opt-in counts the complete versioned rendering with official
 local Python environment/cache; queries never download vocabulary assets.
 Ordinary queries and the CGO-disabled Go build do not require Python.
 Query and opted-in history token facts use an accepted-candidate release view;
-canonical v7 producing facts remain intact for integrity checks.
+canonical v7/v8 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
@@ -108,7 +108,7 @@ Revision-pinned supersession declarations and activation administration are avai
 together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
 JSONL (`query --source ID --supersession TEXT`) query opt-ins, and the same opt-in on
 the local stdio MCP `mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
-`mousa.source_trail.v4` record recorded. Default and opted-out queries remain
+`mousa.source_trail.v4` or combined token/supersession v8 record recorded. Default and opted-out queries remain
 uncurated; inspections preserve recorded selection and omit the member unless requested.
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Native-created v1–v3 history remains inspectable without a
@@ -118,6 +118,12 @@ uses a separate v5 trail; hybrid selection records branch contributions in v6.
 Native and MCP token-aware lexical/vector/hybrid selection records measured
 rendering and reservation facts in v7. MCP `mousa_trail` exposes those recorded
 facts only with `token_details: true`, without recounting.
+Lexical queries can combine supersession and token budgets with either packer,
+for native directory/JSONL sources and configured MCP JSONL aliases.
+Withheld predecessors consume neither budget nor duplicate slots. The combined
+v8 trail binds recorded consultation and measured survivor rendering; vector/hybrid
+and association combinations with supersession remain unsupported.
+See the [runnable combined example](docs/USAGE.md#lexical-supersession-with-token-budgets).
 Automatic embedding generation and secret filtering remain pending.
 Caller-declared reservations do not prove full model-window safety.
 

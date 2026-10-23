@@ -284,9 +284,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		if _, err := args.TokenBudget.Available(); err != nil {
 			return args, err
 		}
-		if seen["supersession"] {
-			return args, errors.New("token mode cannot be combined with supersession")
-		}
 	}
 	if operation == "mousa_hybrid_query" || operation == "mousa_query" && args.TokenBudget != nil {
 		terms, err := mousa.PrepareLexicalTerms(args.Query, args.Policy == "dedup")
@@ -353,9 +350,9 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "trail_id"}, "properties": map[string]any{
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
-				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities it named and the withholding rows. This member exists only on a mousa.source_trail.v4 record; a legacy record has none. It reports recorded evidence and reinterprets nothing under the current activation projection. Requires native declaration and activation administration for this source; omitted or false keeps the filtered inspection."},
+				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact withholding rows. Present only for v4 or lexical token/supersession v8 history. Reports producing evidence, not today's activation projection; omitted or false hides it."},
 				"retrieval_details": map[string]any{"type": "boolean", "description": "Return verified producing vector/hybrid identities, coverage and ranking facts when recorded. No search is rerun; historical completeness is not inferred from today's index. Omitted or false keeps the default inspection."},
-				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7. No tokenizer runs and no old count is remeasured; omitted or false hides token facts."},
+				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7 or v8. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
 			},
 		}},
 	}

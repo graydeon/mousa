@@ -337,9 +337,9 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			var rendered string
 			if args.TokenBudget != nil {
 				var traced sqlite.TracedLexicalResult
-				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter})
+				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession})
 				if err == nil {
-					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced, nil, false)
+					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced, nil, args.Supersession)
 					if err == nil {
 						result = mcpLexicalResult{evidence, &rendered, mousa.ReleasedTokenSelection(traced.Trail)}
 					}

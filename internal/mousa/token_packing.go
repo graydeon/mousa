@@ -3,6 +3,7 @@ package mousa
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -12,6 +13,7 @@ import (
 )
 
 const SourceTrailSchemaV7 = "mousa.source_trail.v7"
+const SourceTrailSchemaV8 = "mousa.source_trail.v8"
 const ContextRenderingV1 = "mousa.context_text.v1"
 const TokenBackend = "tiktoken/0.12.0/o200k_base/ordinary"
 
@@ -54,7 +56,7 @@ func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 	if err != nil {
 		return SourceTrail{}, "", err
 	}
-	if source == (SourceID{}) || counter == nil || base.BudgetBytes > MaxVectorTextBytes || len(candidates) > MaxVectorPassages || len(candidates) != len(base.Candidates) || base.Supersession != nil || len(base.Associated) > 0 {
+	if source == (SourceID{}) || counter == nil || base.BudgetBytes > MaxVectorTextBytes || len(candidates) > MaxVectorPassages || len(candidates) != len(base.Candidates) || len(base.Associated) > 0 {
 		return SourceTrail{}, "", errors.New("invalid token packing inputs or unsupported stages")
 	}
 	if base.Outcome == string(PolicyOutcomeDeny) && len(candidates) != 0 {
@@ -63,6 +65,7 @@ func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 	mode := "lexical"
 	switch base.Schema {
 	case SourceTrailSchema, SourceTrailSchemaV2:
+	case SourceTrailSchemaV4:
 	case SourceTrailSchemaV5:
 		mode = "vector"
 	case SourceTrailSchemaV6:
@@ -73,6 +76,16 @@ func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 	t := base
 	t.Schema = SourceTrailSchemaV7
 	t.Candidates = trailCandidatesFromVerified(candidates)
+	if base.Schema == SourceTrailSchemaV4 {
+		t.Schema = SourceTrailSchemaV8
+	}
+	var suppressed []bool
+	if t.Supersession != nil {
+		suppressed, err = suppressSupersededCandidates(t.Candidates, t.Supersession)
+		if err != nil {
+			return SourceTrail{}, "", err
+		}
+	}
 	t.PackingPolicy = base.PackingPolicy
 	if t.PackingPolicy == "" {
 		t.PackingPolicy = PackingOriginal
@@ -93,6 +106,9 @@ func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 		total += row.TextBytes
 		if total > MaxVectorTextBytes || row.SegmentID != base.Candidates[i].SegmentID || SHA256(sha256.Sum256([]byte(c.Text))) != row.ContentSHA256 {
 			return SourceTrail{}, "", errors.New("token candidate bounds or content mismatch")
+		}
+		if len(suppressed) > 0 && suppressed[i] {
+			continue
 		}
 		if t.PackingPolicy == PackingExactV1 {
 			for _, prev := range retained[row.ContentSHA256] {
@@ -174,6 +190,7 @@ func tokenPacketIdentity(t SourceTrail) (string, error) {
 func (t SourceTrail) tokenRankingProjection() (SourceTrail, error) {
 	p := t
 	p.Token = nil
+	p.Supersession = nil
 	p.Candidates = slices.Clone(t.Candidates)
 	p.PackingPolicy = PackingOriginal
 	p.BudgetBytes = MaxVectorTextBytes
@@ -219,8 +236,29 @@ func (t SourceTrail) tokenRankingProjection() (SourceTrail, error) {
 func (t SourceTrail) validateTokenTrail() error {
 	invalid := func() error { return errors.New("invalid v7 token selection bindings or accounting") }
 	s := t.Token
-	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || t.Supersession != nil || len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
+	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
 		return invalid()
+	}
+	if t.Schema == SourceTrailSchemaV8 {
+		if s.Mode != "lexical" || t.Supersession == nil {
+			return invalid()
+		}
+		if err := t.Supersession.Validate(); err != nil {
+			return err
+		}
+		if t.Supersession.Consulted != (t.Outcome == string(PolicyOutcomeAllow)) {
+			return invalid()
+		}
+	} else if t.Schema != SourceTrailSchemaV7 || t.Supersession != nil {
+		return invalid()
+	}
+	var suppressed []bool
+	if t.Supersession != nil {
+		var err error
+		suppressed, err = suppressSupersededCandidates(t.Candidates, t.Supersession)
+		if err != nil {
+			return err
+		}
 	}
 	if t.Outcome == string(PolicyOutcomeDeny) && len(t.Candidates) != 0 {
 		return invalid()
@@ -264,6 +302,12 @@ func (t SourceTrail) validateTokenTrail() error {
 		}
 		if r.TextBytes == 0 || r.TextBytes > MaxUTF8TextSegmentBytes || r.SegmentID == (SegmentID{}) || r.ContentSHA256 == (SHA256{}) {
 			return invalid()
+		}
+		if len(suppressed) > 0 && suppressed[i] {
+			if r.Selected || r.Omission != "" || r.DuplicateOf != "" || n != nil {
+				return invalid()
+			}
+			continue
 		}
 		proposed := rendered + contextHeaderBytes() + r.TextBytes
 		if rendered > 0 {
@@ -326,6 +370,26 @@ func decodeTokenSourceTrail(data []byte) (SourceTrail, error) {
 	var t SourceTrail
 	if err := decodeStrictVectorJSON(data, &t); err != nil {
 		return t, err
+	}
+	if t.Schema == SourceTrailSchemaV8 {
+		var fields map[string]json.RawMessage
+		if err := decodeStrictVectorJSON(data, &fields); err != nil {
+			return t, err
+		}
+		required := []string{"schema", "id", "request_id", "decision_id", "outcome", "expression", "budget_bytes", "used_bytes", "packet_id", "candidates", "packing_policy", "supersession", "token"}
+		if len(fields) != len(required) {
+			return t, errors.New("v8 requires exactly lexical token and supersession members")
+		}
+		for _, key := range required {
+			if _, ok := fields[key]; !ok {
+				return t, errors.New("missing v8 member: " + key)
+			}
+		}
+		selection, err := decodeSupersessionSelection(fields["supersession"])
+		if err != nil {
+			return t, err
+		}
+		t.Supersession = selection
 	}
 	return t, t.Validate()
 }

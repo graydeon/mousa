@@ -60,6 +60,17 @@ multi-source derivations; ordinary single-source native captures do not establis
 this internal graph case. Canonical v7 facts remain recorded; released token
 arrays contain only accepted candidates with consecutive release ranks.
 
+Lexical supersession can now compose with token packing for native directory/JSONL
+and MCP configured JSONL. The v8 record binds transaction-local producing
+consultation and complete survivor-rendering observations; byte-only v4 and
+ordinary token v7 histories retain their existing contracts. Product regressions
+exercise exact pins, withheld twins, budget/reservation boundaries, historical
+inspection and corruption rejection. These are synthetic behavior/counting
+checks, not retrieval-quality, latency or full-window measurements.
+The [runnable example](USAGE.md#lexical-supersession-with-token-budgets) compares
+the returned context with an independent official ordinary-text count.
+Retired text is unarchived; unknown application/model framing remains outside the cap.
+
 Caller-declared prompt/output reservations provide bounded arithmetic, not
 authenticated model-window safety. No model was called and no answer quality,
 semantic relevance, performance or universal model-token equivalence is claimed.

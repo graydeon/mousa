@@ -130,7 +130,7 @@ facts with accepted candidates, including unselected budget/duplicate omissions.
 Lexical ranks count only accepted order, not original search positions. A null
 proposed count means that accepted passage was not counted (for example, a
 duplicate); a lifecycle-rejected candidate has no slot at all. Query and history
-use this filtered view, not the full canonical v7 producing record.
+use this filtered view, not the full canonical v7/v8 producing record.
 
 For externally supplied vectors, use the same exported passages, immutable
 space and query-vector JSON from the [vector workflow](#caller-supplied-vector-workflow):
@@ -208,8 +208,10 @@ Oversized passages are skipped and later candidates are tried. `exact-v1`
 deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
-Token-specific options without `--context-tokens`, and explicit association or
-supersession flags with token mode, reject even when set to false/empty.
+Token-specific options without `--context-tokens` reject. Token mode rejects
+explicit association flags, even empty, and supersession flags in vector/hybrid
+mode, even false. Lexical token mode accepts supersession: true writes v8;
+omission and explicit false keep the same v7 producing contract.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
@@ -217,6 +219,48 @@ partially committed query decision/trail. MCP queries expose the same token core
 with explicit startup configuration and optional token fields described below;
 OpenAI mention/resources remain byte-only.
 
+
+## Lexical supersession with token budgets
+
+After [preparing the external tokenizer](#prepare-the-optional-runtime), build
+the executable and run the synthetic example from the repository root:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 examples/token_supersession.py --mousa ./mousa \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
+```
+
+The example imports JSONL, discovers exact revision pins, writes real native
+declaration and activation records, and queries both packers through native and
+MCP clients. Each printed result has one withheld predecessor, one retained
+successor, and an independent official count of the complete returned context.
+It checks the exact token boundary and independently opted-in v8 history.
+
+For a synced directory, the same composition uses:
+
+```sh
+./mousa -store local.sqlite query --supersession --context-tokens 512 \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
+  --packing-policy exact-v1 ./documents 'harbor inspection'
+```
+
+Prepare declaration/activation using that directory's own source and exact
+revision pins as in the [directory example](#directory-supersession-example).
+MCP uses a configured JSONL alias and operator-only startup backend; a query
+adds `"supersession": true` to its existing token arguments. Query results add
+`supersession_excluded`, including zero. All-withheld empty context reports
+`supersession_excluded`; an unsuppressed survivor that cannot fit reports
+`budget_omitted`. Withheld candidates remain accepted metadata with positive
+size/rank and null proposed count, not rejected slots or replacement passages.
+
+Only lexical composition is supported. Vector/hybrid token queries and
+association queries still reject supersession. Normal/recount native history
+uses the recorded selection, not today's activation. MCP history independently
+accepts `supersession: true` and `token_details: true`, returning producing
+observations without recounting. Retired selected text cannot be reconstructed;
+application/model framing is unknown and remains outside these counts.
+This synthetic example makes no semantic-quality, performance or full-window claim.
 
 ## Byte packing and associations
 

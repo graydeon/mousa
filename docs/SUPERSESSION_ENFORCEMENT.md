@@ -18,8 +18,23 @@ source-scoped verified candidates, consults verified administration and builds
 `mousa.source_trail.v4` inside the existing writer transaction. It reuses
 `readSupersessionConsultation`, `BuildSupersessionSelection` and
 `NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
-Every opted-in query records v4, even when denied or when nothing is suppressed.
+Every byte-only opted-in query records v4, even when denied or nothing is suppressed.
 Canonical readback must agree before commit.
+
+Lexical token-budget composition is also implemented: add `--context-tokens N`
+and the prepared tokenizer flags, or MCP `context_tokens` with its trusted
+startup backend. This path writes `mousa.source_trail.v8` through
+`EvaluateAndTraceTokenLexical` in the same writer transaction. Both packers count
+the complete survivor rendering only; withheld rows keep their original sizes
+and ranks but consume neither budget nor duplicate retention.
+Byte-only enforcement still writes v4; omitted/false token enforcement writes v7.
+Vector/hybrid and association supersession combinations remain unsupported.
+The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
+preserves packet v3's full producing-selection binding, so equal returned text
+does not imply equal v7/v8 packet IDs. The byte-only packet rule below is unchanged.
+History verifies recorded administration after later transitions, never today's
+activation projection. MCP independently opts into recorded supersession/token
+members; only native explicit recount measures retained selected bytes again.
 
 A valid active declaration withholds only its exact predecessor representation's
 accepted candidates. Candidate ranks, digests, sizes and ancestry remain recorded;

@@ -35,7 +35,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
 | Supersession selection contract | Yes | `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
-| Opt-in supersession trail and survivor packing | Yes | Directory and JSONL `query --supersession` | v4 for every opt-in, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults; directory resync, namespace isolation and historical pin inspection | Independent companion evidence is separate from product tests; no latency claim |
+| Opt-in supersession trail and survivor packing | Yes | Directory and JSONL `query --supersession`, optionally with `--context-tokens` | v4 byte-only or v8 token composition, both policies, no-history/denial/deactivation/active/stale pins, budget freed for later ranks, withheld duplicates not retained, explicit counts/outcomes, unchanged defaults; directory resync and historical pins | Independent companion evidence is separate from product tests; no latency claim |
 | MCP supersession opt-in | Yes | `mousa_query` and `mousa_trail` optional `supersession` boolean | Real MCP client round trips over the built executable and fresh stores: declared input and member in the discovered closed schemas, strict argument rejection before any store write, omitted/`false`/`true` property sets, the recorded no-history/denial/deactivation/active member, legacy records without a member, restart and later activation changes, damaged-record refusal without repair or an audit write, and unchanged sync/status/query definitions | [Independent stdio inspection observations, 2026-10-13](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession); synthetic client behavior, not retrieval quality or performance |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
 | Embedding inference, answer generation | No | No | Not implemented | None |
@@ -93,6 +93,35 @@ its own domain; v1–v6 encodings, default responses and packet identities do no
 change. No context text is archived and no parallel canonical store is introduced.
 A denied v7 trail carries no candidates, proposed source counts or selected text;
 canonical validation rejects candidate facts even when identities are recomputed.
+
+Lexical token queries additionally accept explicit supersession enforcement:
+native directory/JSONL `query --supersession --context-tokens N` and MCP
+`mousa_query` with `supersession: true` and `context_tokens`. Both packers skip
+exact pinned predecessors before byte/token counting and duplicate retention.
+Withheld rows retain positive canonical sizes and accepted ranks, with null
+proposed counts; all-withheld empty context reports `supersession_excluded`,
+not budget omission. Successor availability never reinstates a pinned predecessor.
+Vector/hybrid and association supersession combinations still reject.
+
+The composition writes `mousa.source_trail.v8`, binding the token facts and the
+closed recorded consultation. Omitted/false lexical supersession retains v7;
+byte-only supersession retains v4. Valid v1–v7 bytes and identities are unchanged.
+The v8 trail identity hashes its complete canonical record with ID zeroed, so its
+schema is an explicit version binding. Packet v3 has no separate strict packet
+decoder: its existing constructor hashes a wrapper containing the complete
+producing trail with ID zeroed and request/decision/packet fields empty. The v8
+variant keeps that construction, including schema and consultation, rather than
+hashing only returned text. Equal returned context can therefore have different
+v7/v8 packet identities. The v7 hash path is unchanged.
+
+Canonical readback/startup verifies v8 through the existing trail scan, with no
+new tables. Recorded event/declaration chains and exact suppression membership
+are checked through the supplied queryer, not today's projection; withheld
+candidates remain canonical-content verified. Packing and retained-rendering
+verification use that recorded mask. Normal history records producing counts;
+native explicit recount uses selected retained bytes only. MCP's independent
+`supersession` and `token_details` inspection opt-ins release safe recorded
+members after fresh authorization, never recounting.
 
 Canonical reads/startup validate identities, projections, policy/source parents,
 retrieval facts, packing accounting and the rendered digest when all selected
@@ -678,7 +707,7 @@ No packages or vocabulary are downloaded during a query.
 
 Token execution calls `EvaluateAndTraceTokenLexical`, `EvaluateAndTraceTokenVector`
 or `EvaluateAndTraceTokenHybrid` with the configured source and trusted caller.
-The native transaction owns authorization, ranking, packing and v7 recording.
+The native transaction owns authorization, ranking, packing and v7/v8 recording.
 The result adds exact `context` bytes and the accepted-only `TokenSelectionView`
 as `token`; the existing byte constraint still applies. Selected evidence and
 packing counts describe token-constrained survivors. The count covers headers
@@ -688,7 +717,7 @@ Without `context_tokens`, the released property set, byte selection and Python
 independence are unchanged. Refresh closed schema caches with `tools/list`.
 
 `mousa_trail` with `token_details: true` releases the verified recorded safe
-`token` view for v7, including native-created history. Omitted/false hides it;
+`token` view for v7/v8, including native-created history. Omitted/false hides it;
 legacy trails have no member. This is independent of `retrieval_details` and
 `supersession`. It does not start a tokenizer, remeasure an old count or rerank.
 Fresh denial withholds history and existence. Retired text remains unarchived;

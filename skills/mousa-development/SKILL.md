@@ -54,8 +54,8 @@ v7 retrieval details use verified safe vector/hybrid fields.
 
 For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
 and its runtime preparation/limits in the usage guide. Native token mode writes
-v7 and packet v3; preserve v1–v6/default wire bytes. Count the whole proposed
-versioned rendering through the bounded official offline process, after fresh
+v7 and packet v3, or v8 for lexical supersession composition; preserve v1–v7 bytes.
+Count the complete proposed versioned rendering through the bounded official offline process, after fresh
 authorization and within the same writer snapshot. Reap/verify the worker before
 canonical insertion. Skipped passages neither spend released budget nor seed
 duplicates. Keep byte equality separate from the retrieval identity union.
@@ -73,6 +73,13 @@ Keep rejected slots and original search ordinals out of release views. Accepted
 budget/duplicate omissions still have legitimate metadata. Internal canonical
 `TokenSelection` retains all producing facts; never mutate or rehash it to filter
 an inspection. Fresh inspection may append authorization evidence.
+For combined lexical token/supersession queries, consult through the same writer
+transaction after authorization. Pack only survivors; verify every withheld
+candidate's original canonical size/content and ancestry. v8 binds both token
+facts and recorded consultation using packet v3's full-selection wrapper; it is
+not a released-text-only identity. Historical reads rederive membership from the
+recorded event/declaration, not current activation. Vector/hybrid/association
+supersession remains unsupported. Explicit false lexical token requests use v7.
 
 
 ## Prove and deliver the change

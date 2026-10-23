@@ -45,8 +45,11 @@ whose token count includes headers/separators but excludes tool envelopes and
 unknown client/model framing. Reservations do not prove model-window safety.
 The operator configures the prepared offline backend at startup; tool arguments
 cannot choose interpreter/cache/store/caller. Report tokenizer_unavailable rather
-than silently falling back to bytes. Token mode rejects lexical supersession
-even when false. OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7 token facts under
+than silently falling back to bytes. Lexical `mousa_query` can combine
+`supersession: true` with token budgets; withheld predecessors consume neither
+budget nor duplicate retention. Omission/false retains v7; the combination records
+v8. Vector/hybrid/association supersession remains unsupported.
+OpenAI mentions/resources stay byte-only.
+Use `mousa_trail` with token_details true for safe recorded v7/v8 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.
