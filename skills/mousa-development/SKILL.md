@@ -40,9 +40,17 @@ in history without rerunning lexical search or asserting past coverage completen
 MCP `mousa_hybrid_query` reuses this transaction. Its retrieval-details history
 opt-in projects the verified producing view without reranking. Preserve default
 lexical query and trail property sets, canonical hex identities and closed schemas;
-OpenAI mention/resource search stays lexical and byte-only. MCP exposes neither
-embedding administration nor tokenizer paths as tool arguments. v7 retrieval
-details use verified safe vector/hybrid fields.
+OpenAI mention/resource search stays lexical and byte-only. MCP exports current
+authorized passage inputs through `mousa_vector_inputs` and imports exact pinned
+external values through `mousa_vector_import`. Reuse `ExportEmbeddingInputs`,
+`DecodeVectorImport` and atomic `ImportEmbeddings`; preserve their native bounds
+and the smaller transport frame bound. Export needs retrieval authorization, not
+ingestion permission. Import needs the alias's `--ingest-source` and runtime HTTP
+`mousa:write` scope, not a new native retrieval-policy gate. Withdrawal/current
+pins still reject in native import. Exact retries count accepted submissions,
+not new rows; conflicts/stale/foreign pins cannot partially insert a space or batch.
+No external snapshot lease exists. Keep tokenizer paths out of tool arguments.
+v7 retrieval details use verified safe vector/hybrid fields.
 
 For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
 and its runtime preparation/limits in the usage guide. Native token mode writes

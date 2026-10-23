@@ -112,6 +112,16 @@ reproduction belong in the companion repository; old native and MCP archives
 retain their own pins. Protocol/arithmetic and authorization observations do not
 establish semantic quality, ANN, embedding inference, latency or model-window safety.
 
+The client workflow also uses `mousa_vector_inputs` and `mousa_vector_import`,
+without native vector preparation. Export exposes the native authorized current
+passage bytes/pins; import uses the native strict codec and atomic insertion.
+Product stdio checks compare exact exported bytes/pins, distinguish retrieval
+denial from explicit write authority, and check retry/conflict, stale/foreign
+batch rollback and malformed nested inputs. The local HTTP fixture checks actual
+write-scope enforcement and insertion state. No external snapshot lease exists;
+replacement during external computation requires a fresh export and embeddings.
+These observations do not attest an external producer or model integration.
+
 MCP lexical/vector/hybrid queries also accept explicit whole-rendering token
 budgets through the native v7 transactions. Product stdio checks independently
 count returned context with official `encode_ordinary` under both packers,

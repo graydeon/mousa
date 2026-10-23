@@ -1,4 +1,4 @@
-"""Run synthetic MCP cosine/RRF queries with operator-prepared native embeddings."""
+"""Run arithmetic-only MCP export/import, cosine/RRF queries and history."""
 import argparse
 import json
 import hashlib
@@ -22,34 +22,30 @@ def main():
     with tempfile.TemporaryDirectory(prefix="mousa-mcp-example-") as temporary:
         store = Path(temporary) / "evidence.sqlite"
 
-        def native(*arguments, value=None):
-            stdin = "" if value is None else json.dumps(value) + "\n"
-            result = subprocess.run([str(binary), "-store", str(store), *arguments],
-                                    input=stdin, text=True, capture_output=True,
-                                    timeout=30, check=True)
-            return json.loads(result.stdout)
-
         fixture = {"overlap.md": "Drain sockets before stopping the host.",
                    "vector.md": "Radishes prefer damp soil.", "lexical.md": "Drain sockets."}
-        subprocess.run([str(binary), "-store", str(store), "sync", "--source", source],
-                       input="".join(json.dumps({"id": k, "text": v}) + "\n" for k, v in fixture.items()),
-                       text=True, capture_output=True, timeout=30, check=True)
-        passages = native("vector", "inputs", "--source", source)["passages"]
-        # Only this synthetic fixture assigns vectors by hand. Real producers run
-        # externally over the exported current passage bytes and retain their pins.
-        pins = ("source_id", "segment_id", "representation_id", "representation_sha256", "content_sha256")
-        imported = native("vector", "import", "--source", source, value={
-            "schema": "mousa.vector_import.v1",
-            "space": {"schema": "mousa.vector_space.v1", "provider": "synthetic",
-                      "model": "two-axis-example", "version": "1", "dimensions": 2, "metric": "cosine"},
-            "embeddings": [{**{key: p[key] for key in pins},
-                            "values": [1, 0] if p["item"] == "vector.md" else [0, 1]}
-                           for p in passages if p["item"] != "lexical.md"]})
         with (Path(temporary) / "receipts.jsonl").open("w") as receipts:
-            client = Client(binary, store, receipts, False, 30, source,
+            client = Client(binary, store, receipts, True, 30, source,
                             args.tokenizer_python, args.tokenizer_cache)
             try:
                 client.initialize()
+                client.call("mousa_sync", {"source": source,
+                    "items": [{"id": k, "text": v} for k, v in fixture.items()]})
+                exported, _ = client.call("mousa_vector_inputs", {"source": source})
+                # Real producers compute externally over these exact normalized
+                # bytes, preserving every pin and the declared space identity.
+                pins = ("source_id", "segment_id", "representation_id",
+                        "representation_sha256", "content_sha256")
+                supplied = {
+                    "schema": "mousa.vector_import.v1",
+                    "space": {"schema": "mousa.vector_space.v1", "provider": "synthetic",
+                              "model": "arithmetic-only", "version": "1", "dimensions": 2, "metric": "cosine"},
+                    "embeddings": [{**{key: p[key] for key in pins},
+                                    "values": [1, 0] if p["item"] == "vector.md" else [0, 1]}
+                                   for p in exported["passages"] if p["item"] != "lexical.md"]}
+                imported, _ = client.call("mousa_vector_import", {"source": source, "import": supplied})
+                retry, _ = client.call("mousa_vector_import", {"source": source, "import": supplied})
+                assert retry == imported and imported["imported"] == 2
                 modes = ("lexical", "vector", "hybrid") if args.tokenizer_python else ("vector", "hybrid")
                 for mode in modes:
                     arguments = {"source": source, "space_id": imported["space_id"],

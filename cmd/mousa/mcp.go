@@ -55,7 +55,7 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	tokenCache := flags.String("tokenizer-cache", "", "operator-prepared offline o200k_base cache")
 	var allowed, writable []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })
-	flags.Func("ingest-source", "permit ingestion into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
+	flags.Func("ingest-source", "permit item ingestion and embedding import into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -194,12 +194,16 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Retrieve Mousa vector evidence"
 		case "mousa_hybrid_query":
 			definition.Title = "Retrieve Mousa hybrid evidence"
+		case "mousa_vector_inputs":
+			definition.Title = "Export Mousa embedding inputs"
+		case "mousa_vector_import":
+			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
 		}
 		closed := false
-		destructive := definition.Name == "mousa_sync"
-		definition.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: definition.Name == "mousa_status", IdempotentHint: definition.Name == "mousa_status", DestructiveHint: &destructive, OpenWorldHint: &closed}
+		destructive := mcpWriteTool(definition.Name)
+		definition.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: definition.Name == "mousa_status", IdempotentHint: definition.Name == "mousa_status" || definition.Name == "mousa_vector_import", DestructiveHint: &destructive, OpenWorldHint: &closed}
 		if a.http {
 			scopes := []string{"mousa:read"}
 			if destructive {
@@ -208,7 +212,7 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Meta = mcp.Meta{"securitySchemes": []any{map[string]any{"type": "oauth2", "scopes": scopes}}}
 		}
 		server.AddTool(definition, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if definition.Name == "mousa_sync" && a.http && (req.Extra == nil || req.Extra.TokenInfo == nil || !slices.Contains(req.Extra.TokenInfo.Scopes, "mousa:write")) {
+			if mcpWriteTool(definition.Name) && a.http && (req.Extra == nil || req.Extra.TokenInfo == nil || !slices.Contains(req.Extra.TokenInfo.Scopes, "mousa:write")) {
 				return mcpFailure(definition.Name, "", "insufficient_scope", errors.New("ingestion requires mousa:write"), 0, 0)
 			}
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -239,7 +243,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	if !ok {
 		return mcpFailure(operation, args.Source, "source_not_permitted", errors.New("source is not configured"), 0, 0)
 	}
-	if operation == "mousa_sync" && !configured.write {
+	if mcpWriteTool(operation) && !configured.write {
 		return mcpFailure(operation, args.Source, "ingestion_not_permitted", errors.New("ingestion is disabled for this source"), 0, 0)
 	}
 	// Serialize complete application calls, not just individual SQLite writes.
@@ -309,6 +313,22 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		result = report
 	case "mousa_status":
 		result, err = sourceStatus(ctx, a.store, source, args.Source)
+	case "mousa_vector_inputs":
+		var request mousa.PolicyEvaluationRequest
+		request, err = callerRetrievalRequest(source.ID, a.caller)
+		if err == nil {
+			var inputs sqlite.EmbeddingInputs
+			inputs, err = a.store.ExportEmbeddingInputs(ctx, request)
+			if err == nil {
+				result = mcpVectorInputsResult{inputs.Schema, inputs.Decision.ID, inputs.Decision.Outcome, inputs.Decision.ReasonCodes, inputs.Passages}
+			}
+		}
+	case "mousa_vector_import":
+		var id mousa.SHA256
+		id, err = a.store.ImportEmbeddings(ctx, source.ID, args.VectorImport)
+		if err == nil {
+			result = mcpVectorImportResult{"mousa.vector_import_result.v1", id, len(args.VectorImport.Embeddings)}
+		}
 	case "mousa_query":
 		var request mousa.PolicyEvaluationRequest
 		request, err = callerRetrievalRequest(source.ID, a.caller)

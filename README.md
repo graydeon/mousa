@@ -79,10 +79,12 @@ Mousa performs no model inference or network calls for this path.
 Use [native hybrid retrieval](docs/USAGE.md#hybrid-lexical-and-vector-query) to combine
 query text and an explicitly supplied vector in one ranked, packed result.
 
-MCP clients can use [`mousa_vector_query` and `mousa_hybrid_query`](docs/USAGE.md#mcp-vector-and-hybrid-example)
-with an operator-prepared space and caller-supplied query values. Both use the
-configured JSONL source allowlist. `mousa_trail` adds recorded vector/hybrid facts
-only when `retrieval_details` is true; default lexical tools and inspection stay unchanged.
+MCP clients can [export authorized passage inputs, import external embeddings and
+query them](docs/USAGE.md#mcp-vector-and-hybrid-example) without native vector
+preparation. Export requires retrieval authorization; import separately requires
+`--ingest-source` and, over HTTP, `mousa:write`. Embedding generation stays external.
+`mousa_trail` adds recorded vector/hybrid facts only when `retrieval_details` is
+true; default lexical tools and inspection stay unchanged.
 
 For an exact returned context string under a token cap, use
 [`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing)
