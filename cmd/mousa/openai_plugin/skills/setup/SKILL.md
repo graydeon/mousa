@@ -15,14 +15,19 @@ On supported desktop hosts, explain that composer mentions search Mousa evidence
 
 Do not create a tunnel, deploy an endpoint, install credentials, publish a plugin, run a model/provider test or change host configuration without explicit authorization. The local generated package is not a public directory submission. Connection and actual host extension rendering must be checked on the host, not inferred from this skill.
 
-The bundled skills guide client setup and evidence use. They do not grant administration access or turn internal development contracts into MCP capabilities. Check the configured tool schema and current capability documentation before promising an interface. Native declaration and activation commands are separate from these client tools. A discovered mousa_query schema may expose the optional supersession boolean: true enables exact pinned-predecessor withholding, while omission or false preserves the uncurated default. A discovered mousa_trail schema may expose the same optional boolean: true returns the consultation a v4 Source Trail recorded, while omission or false keeps the filtered inspection. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior.
+The bundled skills guide client setup and evidence use. They do not grant administration access or turn internal development contracts into MCP capabilities. Check the configured tool schema and current capability documentation before promising an interface. Native declaration and activation commands are separate from these client tools. A discovered mousa_query schema may expose the optional supersession boolean: true enables exact pinned-predecessor withholding, while omission or false preserves the uncurated default. A discovered mousa_trail schema may expose the same optional boolean: true returns the consultation a v4 Source Trail recorded, while omission or false keeps the filtered inspection. Policy, lifecycle and supersession administration remain native-only. Composer mentions and evidence resources keep their fixed default behavior.
 
-Caller-supplied vector and hybrid MCP tools require an operator-prepared space
-and embeddings imported through the native workflow. Before external embedding
-generation, confirm authorization to share exported normalized bytes with that
-producer. Mousa makes no model/provider network call. Discover the explicit
-mousa_vector_query / mousa_hybrid_query tools and the independent optional
-retrieval_details flag on mousa_trail; do not infer support from a native flag.
+Caller-supplied vector and hybrid MCP tools use external embeddings. Discover
+mousa_vector_inputs / mousa_vector_import for client export/import: export needs
+fresh retrieval authorization; import requires --ingest-source for that alias
+and HTTP mousa:write in addition to read admission. Retrieval denial masks
+export/query/history but does not revoke explicitly granted administrative import;
+withdrawal rejects import. Before external generation, confirm authorization to
+share exact normalized bytes with that producer. Preserve pins/space declaration,
+and re-export after replacement; no snapshot lease covers external computation.
+Mousa makes no model/provider network call. Discover mousa_vector_query /
+mousa_hybrid_query and independent retrieval_details on mousa_trail;
+do not infer support from a native flag.
 OpenAI mention/resource search stays lexical.
 
 Token packing is optional and needs an explicitly prepared local Python

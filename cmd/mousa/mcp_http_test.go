@@ -117,6 +117,18 @@ func TestHTTPSubjectAudienceScopeAndRevocation(t *testing.T) {
 	if !strings.Contains(string(mustJSON(t, result)), `"added":["write"]`) {
 		t.Fatalf("write scope not enforced correctly: %v", result)
 	}
+	_, exported := post("read", "mousa_vector_inputs", map[string]any{"source": "alpha"})
+	inputs := exported["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	importArgs := map[string]any{"source": "alpha", "import": embeddingImport(t, inputs["passages"].([]any))}
+	before := embeddingState(t, run.store)
+	_, result = post("read", "mousa_vector_import", importArgs)
+	if !strings.Contains(string(mustJSON(t, result)), "insufficient_scope") || embeddingState(t, run.store) != before {
+		t.Fatalf("read token imported vectors: %v", result)
+	}
+	_, result = post("write", "mousa_vector_import", importArgs)
+	if !strings.Contains(string(mustJSON(t, result)), `"imported":2`) || embeddingState(t, run.store) == before {
+		t.Fatalf("write token failed to import vectors: %v", result)
+	}
 	revoked.Store(true)
 	if code, _ := post("read", "mousa_status", map[string]any{"source": "alpha"}); code != 401 {
 		t.Fatalf("revoked token remained usable: %d", code)

@@ -20,7 +20,7 @@ func pluginCommand(storePath string, args []string) (resultErr error) {
 	consent := flags.Bool("consent-to-share", false, "consent to share permitted evidence, identifiers, provenance and audit metadata with the configured host")
 	var sources, writable []string
 	flags.Func("source", "permitted JSONL source; repeatable", func(value string) error { sources = append(sources, value); return nil })
-	flags.Func("ingest-source", "separately enable ingestion for a permitted source", func(value string) error { writable = append(writable, value); return nil })
+	flags.Func("ingest-source", "separately enable item ingestion and embedding import for a permitted source", func(value string) error { writable = append(writable, value); return nil })
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}

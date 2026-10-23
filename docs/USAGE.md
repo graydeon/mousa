@@ -744,11 +744,11 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The six tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
-`mousa_vector_query` and `mousa_hybrid_query`.
-Store, permitted sources and trusted caller are fixed at startup. Ingestion is
-disabled unless that source also has `--ingest-source`. The default stdio mode
-has no listener, directory import, shell, policy administration or withdrawal tool.
+The eight tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs` and `mousa_vector_import`.
+Store, permitted sources and trusted caller are fixed at startup. Item ingestion
+and embedding import are disabled unless that source also has `--ingest-source`.
+The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
 
 `mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed
 authorization decision ID and reasons, but no history or existence disclosure.
@@ -803,20 +803,47 @@ CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 python3 examples/mcp_retrieval.py --mousa ./mousa
 ```
 
-The example creates a fresh temporary store, syncs three JSONL items through the
-native CLI, exports current passage pins and imports hand-assigned two-coordinate
-vectors. It then negotiates stdio MCP, discovers tools, calls both new query tools,
-and inspects each producing trail with `retrieval_details: true`. The vector-only
-hit is `vector.md`; the overlapping `overlap.md` wins hybrid equal-weight RRF(k60)
-despite ranking second in each branch. Printed JSON includes selected evidence
-and matching history identities. Temporary data and receipts are removed on exit.
-These vectors demonstrate arithmetic, not semantic retrieval quality.
+The example creates a fresh temporary store and uses only MCP tools to sync three
+JSONL items, export current normalized passage bytes/pins, import hand-assigned
+two-coordinate vectors, retry that exact import, query and inspect history.
+The vector-only hit is `vector.md`; the overlapping `overlap.md` wins hybrid
+equal-weight RRF(k60) despite ranking second in each branch. Printed JSON includes
+selected evidence and matching history identities. Temporary data and receipts
+are removed on exit. The vectors are arithmetic-only: no semantic quality, model
+integration, performance or model-window safety is established.
 
-For real use, an authorized external embedding producer must supply vectors for
-the exported current normalized passages and the operator must import them first.
-Mousa generates no embeddings and makes no model/provider call. Share exported
-text only with an authorized producer. Replaced revisions need new pinned embeddings.
-Use the returned space ID with your MCP client's `tools/call`:
+For real use:
+
+1. Call `mousa_vector_inputs` with `{"source":"inspection-notes"}`. It returns
+   `mousa.embedding_inputs.v1` with fresh `decision_id`, `decision_outcome`,
+   `decision_reasons` and `passages`. Each passage has exact normalized `text`,
+   byte coordinates, item/segment policy and five canonical pins.
+2. Compute embeddings externally over those exact bytes. Share text only with an
+   authorized producer. Preserve `source_id`, `segment_id`, `representation_id`,
+   `representation_sha256` and `content_sha256`, and the exact space declaration.
+3. Call `mousa_vector_import` with `source` and `import`: one complete
+   [`mousa.vector_import.v1` object](#caller-supplied-vector-workflow), not a filename
+   or encoded JSON string. The result is `mousa.vector_import_result.v1` with
+   canonical `space_id` and `imported`, the number of submitted embeddings accepted.
+   This includes immutable retries, not just newly inserted rows.
+4. Use that lowercase hex space identity with the existing query tools:
+
+Export works on configured read sources under fresh retrieval authorization.
+Denied/withdrawn exports have an empty `passages` array and no content counts or
+pins. Import is administrative: it requires `--ingest-source` for that alias and,
+over HTTP, both `mousa:read` admission and `mousa:write`. Retrieval denial does not
+revoke this explicit write authority, but still masks export/query/history.
+Withdrawal rejects import. Native import verifies lifecycle and every current
+pin atomically; a stale, mismatched or foreign-source pin refuses the whole batch
+without adding an embedding or space. Changed immutable values conflict; use a
+different space for changed vectors. There is no external snapshot lease or
+transaction during embedding computation: after source replacement, re-export
+and recompute. No provider, shell, model endpoint or filesystem tool is exposed.
+
+The codec retains its 8 MiB import bound, 1–100 embeddings and 1–2048 dimensions;
+MCP's unchanged 2 MiB process-frame limit may reject a request before codec
+validation. Unknown/duplicate members, nulls, invalid numbers, zero vectors,
+dimension mismatches and repeated embeddings reject before mutation.
 
 ```json
 {"name":"mousa_vector_query","arguments":{"source":"inspection-notes","space_id":"SPACE_ID","values":[1,0],"budget_bytes":4096}}

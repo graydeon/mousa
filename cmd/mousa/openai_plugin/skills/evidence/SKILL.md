@@ -17,11 +17,18 @@ On supported desktop hosts, a Mousa composer mention provides an evidence resour
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
 
-Supersession declarations and activation are administered through the native CLI. When the discovered mousa_query schema declares supersession, pass the optional boolean true for an explicitly requested supersession query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer that a newer item replaces an older one or prove that contradictory guidance was resolved. When the discovered mousa_trail schema declares supersession, pass true to read the consultation a v4 trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities and the withholding rows. Legacy trails carry no member, and the member reports recorded evidence rather than today's activation state. MCP administration remains unavailable. Composer mentions and evidence resources keep their fixed default behavior. Explain conflicting released passages using their provenance.
+Supersession declarations and activation are administered through the native CLI. When the discovered mousa_query schema declares supersession, pass the optional boolean true for an explicitly requested supersession query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer that a newer item replaces an older one or prove that contradictory guidance was resolved. When the discovered mousa_trail schema declares supersession, pass true to read the consultation a v4 trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities and the withholding rows. Legacy trails carry no member, and the member reports recorded evidence rather than today's activation state. Supersession administration remains native-only. Composer mentions and evidence resources keep their fixed default behavior. Explain conflicting released passages using their provenance.
 
-When discovery declares `mousa_vector_query`, supply source, space_id, values and
-budget_bytes for a space the operator already prepared through native vector
-export/import. `mousa_hybrid_query` additionally requires independent lexical
+When discovery declares `mousa_vector_inputs`, export current authorized normalized
+passage bytes/pins for an approved external producer. Preserve all five pins and
+the complete space declaration. Generation stays external. Only call
+`mousa_vector_import` with explicit user authorization and configured source write
+permission; HTTP also requires mousa:write. Supply one closed vector_import.v1
+object, not a path. Retrieval consent alone does not authorize import. The
+accepted count includes immutable retries; changed values conflict. Stale or
+foreign pins refuse the complete batch: re-export/recompute after replacement.
+Then supply source, space_id, values and budget_bytes to `mousa_vector_query`.
+`mousa_hybrid_query` additionally requires independent lexical
 query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
 uses the same byte packers; supersession and associations reject.
 No embedding service is bundled. Query text does not attest how values were

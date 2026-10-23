@@ -22,7 +22,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
-| Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` preparation; `query --vector-space`; MCP `mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
+| Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
@@ -604,7 +604,7 @@ agent acceptance remain unrun.
 `mousa -store STORE mcp --caller cli --source inspection-notes
 --ingest-source inspection-notes` serves one local client over stdin/stdout.
 Repeat `--source` for each permitted JSONL source, and repeat `--ingest-source`
-only for sources that may accept items. Writes are disabled by default. Source
+only for sources that may accept items or embedding imports. Writes are disabled by default. Source
 IDs are exact, case-sensitive opaque identities in namespace `mousa-jsonl`,
 not paths to open. This interface cannot import directory sources.
 
@@ -640,6 +640,24 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7 token view that exists |
 | `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; token budget fields below | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing facts and producing decision/trail/packet IDs |
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing and token options | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
+| `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
+| `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
+
+Export calls `ExportEmbeddingInputs` with the trusted caller's retrieval request.
+Fresh policy/lifecycle and current passage reads share its existing writer snapshot.
+Configured read sources need no ingestion permission. Import calls the strict
+bounded `DecodeVectorImport` before the existing atomic `ImportEmbeddings`.
+It requires the alias's `--ingest-source`; HTTP additionally enforces `mousa:write`
+after normal `mousa:read` admission. Discovery scope declarations are not the gate.
+Import is administration, not retrieval authorization: retrieval denial still
+blocks content release but does not add a retrieval-policy requirement to import.
+Withdrawal and stale/foreign/mismatched pins reject inside native import without
+partial embedding or space writes. Exact immutable retries preserve rows; changed
+values conflict. No transaction or snapshot lease spans external computation.
+The native item/passage/text/dimension/input bounds remain; MCP's 2 MiB input-frame
+bound can refuse a request before the 8 MiB codec bound. See the
+[end-to-end client workflow](USAGE.md#mcp-vector-and-hybrid-example).
+
 
 All three query tools accept optional `context_tokens` (integer 1..524288),
 `window_tokens`, `prompt_reserve_tokens` and `output_reserve_tokens` (integers
@@ -965,8 +983,8 @@ cross-origin authentication discovery. No unauthenticated tool listener is start
 Every HTTP request introspects the bearer token without caching. The response
 must contain active, exact `iss`/`sub`, matching `aud` (string or array), future
 `exp`, acceptable `nbf` if present, and space-separated `scope`. Missing/invalid
-claims fail closed. `mousa:read` is required for all MCP requests; ingestion also
-requires `mousa:write` and startup source permission. This is not an API-key login
+claims fail closed. `mousa:read` is required for all MCP requests; item ingestion
+and embedding import also require `mousa:write` and startup source permission. This is not an API-key login
 fallback. Introspection uses HTTP Basic service authentication, a five-second
 timeout, bounded response, TLS verification and no redirects. Provider errors
 release no token/secret details. The configured IdP must support these claims.

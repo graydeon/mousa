@@ -35,6 +35,7 @@ type mcpArguments struct {
 	Values           []float64
 	TokenBudget      *mousa.TokenBudget
 	TokenDetails     bool
+	VectorImport     mousa.VectorImport
 }
 
 type mcpToolError struct {
@@ -117,6 +118,9 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_sync":
 		allowed = append(allowed, "items", "segment_policy")
 		required = append(required, "items")
+	case "mousa_vector_import":
+		allowed = append(allowed, "import")
+		required = append(required, "import")
 	case "mousa_query":
 		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession")
 		required = append(required, "query", "policy", "budget_bytes")
@@ -130,7 +134,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_trail":
 		allowed = append(allowed, "trail_id", "supersession", "retrieval_details", "token_details")
 		required = append(required, "trail_id")
-	case "mousa_status":
+	case "mousa_status", "mousa_vector_inputs":
 	default:
 		return args, errors.New("unknown operation")
 	}
@@ -161,6 +165,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
+		case "import":
+			input, err := mousa.DecodeVectorImport(value)
+			if err != nil {
+				return args, err
+			}
+			args.VectorImport = input
 		case "items":
 			if err := json.Unmarshal(value, &args.Items); err != nil {
 				return args, errors.New("items must be an array of item records")
@@ -400,5 +410,21 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			properties[field] = map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000000, "description": "Caller declaration requiring context_tokens; nonzero reservations require a positive window. Not proof of model-window safety."}
 		}
 	}
+	inputs, err := mcpOutputSchema[mcpVectorInputsResult]("mousa_vector_inputs")
+	if err != nil {
+		return nil, err
+	}
+	imported, err := mcpOutputSchema[mcpVectorImportResult]("mousa_vector_import")
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions,
+		&mcp.Tool{Name: "mousa_vector_inputs", Description: "Export exact current normalized passage bytes and pins under fresh retrieval authorization. No ingestion permission is required. Denial releases no passage facts; no snapshot lease spans external embedding generation.", InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"source"}, "properties": map[string]any{"source": source},
+		}, OutputSchema: inputs},
+		&mcp.Tool{Name: "mousa_vector_import", Description: "Atomically import externally supplied pinned embeddings into an ingestion-enabled source. Requires startup write permission and HTTP mousa:write; this is administration, not retrieval authorization. imported counts submitted embeddings accepted, including immutable retries, not newly inserted rows.", InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"source", "import"}, "properties": map[string]any{"source": source, "import": mcpVectorImportSchema()},
+		}, OutputSchema: imported},
+	)
 	return definitions, nil
 }
