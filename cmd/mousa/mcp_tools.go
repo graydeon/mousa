@@ -33,6 +33,8 @@ type mcpArguments struct {
 	RetrievalDetails bool
 	SpaceID          mousa.SHA256
 	Values           []float64
+	TokenBudget      *mousa.TokenBudget
+	TokenDetails     bool
 }
 
 type mcpToolError struct {
@@ -61,8 +63,9 @@ type mcpTrailResult struct {
 
 type mcpHistoricalTrail struct {
 	*sqlite.SourceTrailView
-	Vector *mcpVectorDetails `json:"vector,omitempty"`
-	Hybrid *mcpHybridDetails `json:"hybrid,omitempty"`
+	Vector *mcpVectorDetails         `json:"vector,omitempty"`
+	Hybrid *mcpHybridDetails         `json:"hybrid,omitempty"`
+	Token  *mousa.TokenSelectionView `json:"token,omitempty"`
 }
 
 func mcpSuccess(operation, source string, result any) (*mcp.CallToolResult, error) {
@@ -125,11 +128,14 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			required = append(required, "query", "policy")
 		}
 	case "mousa_trail":
-		allowed = append(allowed, "trail_id", "supersession", "retrieval_details")
+		allowed = append(allowed, "trail_id", "supersession", "retrieval_details", "token_details")
 		required = append(required, "trail_id")
 	case "mousa_status":
 	default:
 		return args, errors.New("unknown operation")
+	}
+	if operation == "mousa_query" || operation == "mousa_vector_query" || operation == "mousa_hybrid_query" {
+		allowed = append(allowed, "context_tokens", "window_tokens", "prompt_reserve_tokens", "output_reserve_tokens")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	token, err := decoder.Token()
@@ -169,6 +175,28 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			}
 			if err := json.Unmarshal(value, &args.BudgetBytes); err != nil || args.BudgetBytes == 0 || args.BudgetBytes > maximum {
 				return args, fmt.Errorf("budget_bytes must be an integer from 1 to %d", maximum)
+			}
+		case "context_tokens", "window_tokens", "prompt_reserve_tokens", "output_reserve_tokens":
+			if args.TokenBudget == nil {
+				args.TokenBudget = &mousa.TokenBudget{}
+			}
+			var n uint64
+			if err := json.Unmarshal(value, &n); err != nil {
+				return args, fmt.Errorf("%s must be an unsigned integer", key)
+			}
+			switch key {
+			case "context_tokens":
+				args.TokenBudget.Cap = n
+			case "window_tokens":
+				args.TokenBudget.Window = n
+			case "prompt_reserve_tokens":
+				args.TokenBudget.PromptReserve = n
+			case "output_reserve_tokens":
+				args.TokenBudget.OutputReserve = n
+			}
+		case "token_details":
+			if err := json.Unmarshal(value, &args.TokenDetails); err != nil {
+				return args, errors.New("token_details must be a boolean")
 			}
 		case "values":
 			query, err := mousa.DecodeVectorQuery(append(append([]byte(`{"schema":"mousa.vector_query.v1","values":`), value...), '}'))
@@ -239,7 +267,18 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, fmt.Errorf("missing argument %s", key)
 		}
 	}
-	if operation == "mousa_hybrid_query" {
+	if args.TokenBudget != nil {
+		if !seen["context_tokens"] {
+			return args, errors.New("token window and reservations require context_tokens")
+		}
+		if _, err := args.TokenBudget.Available(); err != nil {
+			return args, err
+		}
+		if seen["supersession"] {
+			return args, errors.New("token mode cannot be combined with supersession")
+		}
+	}
+	if operation == "mousa_hybrid_query" || operation == "mousa_query" && args.TokenBudget != nil {
 		terms, err := mousa.PrepareLexicalTerms(args.Query, args.Policy == "dedup")
 		if err != nil {
 			return args, err
@@ -306,6 +345,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
 				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded when it was written: whether supersession was consulted, the nullable activation and declaration identities it named and the withholding rows. This member exists only on a mousa.source_trail.v4 record; a legacy record has none. It reports recorded evidence and reinterprets nothing under the current activation projection. Requires native declaration and activation administration for this source; omitted or false keeps the filtered inspection."},
 				"retrieval_details": map[string]any{"type": "boolean", "description": "Return verified producing vector/hybrid identities, coverage and ranking facts when recorded. No search is rerun; historical completeness is not inferred from today's index. Omitted or false keeps the default inspection."},
+				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7. No tokenizer runs and no old count is remeasured; omitted or false hides token facts."},
 			},
 		}},
 	}
@@ -318,7 +358,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	definitions[2].OutputSchema, err = mcpOutputSchema[evidenceResult](definitions[2].Name)
+	definitions[2].OutputSchema, err = mcpOutputSchema[mcpLexicalResult](definitions[2].Name)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +389,16 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		definitions = append(definitions, &mcp.Tool{Name: name, Description: description, InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": required, "properties": properties,
 		}, OutputSchema: output})
+	}
+	for _, tool := range definitions {
+		if tool.Name != "mousa_query" && tool.Name != "mousa_vector_query" && tool.Name != "mousa_hybrid_query" {
+			continue
+		}
+		properties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
+		properties["context_tokens"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 524288, "description": "Opt into the exact returned context rendering token cap; requires an operator-configured offline tokenizer. Both byte and token constraints apply."}
+		for _, field := range []string{"window_tokens", "prompt_reserve_tokens", "output_reserve_tokens"} {
+			properties[field] = map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000000, "description": "Caller declaration requiring context_tokens; nonzero reservations require a positive window. Not proof of model-window safety."}
+		}
 	}
 	return definitions, nil
 }

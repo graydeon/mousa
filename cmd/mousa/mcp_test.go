@@ -89,12 +89,13 @@ func (c *mcpTestClient) waitSent(wanted string) {
 	}
 }
 
-func startMCPClient(t *testing.T, run testRun, caller string, writable bool) *mcpTestClient {
+func startMCPClient(t *testing.T, run testRun, caller string, writable bool, startup ...string) *mcpTestClient {
 	t.Helper()
 	args := []string{"-store", run.store, "mcp", "--caller", caller, "--source", "alpha", "--source", "beta"}
 	if writable {
 		args = append(args, "--ingest-source", "alpha", "--ingest-source", "beta")
 	}
+	args = append(args, startup...)
 	command := exec.Command(run.binary, args...)
 	client := mcp.NewClient(&mcp.Implementation{Name: "mousa-acceptance", Version: "1"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	sent := make(chan string, 64)

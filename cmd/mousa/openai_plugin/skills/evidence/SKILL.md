@@ -23,16 +23,23 @@ When discovery declares `mousa_vector_query`, supply source, space_id, values an
 budget_bytes for a space the operator already prepared through native vector
 export/import. `mousa_hybrid_query` additionally requires independent lexical
 query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
-uses the same byte packers; supersession, associations and token inputs reject.
+uses the same byte packers; supersession and associations reject.
 No embedding service is bundled. Query text does not attest how values were
 generated; declared labels and synthetic vectors establish no semantic truth.
 Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6 or safe v7
 vector/hybrid facts under fresh authorization. Default history omits those facts.
 OpenAI mention/resource search stays lexical.
 
-Native `query --context-tokens` separately selects evidence under the exact
-returned rendered-context count using a prepared official local tokenizer, with
-v7 history. MCP query/resources do not expose token packing or its native count
-fields. Use only discovered MCP arguments; do not forward native tokenizer or
-reservation flags. For authorized native use, read the usage guide and distinguish
-the returned-context cap from unknown application/model prompt framing.
+When discovery declares `context_tokens`, any of the three query tools can opt
+into measured whole-rendering token selection. Keep required budget_bytes.
+Window/reservation fields require context_tokens; nonzero reservations require
+a positive window and cannot exceed it together. Use the exact returned context,
+whose token count includes headers/separators but excludes tool envelopes and
+unknown client/model framing. Reservations do not prove model-window safety.
+The operator configures the prepared offline backend at startup; tool arguments
+cannot choose interpreter/cache/store/caller. Report tokenizer_unavailable rather
+than silently falling back to bytes. Token mode rejects lexical supersession
+even when false. OpenAI mentions/resources stay byte-only.
+Use `mousa_trail` with token_details true for safe recorded v7 token facts under
+fresh authorization. This opt-in is independent of retrieval_details and runs
+no recount. Default history omits token facts; legacy records have none.

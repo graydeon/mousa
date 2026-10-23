@@ -213,8 +213,9 @@ supersession flags with token mode, reject even when set to false/empty.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
-partially committed query decision/trail. MCP query/resources remain unchanged;
-native token packing is not exposed through MCP yet.
+partially committed query decision/trail. MCP queries expose the same token core
+with explicit startup configuration and optional token fields described below;
+OpenAI mention/resources remain byte-only.
 
 
 ## Byte packing and associations
@@ -832,16 +833,72 @@ Call `mousa_trail` with the same configured source, returned `trail_id` and
 native-created v5/v6 records. Omission/false keeps default history unchanged.
 Current authorization can withhold history; later index/revision changes never
 rerank the original record. The independent `supersession` opt-in still works.
-Native v7 vector/hybrid facts can be inspected, but no token metadata, token-budget
-execution or caller-selected tokenizer path is exposed over MCP.
+Native v7 vector/hybrid facts can also be inspected. The independent
+`token_details` opt-in returns safe recorded token facts without recounting.
 
 Only exact configured JSONL aliases are permitted, including when a label looks
 like a path. No directory read permission follows. Native bounds and precise
 space/dimension/current-coverage errors apply, without lexical fallback.
-Supersession/association/token combinations on these query tools reject rather
-than being ignored. Refresh cached closed schemas through `tools/list`.
+Supersession/association combinations on these query tools reject rather than
+being ignored. Refresh cached closed schemas through `tools/list`.
 OpenAI mentions/resources retain their lexical contract.
 
+
+### MCP token-budget example
+
+Prepare the official environment and cache using the
+[tokenizer preparation commands](#native-token-aware-context-packing), then configure
+both `--tokenizer-python "$TOKEN_PY"` and `--tokenizer-cache "$TOKEN_CACHE"` in
+the MCP process arguments. Only the operator chooses these paths. Ordinary MCP
+startup and byte queries need neither Python nor these options.
+
+Run the same synthetic client with token mode enabled:
+
+```sh
+python3 examples/mcp_retrieval.py --mousa ./mousa \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
+```
+
+It exercises lexical, vector and hybrid queries, independently counts the exact
+returned context with official `encode_ordinary`, checks its SHA256 and the exact
+fit/one-token-short boundary, and reads matching producing token history.
+No model or embedding service is called. For your own client, add the following
+to any query tool's existing required arguments:
+
+```json
+{"context_tokens":512,"window_tokens":2048,"prompt_reserve_tokens":1024,"output_reserve_tokens":512}
+```
+
+The effective allowance here is 512 tokens. The required `budget_bytes` also
+limits released passage text. `context` is the exact `mousa.context_text.v1`
+rendering, including source/segment headers and separators; `token` reports its
+measured count, digest, bytes, backend/rendering identity and budget facts.
+Count that string, not the JSON serialization or a sum of passage counts.
+Client/model framing and unknown prompt content are outside the count;
+reservations do not establish full model-window safety.
+
+Omitting `context_tokens` preserves the existing byte response property set.
+Window/reservation fields require it even when zero. Caps are positive integers
+up to 524288; declarations are integers 0..1000000000. Nonzero reservations
+require a positive window and cannot exceed it together. Null, booleans,
+fractional/overflow numbers, duplicate and unknown fields reject before mutation.
+Token mode rejects lexical `supersession` even when false; vector/hybrid continue
+to reject supersession and associations. Tool inputs cannot set interpreter,
+cache, store or caller paths/identity.
+
+Without a configured usable backend, token mode returns `tokenizer_unavailable`;
+byte tools remain available. The query-scoped offline worker is bounded and
+reaped before successful v7 persistence. Counting failure and cancellation leave
+no successful producing trail/packet. Startup/migration/policy writes and the
+fresh authorization audit on a legitimate inspection are not rolled back by
+that guarantee.
+
+Inspect with `mousa_trail` arguments `source`, `trail_id`, `token_details: true`.
+It returns the accepted-only recorded v7 view after fresh authorization, not
+canonical rejected metadata or a new measurement. Default/false hides it; legacy
+records have no token member. `retrieval_details` remains independent. Counts and
+digests survive restart and source replacement under existing retained-text limits;
+MCP provides no historical recount. OpenAI mention/resources stay byte-only.
 
 ### Bounded project-history consumer
 

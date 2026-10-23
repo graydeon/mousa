@@ -18,11 +18,17 @@ from workflow import verify_evidence
 
 
 class Client:
-    def __init__(self, binary, store, receipts, writable, timeout, source):
+    def __init__(self, binary, store, receipts, writable, timeout, source,
+                 tokenizer_python=None, tokenizer_cache=None):
+        if (tokenizer_python is None) != (tokenizer_cache is None):
+            raise ValueError("configure both tokenizer interpreter and cache")
         validate_source(source)
         self.source = source
         self.errors = tempfile.TemporaryFile()
         self.argv = [str(binary), "-store", str(store), "mcp", "--caller", "cli", "--source", source]
+        if tokenizer_python is not None:
+            self.argv += ["--tokenizer-python", str(tokenizer_python),
+                          "--tokenizer-cache", str(tokenizer_cache)]
         if writable:
             self.argv += ["--ingest-source", source]
         try:

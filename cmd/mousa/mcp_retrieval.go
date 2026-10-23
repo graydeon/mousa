@@ -76,6 +76,14 @@ type mcpRetrievalResult struct {
 	Evidence         []mcpRetrievalEvidence       `json:"evidence"`
 	Vector           *mcpVectorDetails            `json:"vector,omitempty"`
 	Hybrid           *mcpHybridDetails            `json:"hybrid,omitempty"`
+	Context          *string                      `json:"context,omitempty"`
+	Token            *mousa.TokenSelectionView    `json:"token,omitempty"`
+}
+
+type mcpLexicalResult struct {
+	*evidenceResult
+	Context *string                   `json:"context,omitempty"`
+	Token   *mousa.TokenSelectionView `json:"token,omitempty"`
 }
 
 func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcpRetrievalResult {
@@ -86,6 +94,9 @@ func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcp
 		PackingPolicy: trail.PackingPolicy, BudgetBytes: trail.BudgetBytes, UsedBytes: trail.UsedBytes,
 		Evidence: []mcpRetrievalEvidence{}, Vector: mcpVectorFacts(trail.Vector), Hybrid: mcpHybridFacts(trail.Hybrid),
 	}
+	if trail.Token != nil {
+		result.Context, result.Token = &traced.Context, mousa.ReleasedTokenSelection(trail)
+	}
 	if v := result.Vector; v != nil {
 		result.Mode, result.SpaceID, result.QueryVectorID, result.Eligible, result.Indexed = "vector", v.SpaceID, v.QueryVectorID, v.Eligible, v.Indexed
 	} else if h := result.Hybrid; h != nil {
@@ -93,6 +104,9 @@ func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcp
 	}
 	result.Missing = result.Eligible - result.Indexed
 	for i, row := range trail.Candidates {
+		if row.Disposition != mousa.CandidateAccepted {
+			continue
+		}
 		if !row.Selected && row.Omission != "duplicate" {
 			result.BudgetOmitted++
 		}
@@ -129,17 +143,19 @@ func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcp
 	return result
 }
 
-func mcpTrailProjection(source, id string, inspection sqlite.TrailInspection, details bool) mcpTrailResult {
+func mcpTrailProjection(source, id string, inspection sqlite.TrailInspection, details, tokenDetails bool) mcpTrailResult {
 	result := mcpTrailResult{Source: source, TrailID: id,
 		AuthorizationDecisionID: inspection.AuthorizationDecisionID,
 		AuthorizationOutcome:    inspection.AuthorizationOutcome, AuthorizationReasons: inspection.AuthorizationReasons}
 	if inspection.Historical != nil {
 		result.Historical = &mcpHistoricalTrail{SourceTrailView: inspection.Historical}
 		if details {
-			// The verified view already enforces accepted-only v7 metadata. Token
-			// details and tokenizer execution are deliberately not an MCP surface.
+			// The verified view already enforces accepted-only v7 metadata.
 			result.Historical.Vector = mcpVectorFacts(inspection.Historical.Vector)
 			result.Historical.Hybrid = mcpHybridFacts(inspection.Historical.Hybrid)
+		}
+		if tokenDetails {
+			result.Historical.Token = inspection.Historical.Token
 		}
 	}
 	return result

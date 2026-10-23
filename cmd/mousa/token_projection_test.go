@@ -82,7 +82,10 @@ func TestNativeTokenProjectionRejectsParallelMetadata(t *testing.T) {
 				history.Token = mousa.ReleasedTokenSelection(trail)
 				inspection := sqlite.TrailInspection{Historical: history}
 				wireHistory := captureTokenProjection(t, func() error { return emitTrailInspection("source", trail.ID, inspection) })
-				for _, result := range []map[string]any{query, wireHistory["historical"].(map[string]any)} {
+				mcpHistory := captureTokenProjection(t, func() error {
+					return emit(mcpTrailProjection("source", trail.ID.String(), inspection, false, true))
+				})
+				for _, result := range []map[string]any{query, wireHistory["historical"].(map[string]any), mcpHistory["historical"].(map[string]any)} {
 					token := result["token"].(map[string]any)
 					lexical := token["lexical"].([]any)
 					proposed := token["proposed_tokens"].([]any)

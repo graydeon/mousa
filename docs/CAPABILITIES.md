@@ -26,7 +26,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
-| Native rendered-context token packing | Yes | `query --context-tokens`, optional declared window/reservations; directory/JSONL lexical/vector/hybrid | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history/recount, authorization and rollback | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
+| Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
 | Declared associated context | Yes | Opt-in `query --associations <file>` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and its bounded development cases; no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
@@ -126,8 +126,9 @@ Caps, process/work limits, reservation arithmetic, errors and unsupported explic
 association/supersession combinations are specified in the usage guide. Window
 and reservation values are caller declarations, not authenticated provider/model
 facts. Only the returned context is counted; unknown final prompts and JSON/tool
-framing outside it are not. MCP token-budget execution remains unsupported;
-MCP retrieval-details inspection exposes no token metadata or tokenizer paths.
+framing outside it are not. MCP exposes the same packing through explicit
+`context_tokens` and recorded safe facts through independent `token_details`.
+Tokenizer paths are trusted process-startup configuration only.
 
 ## Caller-supplied exact vector retrieval
 
@@ -636,9 +637,50 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`) | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; an opted-in response adds the withheld-candidate count `supersession_excluded` |
-| `mousa_trail` | `source`, `trail_id` | Independent `supersession` and `retrieval_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation or vector/hybrid facts that exist |
-| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing facts and producing decision/trail/packet IDs |
-| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing policy | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
+| `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7 token view that exists |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; token budget fields below | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing facts and producing decision/trail/packet IDs |
+| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing and token options | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
+
+All three query tools accept optional `context_tokens` (integer 1..524288),
+`window_tokens`, `prompt_reserve_tokens` and `output_reserve_tokens` (integers
+0..1000000000). Window/reservation fields require explicit `context_tokens`,
+even when zero. Nonzero reservations require a positive window; their sum must
+not exceed it. The effective limit is the lesser of the cap and window minus
+reservations, or just the cap without a window. Zero remaining allowance is valid.
+An explicit `supersession` field, even false, is incompatible with lexical token
+mode. Vector/hybrid still reject supersession and associations.
+
+### MCP measured context and recorded token details
+
+The operator must configure both `mcp --tokenizer-python PATH --tokenizer-cache DIR`.
+These values never come from tool arguments, aliases or resources. Startup and
+byte-only tools do not execute Python. Missing configuration or unusable prepared
+backend gives bounded `tokenizer_unavailable`, never a byte fallback.
+No packages or vocabulary are downloaded during a query.
+
+Token execution calls `EvaluateAndTraceTokenLexical`, `EvaluateAndTraceTokenVector`
+or `EvaluateAndTraceTokenHybrid` with the configured source and trusted caller.
+The native transaction owns authorization, ranking, packing and v7 recording.
+The result adds exact `context` bytes and the accepted-only `TokenSelectionView`
+as `token`; the existing byte constraint still applies. Selected evidence and
+packing counts describe token-constrained survivors. The count covers headers
+and separators in `mousa.context_text.v1`, not tool/JSON-RPC envelopes or unknown
+client/model framing. Reservations are declarations, not a complete-window guarantee.
+Without `context_tokens`, the released property set, byte selection and Python
+independence are unchanged. Refresh closed schema caches with `tools/list`.
+
+`mousa_trail` with `token_details: true` releases the verified recorded safe
+`token` view for v7, including native-created history. Omitted/false hides it;
+legacy trails have no member. This is independent of `retrieval_details` and
+`supersession`. It does not start a tokenizer, remeasure an old count or rerank.
+Fresh denial withholds history and existence. Retired text remains unarchived;
+retained digest verification and producing-count limits are unchanged.
+
+Failed counting, failed worker completion and cancellation during counting do
+not commit a successful producing decision/trail/packet. Invalid token arguments
+reject before query mutation. This does not undo server startup/store migration,
+policy deployment or legitimate fresh inspection authorization audit writes.
+See the [runnable token example](USAGE.md#mcp-token-budget-example).
 
 `mousa_query` accepts the optional `supersession` boolean, which withholds an accepted
 candidate whose own representation is the selected declaration's exact predecessor pin
@@ -674,8 +716,8 @@ fresh policy/lifecycle authorization and one native writer transaction. Missing
 configured source records retain the native `integrity` error; empty existing
 sources report `no_passages`. Unconfigured aliases reject before store use.
 Denial/withdrawal releases no evidence, source coverage or candidate facts.
-Unsupported supersession, associations and token-budget arguments reject even
-when false or empty. Vector-only queries also reject lexical policy/query fields.
+Unsupported supersession and associations reject even when false or empty.
+Vector-only queries also reject lexical policy/query fields.
 Unknown, duplicate, missing, null and wrong-type input members reject before
 mutation. Original packing remains the default; exact-v1 uses native byte equality
 and retained-copy semantics after ranking. Oversized passages are skipped.
@@ -697,8 +739,9 @@ Fresh authorization precedes historical lookup; denied inspection discloses no
 history or existence. Restart and revision replacement preserve recorded facts,
 while `indexed_now` can change. Retired passage bytes remain unarchived, and
 historical completeness/BM25 are producing observations, not reconstructed proof.
-For native v7, only the corresponding verified vector/hybrid fields are available.
-TokenSelection, rejected token metadata and token execution are not exposed.
+For native v7, retrieval details release the corresponding verified vector/hybrid
+fields; the independent `token_details` opt-in releases the safe token view.
+Canonical TokenSelection and rejected token metadata are never exposed.
 See the [runnable synthetic MCP example](USAGE.md#mcp-vector-and-hybrid-example).
 
 
