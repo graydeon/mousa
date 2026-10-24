@@ -20,7 +20,7 @@ type tokenEvidence struct {
 	Text    string        `json:"text"`
 }
 
-func tokenQueryCommand(ctx context.Context, storePath, external string, args []string, space, mode, policy string, budget uint64, packing string, tokenBudget mousa.TokenBudget, python, cache string) error {
+func tokenQueryCommand(ctx context.Context, storePath, external string, args []string, space, mode, policy string, budget uint64, packing string, tokenBudget mousa.TokenBudget, python, cache string, supersession bool) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := tokenBudget.Available(); err != nil {
@@ -88,7 +88,7 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 	if err != nil {
 		return err
 	}
-	options := sqlite.TokenQuery{Budget: tokenBudget, Counter: counter}
+	options := sqlite.TokenQuery{Budget: tokenBudget, Counter: counter, Supersession: supersession}
 	var trail mousa.SourceTrail
 	var decision mousa.PolicyDecision
 	var rendered string
@@ -122,6 +122,11 @@ func emitTokenQuery(mode, label string, budget uint64, packing string, trail mou
 	}
 	evidence := make([]tokenEvidence, 0, len(trail.Candidates))
 	accepted := 0
+	var excluded *int
+	if trail.Supersession != nil {
+		excluded = new(int)
+		*excluded = len(trail.Supersession.Dispositions)
+	}
 	for i, row := range trail.Candidates {
 		if row.Disposition == mousa.CandidateAccepted {
 			accepted++
@@ -140,26 +145,29 @@ func emitTokenQuery(mode, label string, budget uint64, packing string, trail mou
 		outcome = "no_candidates"
 	} else if accepted == 0 {
 		outcome = "lifecycle_excluded"
+	} else if excluded != nil && *excluded == accepted {
+		outcome = "supersession_excluded"
 	}
 	return emit(struct {
-		Schema          string                       `json:"schema"`
-		Mode            string                       `json:"mode"`
-		Source          string                       `json:"source"`
-		DecisionID      mousa.PolicyDecisionID       `json:"decision_id"`
-		DecisionOutcome mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
-		DecisionReasons []mousa.PolicyDecisionReason `json:"decision_reasons"`
-		TrailID         mousa.SourceTrailID          `json:"trail_id"`
-		PacketID        string                       `json:"packet_id"`
-		Outcome         string                       `json:"outcome"`
-		BudgetBytes     uint64                       `json:"budget_bytes"`
-		UsedBytes       uint64                       `json:"used_bytes"`
-		PackingPolicy   string                       `json:"packing_policy"`
-		Token           *mousa.TokenSelectionView    `json:"token"`
-		Context         string                       `json:"context"`
-		Evidence        []tokenEvidence              `json:"evidence"`
-		Vector          *mousa.VectorSelection       `json:"vector,omitempty"`
-		Hybrid          *mousa.HybridSelection       `json:"hybrid,omitempty"`
-	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, mousa.ReleasedTokenSelection(trail), rendered, evidence, trail.Vector, trail.Hybrid})
+		Schema               string                       `json:"schema"`
+		Mode                 string                       `json:"mode"`
+		Source               string                       `json:"source"`
+		DecisionID           mousa.PolicyDecisionID       `json:"decision_id"`
+		DecisionOutcome      mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
+		DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
+		TrailID              mousa.SourceTrailID          `json:"trail_id"`
+		PacketID             string                       `json:"packet_id"`
+		Outcome              string                       `json:"outcome"`
+		BudgetBytes          uint64                       `json:"budget_bytes"`
+		UsedBytes            uint64                       `json:"used_bytes"`
+		PackingPolicy        string                       `json:"packing_policy"`
+		Token                *mousa.TokenSelectionView    `json:"token"`
+		Context              string                       `json:"context"`
+		Evidence             []tokenEvidence              `json:"evidence"`
+		Vector               *mousa.VectorSelection       `json:"vector,omitempty"`
+		Hybrid               *mousa.HybridSelection       `json:"hybrid,omitempty"`
+		SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
+	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, mousa.ReleasedTokenSelection(trail), rendered, evidence, trail.Vector, trail.Hybrid, excluded})
 }
 
 func startTokenCounter(ctx context.Context, python, cache string) (*tokenizer.Counter, error) {

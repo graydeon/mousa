@@ -1,5 +1,8 @@
 # Mousa research record
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 Raw benchmark reports and optional comparison dependencies are maintained in
 [mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks).
 Older report links pin the byte-preserving migration commit; later reports pin
@@ -30,10 +33,46 @@ enforcement is also implemented. Canonical read and startup verification validat
 recorded v4 history.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
-tokenizer; this does not bound the full packet or a model's context window. No answering
-pipeline exists, so no RAG/answer-quality benchmark is applicable. Memory benchmarks
-and FreshStack await their corresponding capabilities; see the
+tokenizer; this does not bound the full packet or a model's context window. No built-in answering
+pipeline exists. A separately declared caller can evaluate answers using Mousa
+evidence, but those results would evaluate that complete configuration, not the
+retriever alone. General temporal-memory benchmarks await explicit semantics; see the
 [implemented and planned capabilities](OVERVIEW.md#foundation).
+
+## Evaluation priorities and promotion gates
+
+These are development decisions and proposed checks, not new benchmark results.
+The immediate product priority is the combined-token aggregate-bound correction
+in [issue91](https://github.com/graydeon/mousa/issues/91), followed by independent
+native/MCP observations at the corrected public revision. Preserve older captures,
+conditions and negative results. Startup-study timeout/export holds remain separate;
+a passing archive check does not resolve them.
+
+Use existing passage pins, coverage counts, branch contributions, omission reasons
+and exact returned context before adding another store, graph, reranker or cache.
+The next diagnostic should join those existing facts, not introduce a new framework.
+
+| Decision | Smallest useful check | Completion or rejection condition |
+|---|---|---|
+| Physical version identity first | Enroll a synthetic pair sharing an external logical ID but differing in bytes/revision, with explicit replacement versus coexisting-version policy. Retain source/item/representation/segment/content pins. | The adapter never silently collapses coexisting evidence or infers authority from ID equality; otherwise fix that adapter before scoring. |
+| Separate retrieval, packing and answering | Freeze candidate IDs/scores; compare selected spans under both existing packers and adjacent budgets. Include first-fit A9/B4/C4 at budgets 8/9 and equal-text records with distinct declared evidence roles. | Verify policy and report lost sufficient spans after packing. Budget growth need not preserve selection; byte equality is not independent corroboration. These sentinels do not justify a packing rewrite. |
+| Diagnose vector/hybrid usefulness | Start below 80 passages/items, 200 KiB and 2,048 dimensions. Freeze source/space pins and full current-vector coverage; retain branch ranks, intersection/union, packed identities and actual work. | Synthetic vectors establish arithmetic only. A semantic screen needs separately authorized real embeddings, 12 development and 24 held-out questions, matched evidence budgets, at least three net additional correct-and-supported answers over lexical, no increase in unsupported assertions, and no scope violation. A pass only warrants fresh held-out confirmation. |
+| Test temporal need before storage changes | First declare S/K/V, current permissions, late authority/correction eligibility, source-specific deletion and pending/completed/unknown action labels in an evaluation-only adapter. Add post-K distractors while holding eligible bodies fixed. | Declare evidence admissibility versus stronger prefix invariance before testing. Native history is not an old-text oracle. No core temporal schema is justified without a measured unmet task. |
+| Account for complete evaluation populations | Freeze an enrollment manifest; retain one typed terminal row per case plus each attempt, retry, timeout and actual transformed judge input/effective reference. | Missing/duplicate/unknown IDs, same-count wrong-ID sets and judge infrastructure failure must remain distinguishable from valid zero scores. Preserve original official conditions and report diagnostic variants separately. |
+| Charge maintenance before claiming savings | Instrument ingestion, invalidation, embedding refresh, query, recovery/rebuild, storage and failed work over a declared finite horizon. | Report p50/p95 and cold/warm conditions separately; lower mean query cost alone cannot establish lower total work. A higher-work quality win needs an explicit bounded tradeoff. |
+
+A future semantic or temporal pilot must freeze held-out lineage separation, budgets,
+references and failure policy before inspecting test outcomes. Alternative sufficient
+proofs and justified abstention need explicit labels; a source-ID hit or an empty
+search is insufficient. Approval/tests do not prove that an action completed.
+Record delivered context separately from candidates and reported citations, and
+retain transformed inputs actually judged. Static answer scores under their original
+conditions do not prove long-horizon memory reliability or causal architecture gains.
+
+Paid inference, full benchmark collection and temporal-adapter implementation are
+not part of these documentation changes. Consolidation, persistent query state,
+proof-aware packing and automatic authority extraction are deferred until a small
+falsifiable workload demonstrates a need that existing primitives cannot meet.
 
 ## Native token packing evidence boundary
 
@@ -59,6 +98,17 @@ canonical no-alias preservation. Public ingestion cannot construct arbitrary
 multi-source derivations; ordinary single-source native captures do not establish
 this internal graph case. Canonical v7 facts remain recorded; released token
 arrays contain only accepted candidates with consecutive release ranks.
+
+Lexical supersession can now compose with token packing for native directory/JSONL
+and MCP configured JSONL. The v8 record binds transaction-local producing
+consultation and complete survivor-rendering observations; byte-only v4 and
+ordinary token v7 histories retain their existing contracts. Product regressions
+exercise exact pins, withheld twins, budget/reservation boundaries, historical
+inspection and corruption rejection. These are synthetic behavior/counting
+checks, not retrieval-quality, latency or full-window measurements.
+The [runnable example](USAGE.md#lexical-supersession-with-token-budgets) compares
+the returned context with an independent official ordinary-text count.
+Retired text is unarchived; unknown application/model framing remains outside the cap.
 
 Caller-declared prompt/output reservations provide bounded arithmetic, not
 authenticated model-window safety. No model was called and no answer quality,

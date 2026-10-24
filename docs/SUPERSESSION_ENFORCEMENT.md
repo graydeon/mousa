@@ -1,5 +1,8 @@
 # Opt-in supersession enforcement
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 **Status: implemented in the fresh store retrieval entry point, native directory and
 JSONL query opt-ins and the local stdio MCP tools.** Use
 `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT`
@@ -18,8 +21,28 @@ source-scoped verified candidates, consults verified administration and builds
 `mousa.source_trail.v4` inside the existing writer transaction. It reuses
 `readSupersessionConsultation`, `BuildSupersessionSelection` and
 `NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
-Every opted-in query records v4, even when denied or when nothing is suppressed.
+Every byte-only opted-in query records v4, even when denied or nothing is suppressed.
 Canonical readback must agree before commit.
+
+Lexical token-budget composition is also implemented: add `--context-tokens N`
+and the prepared tokenizer flags, or MCP `context_tokens` with its trusted
+startup backend. This path writes `mousa.source_trail.v8` through
+`EvaluateAndTraceTokenLexical` in the same writer transaction. Both packers count
+the complete survivor rendering only; withheld rows keep their original sizes
+and ranks but consume neither budget nor duplicate retention.
+Token admission counts all candidates toward its 100-candidate limit and
+retains each accepted passage's 4,096-byte bound. Its 262,144-byte aggregate
+text limit applies to accepted survivors before budget/duplicate omissions,
+not to withheld bytes. Every withheld candidate still requires canonical
+content and ancestry verification with its positive size and original rank.
+Byte-only enforcement still writes v4; omitted/false token enforcement writes v7.
+Vector/hybrid and association supersession combinations remain unsupported.
+The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
+preserves packet v3's full producing-selection binding, so equal returned text
+does not imply equal v7/v8 packet IDs. The byte-only packet rule below is unchanged.
+History verifies recorded administration after later transitions, never today's
+activation projection. MCP independently opts into recorded supersession/token
+members; only native explicit recount measures retained selected bytes again.
 
 A valid active declaration withholds only its exact predecessor representation's
 accepted candidates. Candidate ranks, digests, sizes and ancestry remain recorded;
@@ -258,6 +281,7 @@ It has no associated passages or association omissions. Legacy field presence is
 It adds one closed member, present in every v4 record and rejected in earlier versions:
 
 ```json
+{
 "supersession": {
   "consulted": true,
   "activation_id": "…64 hex…",
@@ -274,6 +298,7 @@ It adds one closed member, present in every v4 record and rejected in earlier ve
       "successor_representation_id": "…64 hex…"
     }
   ]
+}
 }
 ```
 
