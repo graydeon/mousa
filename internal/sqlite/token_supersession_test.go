@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -230,7 +231,7 @@ func TestTokenSupersessionGraphFilteringAndExactAncestry(t *testing.T) {
 }
 
 func TestTokenSupersessionMissingNamedParents(t *testing.T) {
-	for _, parent := range []string{"segment", "representation"} {
+	for _, parent := range []string{"segment", "representation", "text"} {
 		t.Run(parent, func(t *testing.T) {
 			f := newV4Fixture(t)
 			defer f.store.Close()
@@ -240,6 +241,9 @@ func TestTokenSupersessionMissingNamedParents(t *testing.T) {
 			statement, victim := "DELETE FROM segments WHERE id = ?", id[:]
 			if parent == "representation" {
 				statement, victim = "DELETE FROM representations WHERE id = ?", f.predecessor.ID[:]
+			}
+			if parent == "text" {
+				statement = `UPDATE segment_lexical_fts SET text = 'changed bytes' WHERE rowid = (SELECT rowid FROM segment_lexical_rows WHERE segment_id = ?)`
 			}
 			damageCanonicalParent(t, f.store, statement, victim)
 			if _, err := f.store.GetSourceTrail(t.Context(), r.Trail.ID); !IsCode(err, CodeIntegrity) {
@@ -253,6 +257,66 @@ func TestTokenSupersessionMissingNamedParents(t *testing.T) {
 				}
 				t.Fatalf("startup accepted missing parent: %v", err)
 			}
+		})
+	}
+}
+
+func TestTokenSupersessionOverboundHistory(t *testing.T) {
+	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
+		t.Run(packing, func(t *testing.T) {
+			store := openLexicalStore(t)
+			defer store.Close()
+			seedEvaluationFixture(t, store)
+			block := "sharedterm " + strings.Repeat("x", 4085)
+			source, predecessor, text := prepareLocalRevision(t, store, "predecessor", strings.Repeat(block, 65))
+			_, successor, next := prepareLocalRevision(t, store, "successor", "sharedterm survivor")
+			for _, item := range []struct {
+				name string
+				rep  mousa.Representation
+				text []byte
+			}{{"predecessor", predecessor, text}, {"successor", successor, next}} {
+				if _, err := store.ActivateLocalItem(t.Context(), source.ID, item.name, item.rep.ID, item.text); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := &v4Fixture{store: store, source: source, predecessor: predecessor, successor: successor}
+			_, state := f.activate(t)
+			r, rendered := combinedQuery(t, f, "overbound-survivor", packing, 1024)
+			if len(r.Trail.Candidates) != 66 || len(r.Trail.Supersession.Dispositions) != 65 || r.Trail.UsedBytes != 19 || !strings.HasSuffix(rendered, "\nsharedterm survivor") {
+				t.Fatalf("overbound selection: %+v", r.Trail)
+			}
+			before, err := mousa.EncodeSourceTrail(r.Trail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			recount, err := store.InspectSourceTrailWithTokens(t.Context(), testEvaluationRequest(t, source.ID, "overbound-recount"), r.Trail.ID, tokenOptions(t).Counter)
+			if err != nil || recount.Historical.TokenVerification != "official_recount_verified" {
+				t.Fatalf("recount: %+v %v", recount, err)
+			}
+			deactivate := activationTestTransition(t, source.ID, state.CurrentActivationID, mousa.SupersessionDeclarationID{}, "deactivate", activationBaseUsec+1)
+			if err := store.ApplySupersessionActivation(t.Context(), deactivate); err != nil {
+				t.Fatal(err)
+			}
+			seedLocalItem(t, store, source, "predecessor", "replacement revision")
+			history, err := store.InspectSourceTrail(t.Context(), testEvaluationRequest(t, source.ID, "overbound-history"), r.Trail.ID)
+			if err != nil || len(history.Historical.Supersession.Dispositions) != 65 {
+				t.Fatalf("recorded history: %+v %v", history, err)
+			}
+			old, err := store.GetSourceTrail(t.Context(), r.Trail.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := mousa.EncodeSourceTrail(old)
+			if err != nil || string(before) != string(after) {
+				t.Fatal("history changed", err)
+			}
+			path := store.path
+			store.Close()
+			reopened, err := OpenReadOnly(t.Context(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reopened.Close()
 		})
 	}
 }

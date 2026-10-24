@@ -1,5 +1,8 @@
 # MCP supersession opt-in
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 **Status: the `mousa_query` and `mousa_trail` opt-ins are implemented; their
 independent client captures are separate.** This document specifies one explicit optional
 `supersession` boolean on the existing `mousa_query` tool, and a matching opt-in on
@@ -59,8 +62,10 @@ The client boundary of the implemented build, from the current source:
 - `mcpOutputSchema` in the same file declares `supersession_excluded` for `mousa_query`
   and the recorded `supersession` member inside `mousa_trail`'s `historical` schema, and
   maps the activation, declaration and representation identity types that member contains
-  to the existing lowercase hex string declaration. The other three output schemas are
-  unchanged from the query-only build.
+  to the existing lowercase hex string declaration. The original sync/status definitions were preserved by this opt-in. Vector,
+  hybrid, embedding interchange and token additions are documented separately in
+  [current usage](USAGE.md#local-mcp-usage); the original four-tool design is not
+  the complete current discovery surface.
 - `(*mcpApplication).call` in `cmd/mousa/mcp.go` runs `mousa_query` through
   `queryItemsForRequestWithSupersession` with the caller's boolean and a nil association
   list, and inspects the trail through `Store.InspectSourceTrail` in both cases, clearing

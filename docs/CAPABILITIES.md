@@ -1,5 +1,8 @@
 # Supported local workflow
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 Mousa is pre-alpha. The supported executable is `cmd/mousa`, built from source with
 Go 1.25 or newer. The core packages are internal, not a stable SDK. Its CLI and
 MCP interfaces store and retrieve evidence; none generates answers or establishes
@@ -101,6 +104,11 @@ exact pinned predecessors before byte/token counting and duplicate retention.
 Withheld rows retain positive canonical sizes and accepted ranks, with null
 proposed counts; all-withheld empty context reports `supersession_excluded`,
 not budget omission. Successor availability never reinstates a pinned predecessor.
+Token admission retains the 100-candidate and 4,096-byte per-passage limits.
+The 262,144-byte aggregate text limit applies to accepted candidates remaining
+after exact suppression, before budget or duplicate omissions. Withheld bytes
+do not consume that capacity; their content, ancestry, sizes and ranks are
+still verified on construction and canonical readback.
 Vector/hybrid and association supersession combinations still reject.
 
 The composition writes `mousa.source_trail.v8`, binding the token facts and the
@@ -1225,7 +1233,7 @@ of corpus size or establish larger-store capacity.
 Each nonblank line contains one object with `id` and exactly one of `text` or
 `deleted`. For deletion, `deleted` must be `true`.
 
-```json
+```jsonl
 {"id":"notes/review@draft","text":"The harbor inspection is scheduled for Friday."}
 {"id":"notes/withdrawn","deleted":true}
 ```

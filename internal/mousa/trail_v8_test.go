@@ -3,7 +3,9 @@ package mousa
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -198,5 +200,108 @@ func TestV8LaterSurvivorFitsTokenPressure(t *testing.T) {
 				t.Fatalf("later survivor did not fit: %+v", trail)
 			}
 		})
+	}
+}
+
+func TestV8WithheldAggregateAdmission(t *testing.T) {
+	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
+	if python == "" || cache == "" {
+		t.Skip("official tokenizer acceptance environment not configured")
+	}
+	for _, policy := range []string{PackingOriginal, PackingExactV1} {
+		for _, n := range []int{64, 65} {
+			for _, survivor := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%d/survivor=%t", policy, n, survivor), func(t *testing.T) {
+					d := v4Declaration(t)
+					state := supersessionSelectionState(t, d)
+					request := v4Request(t, d.SourceID)
+					candidates := make([]VerifiedLexicalCandidate, 0, n+1)
+					for i := range n {
+						c := supersessionCandidate(t, d.PredecessorRepresentationID, d.SourceID, strings.Repeat("x", 4096), i+1, CandidateAccepted)
+						c.Segment.Selector = NewTextByteRangeSelector(uint64(i*4096), uint64((i+1)*4096))
+						var err error
+						c.Segment.ID, err = NewSegmentID(c.Segment.RepresentationID, c.Segment.Selector, c.Segment.ContentSHA256)
+						if err != nil {
+							t.Fatal(err)
+						}
+						c.LexicalRank, c.BM25 = i+1, float64(i)
+						candidates = append(candidates, c)
+					}
+					want := ""
+					var wantUsed uint64
+					if survivor {
+						c := supersessionCandidate(t, d.SuccessorRepresentationID, d.SourceID, "small survivor", n+1, CandidateAccepted)
+						c.LexicalRank, c.BM25 = n+1, float64(n)
+						candidates = append(candidates, c)
+						want = ContextPassage(request.SourceID, c.Segment, c.Text)
+						wantUsed = uint64(len(c.Text))
+					}
+					base, err := NewSourceTrailWithSupersession(request, trailDecision(t, request, PolicyOutcomeAllow), "x", candidates, 8192, policy, &state, &d)
+					if err != nil {
+						t.Fatal(err)
+					}
+					counter, err := tokenizer.Start(t.Context(), python, cache)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer counter.Close()
+					count, err := counter.Count(want)
+					if err != nil {
+						t.Fatal(err)
+					}
+					trail, text, err := PackTokenContext(base, request.SourceID, candidates, TokenBudget{Cap: 1000}, counter)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if text != want || trail.Token.MeasuredTokens != count || trail.Token.RenderedSHA256 != SHA256(sha256.Sum256([]byte(want))) || trail.UsedBytes != wantUsed {
+						t.Fatalf("wrong survivor rendering/accounting: %+v", trail.Token)
+					}
+					for i, row := range trail.Candidates[:n] {
+						if row.TextBytes != 4096 || row.FinalRank != i+1 || row.Disposition != CandidateAccepted || row.Selected || row.Omission != "" || row.DuplicateOf != "" || trail.Token.ProposedTokens[i] != nil {
+							t.Fatalf("lost withheld facts: %+v", row)
+						}
+					}
+					if survivor && (!trail.Candidates[n].Selected || trail.Token.ProposedTokens[n] == nil) {
+						t.Fatal("survivor was not selected")
+					}
+					data, err := EncodeSourceTrail(trail)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := DecodeSourceTrail(data); err != nil {
+						t.Fatal(err)
+					}
+					if n == 65 && !survivor {
+						for _, optedIn := range []bool{false, true} {
+							control, err := NewSourceTrail(request, trailDecision(t, request, PolicyOutcomeAllow), "x", candidates, 8192, policy)
+							if optedIn {
+								control, err = NewSourceTrailWithSupersession(request, trailDecision(t, request, PolicyOutcomeAllow), "x", candidates, 8192, policy, nil, nil)
+							}
+							if err != nil {
+								t.Fatal(err)
+							}
+							c, err := tokenizer.Start(t.Context(), python, cache)
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer c.Close()
+							if _, _, err := PackTokenContext(control, request.SourceID, candidates, TokenBudget{Cap: 1000}, c); err == nil || !strings.Contains(err.Error(), "bytes exceed bound") {
+								t.Fatalf("nonsuppressed aggregate admitted: %v", err)
+							}
+						}
+						damaged := slices.Clone(candidates)
+						damaged[64].Text = strings.Repeat("y", 4096)
+						c, err := tokenizer.Start(t.Context(), python, cache)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer c.Close()
+						if _, _, err := PackTokenContext(base, request.SourceID, damaged, TokenBudget{Cap: 1000}, c); err == nil || !strings.Contains(err.Error(), "content mismatch") {
+							t.Fatalf("withheld content was not checked: %v", err)
+						}
+					}
+				})
+			}
+		}
 	}
 }

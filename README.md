@@ -31,6 +31,8 @@ Automatic embeddings, factual freshness and semantic conflict checks remain plan
 
 > **Pre-alpha.** CLI and local stdio MCP are available. Build from source with
 > Go 1.25+. Packages are internal; there is no stable SDK.
+> Source-checkout capabilities and pending changes are distinguished in the
+> [development status](docs/OVERVIEW.md#source-and-release-status).
 
 ## Why use it?
 
@@ -40,7 +42,7 @@ Mousa makes that context smaller and easier to inspect:
 | Your need | What Mousa gives you |
 |---|---|
 | Find useful passages | Source-scoped lexical, exact cosine, or hybrid RRF retrieval with caller-supplied vectors. |
-| Control context size | A released-text byte budget, optional exact-content deduplication, and native whole-context token packing with a prepared local tokenizer. |
+| Control context size | A released-text byte budget, optional exact-content deduplication, and CLI/MCP whole-context token packing with a prepared local tokenizer. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
 | Use your own tools | One Go executable, SQLite storage, JSON output and local stdio MCP. |

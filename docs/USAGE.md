@@ -1,5 +1,8 @@
 # Using Mousa
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
 
 Full CLI, MCP and consumer examples. Run commands from the repository root;
@@ -199,9 +202,12 @@ For example, `--context-tokens 512 --context-window 1024 --prompt-reserve 400
 declarations: application prompt/tool/JSON framing outside the returned string
 is not counted, and no universal model-window safety is claimed.
 
-Token mode caps the released-text budget at 262144 bytes, candidate count at 100,
-aggregate accepted candidate text at 262144 bytes, rendered text at 524288 bytes,
-aggregate counter input at 32 MiB, and the counter lifetime at 15 seconds
+Token mode caps the released-text budget at 262144 bytes and candidate count at
+100, including withheld candidates. Each accepted passage remains at most 4096
+bytes. Aggregate accepted candidate text after exact supersession suppression
+is capped at 262144 bytes, before budget/duplicate omissions; withheld bytes
+remain verified but do not consume survivor capacity. Rendered text is capped
+at 524288 bytes, aggregate counter input at 32 MiB, and counter lifetime at 15 seconds
 (including writer-lock waits after initialization). Every attempted addition
 counts the entire proposed rendering; passage counts are never summed.
 Oversized passages are skipped and later candidates are tried. `exact-v1`

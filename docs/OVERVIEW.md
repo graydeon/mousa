@@ -5,6 +5,24 @@
 Implementation detail and design targets for the pre-alpha core. Supported interfaces
 and measured results are distinguished below and in the capability matrix.
 
+## Source and release status
+
+The supported installation is a source build with Go 1.25 or newer. At the
+2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
+source is pre-alpha development, not a versioned release or stable SDK.
+
+Accepted main at that audit was `4bfe775d8ae4dbfe3a429c6bc9c63bb1f0e5d404`.
+It includes native/MCP external-vector import, vector/hybrid retrieval and token
+budgets. Combining lexical supersession with token budgets is implemented on
+[PR90](https://github.com/graydeon/mousa/pull/90), not yet merged or accepted.
+The combined examples and v8 descriptions in this branch describe that proposal.
+[Issue91](https://github.com/graydeon/mousa/issues/91) records a confirmed failure
+at the earlier PR head: 65 withheld 4,096-byte predecessor segments exhausted
+token aggregate admission while the byte-only control succeeded. This revision
+applies that aggregate limit to survivors, retaining withheld content verification.
+Focused boundary regressions pass; final-head review and paired public-revision
+evidence remain required before acceptance.
+
 ## Why Mousa?
 
 *Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—the titan Goddess of Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
@@ -76,9 +94,9 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit native JSONL query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
-| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Enforced lexical and native vector retrieval; versioned selection facts below. |
-| **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional native whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
+| **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
 
 Each stage has one responsibility and a visible boundary. The pipeline can be tested stage by stage, and no single model, provider, or harness owns the result.
 
@@ -92,7 +110,7 @@ duplicate omissions and retained-segment relationships. Queries that record
 a declared-association stage write v3, binding associated passages and
 omissions. Older trail bytes and identities remain unchanged.
 
-An opted-in directory or JSONL query always writes
+A byte-only opted-in directory or JSONL query always writes
 `mousa.source_trail.v4`, including denial, verified no-history and deactivation.
 Its closed `supersession` member binds consultation, nullable activation and
 declaration identities, and each withheld candidate's exact pins. Withheld candidates
@@ -107,7 +125,8 @@ It has no lexical expression, associations or supersession consultation. Origina
 and exact-v1 byte packing use the same packet v1 identity domain for the released
 selection. Native history reauthorizes and checks recorded producing embeddings,
 not today's vectors or current item pointers. Lexical defaults and earlier bytes
-remain unchanged; the MCP history projection does not expose these vector facts.
+remain unchanged. MCP history exposes recorded vector facts only with
+`retrieval_details: true` after fresh authorization.
 
 Hybrid queries write `mousa.source_trail.v6`: prepared lexical request/policy,
 space/query-vector facts, canonical pins, separate branch ranks/BM25/cosine and
@@ -115,14 +134,22 @@ the fixed `rrf-equal-k60-v1` order. Both byte packers consume the fused identity
 union. History checks producing records without searching today's index; past
 coverage completeness and lexical BM25 cannot be reconstructed from later state.
 The [hybrid contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
-states those limits. No earlier trail version or MCP interface gains hybrid fields.
+states those limits. Earlier canonical versions remain unchanged; MCP query and
+opted-in history have their own declared hybrid schemas.
 
-Native token queries write `mousa.source_trail.v7` and packet v3, binding existing
+CLI and MCP token queries write `mousa.source_trail.v7` and packet v3, binding existing
 retrieval facts, the versioned rendering/backend, declared allowances, selections,
 precise omissions and measured digest/count. A prepared local Python process
 counts proposed whole renderings inside the authorized writer snapshot and is
 reaped before insertion. Default queries and v1–v6 remain unchanged.
-See [native token packing](CAPABILITIES.md#native-token-aware-packing).
+See [token packing](CAPABILITIES.md#native-token-aware-packing).
+
+On the pending composition branch, lexical token queries with supersession write
+v8. It binds recorded consultation and token selection, verifies withheld canonical
+content, and packs survivors. Omitted/false token supersession stays v7; byte-only
+enforcement stays v4. Packet v3 binds the complete producing selection: equal
+returned text does not establish equal v7/v8 packet identities. See the
+[source status and aggregate-bound correction](#source-and-release-status).
 
 Canonical read and startup verification check the recorded administration and candidate
 content. A missing canonical parent named by v4 is an integrity failure; an unknown
@@ -165,13 +192,34 @@ The supported executable, `cmd/mousa`, provides the local CLI and a stdio MCP in
 
 Compatibility will be documented as a tested matrix. Mousa will not claim support for an operating system, architecture, accelerator, model backend, or agent harness until that combination has reproducible public verification.
 
+## Evidence and temporal boundaries
+
+A content digest identifies bytes, not factual authority. Keep source identity,
+logical item identity and physical revision pins separate when importing versions;
+a repeated upstream ID alone does not establish a replacement relationship.
+Explicit supersession is a source-local declaration, not inferred truth.
+
+Current item pointers and immutable trails do not provide arbitrary historical
+text retrieval. A future historical adapter must declare knowledge cutoff K,
+validity target V and current serving permission S, including when corrections
+and authority assertions became known. Historical access still obeys current
+permission. Filtering candidates by time alone would not establish prefix-only
+ranking: shared FTS statistics can depend on other indexed rows. No such temporal
+query contract is currently implemented.
+
+Deletion removes current searchable evidence under the adapter's contract; it
+does not promise secure erasure of canonical metadata, backups or copies held by
+callers. A retrieval trail describes evidence selection, not execution or task
+completion. Empty retrieval is a bounded observation, not proof of absence.
+See the [evaluation priorities](RESEARCH.md#evaluation-priorities-and-promotion-gates).
+
 ## Foundation
 
 Implemented and planned capabilities, marked per item:
 
 - SQLite-first local storage (implemented);
 - lexical retrieval through SQLite FTS5 or an equally portable built-in mechanism (FTS5 implemented);
-- optional semantic retrieval behind a narrow provider interface (planned);
+- bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit directory/JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
@@ -179,6 +227,6 @@ Implemented and planned capabilities, marked per item:
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
-- documented export formats that other tools can read without Mousa (planned).
+- documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 
 Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs; the research record binds observations to their measured revisions and limitations.

@@ -103,12 +103,15 @@ func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 		if c.Disposition != CandidateAccepted {
 			continue
 		}
-		total += row.TextBytes
-		if total > MaxVectorTextBytes || row.SegmentID != base.Candidates[i].SegmentID || SHA256(sha256.Sum256([]byte(c.Text))) != row.ContentSHA256 {
+		if row.SegmentID != base.Candidates[i].SegmentID || SHA256(sha256.Sum256([]byte(c.Text))) != row.ContentSHA256 {
 			return SourceTrail{}, "", errors.New("token candidate bounds or content mismatch")
 		}
 		if len(suppressed) > 0 && suppressed[i] {
 			continue
+		}
+		total += row.TextBytes
+		if total > MaxVectorTextBytes {
+			return SourceTrail{}, "", errors.New("token candidate bytes exceed bound")
 		}
 		if t.PackingPolicy == PackingExactV1 {
 			for _, prev := range retained[row.ContentSHA256] {
@@ -186,11 +189,10 @@ func tokenPacketIdentity(t SourceTrail) (string, error) {
 }
 
 // tokenRankingProjection reuses legacy ranking validation, not legacy packing decisions.
-// All accepted rows are selected under a bounded original byte budget for this check.
-func (t SourceTrail) tokenRankingProjection() (SourceTrail, error) {
+// Accepted survivors are selected under a bounded original byte budget for this check.
+func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, error) {
 	p := t
 	p.Token = nil
-	p.Supersession = nil
 	p.Candidates = slices.Clone(t.Candidates)
 	p.PackingPolicy = PackingOriginal
 	p.BudgetBytes = MaxVectorTextBytes
@@ -199,7 +201,7 @@ func (t SourceTrail) tokenRankingProjection() (SourceTrail, error) {
 		r := &p.Candidates[i]
 		r.Omission = ""
 		r.DuplicateOf = ""
-		r.Selected = r.Disposition == CandidateAccepted
+		r.Selected = r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i])
 		if r.Selected {
 			p.UsedBytes += r.TextBytes
 		}
@@ -208,6 +210,10 @@ func (t SourceTrail) tokenRankingProjection() (SourceTrail, error) {
 	case "lexical":
 		p.Schema = SourceTrailSchema
 		p.PackingPolicy = ""
+		if t.Schema == SourceTrailSchemaV8 {
+			p.Schema = SourceTrailSchemaV4
+			p.PackingPolicy = PackingOriginal
+		}
 		if p.Vector != nil || p.Hybrid != nil {
 			return SourceTrail{}, errors.New("lexical token record carries vector facts")
 		}
@@ -269,7 +275,7 @@ func (t SourceTrail) validateTokenTrail() error {
 	if err := t.validateCandidateInvariants(); err != nil {
 		return err
 	}
-	if _, err := t.tokenRankingProjection(); err != nil {
+	if _, err := t.tokenRankingProjection(suppressed); err != nil {
 		return err
 	}
 	if s.Mode == "lexical" {
