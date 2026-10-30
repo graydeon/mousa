@@ -1,6 +1,6 @@
 # Opt-in supersession enforcement
 
-For source-build versus release status and the pending v8 composition boundary,
+For source-build versus release status and the proposed v9 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 **Status: implemented in the fresh store retrieval entry point, native directory and
@@ -21,7 +21,7 @@ source-scoped verified candidates, consults verified administration and builds
 `mousa.source_trail.v4` inside the existing writer transaction. It reuses
 `readSupersessionConsultation`, `BuildSupersessionSelection` and
 `NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
-Every byte-only opted-in query records v4, even when denied or nothing is suppressed.
+Every byte-only opted-in lexical query records v4, even when denied or nothing is suppressed.
 Canonical readback must agree before commit.
 
 Lexical token-budget composition is also implemented: add `--context-tokens N`
@@ -35,8 +35,12 @@ retains each accepted passage's 4,096-byte bound. Its 262,144-byte aggregate
 text limit applies to accepted survivors before budget/duplicate omissions,
 not to withheld bytes. Every withheld candidate still requires canonical
 content and ancestry verification with its positive size and original rank.
-Byte-only enforcement still writes v4; omitted/false token enforcement writes v7.
-Vector/hybrid and association supersession combinations remain unsupported.
+Byte-only lexical enforcement still writes v4; omitted/false token enforcement writes v7.
+Byte-only vector/hybrid enforcement writes v9, retaining the existing producing
+ranking facts and this consultation contract. Its full source admission occurs
+before masking. Vector/hybrid token-plus-supersession and association combinations
+remain unsupported. See [v9 semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
+and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
 preserves packet v3's full producing-selection binding, so equal returned text
 does not imply equal v7/v8 packet IDs. The byte-only packet rule below is unchanged.

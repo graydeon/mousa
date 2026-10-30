@@ -31,6 +31,20 @@ type VectorCandidate struct {
 // NewVectorSourceTrail packs the already verified vector order without giving
 // cosine a lexical name or generating an FTS expression. Store checks remain required.
 func NewVectorSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, selection VectorSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string) (SourceTrail, error) {
+	return newVectorSourceTrail(request, decision, selection, candidates, budget, packing, nil)
+}
+
+// NewVectorSourceTrailWithSupersession packs the original cosine order after exact-pin withholding.
+// Administration and candidate ancestry must be verified in the caller's transaction.
+func NewVectorSourceTrailWithSupersession(request PolicyEvaluationRequest, decision PolicyDecision, selection VectorSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string, activation *SupersessionActivationState, declaration *SupersessionDeclaration) (SourceTrail, error) {
+	supersession, err := BuildSupersessionSelection(request.SourceID, decision.Outcome, candidates, activation, declaration)
+	if err != nil {
+		return SourceTrail{}, err
+	}
+	return newVectorSourceTrail(request, decision, selection, candidates, budget, packing, &supersession)
+}
+
+func newVectorSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, selection VectorSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string, supersession *SupersessionSelection) (SourceTrail, error) {
 	if err := request.Validate(); err != nil {
 		return SourceTrail{}, err
 	}
@@ -44,7 +58,11 @@ func NewVectorSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 		return SourceTrail{}, errors.New("invalid vector packing policy")
 	}
 	rows := trailCandidatesFromVerified(candidates)
-	plan, err := packTraceCandidates(rows, candidates, budget, packing, nil)
+	suppressed, err := suppressSupersededCandidates(rows, supersession)
+	if err != nil {
+		return SourceTrail{}, err
+	}
+	plan, err := packTraceCandidates(rows, candidates, budget, packing, suppressed)
 	if err != nil {
 		return SourceTrail{}, err
 	}
@@ -52,11 +70,14 @@ func NewVectorSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 		rows[i].Selected = plan.Selected[i]
 	}
 	trail := SourceTrail{Schema: SourceTrailSchemaV5, RequestID: request.ID.String(), DecisionID: decision.ID.String(), Outcome: string(decision.Outcome), BudgetBytes: budget, UsedBytes: plan.UsedBytes, PacketID: plan.PacketID.String(), Candidates: rows, PackingPolicy: packing, Vector: &selection}
+	if supersession != nil {
+		trail.Schema, trail.Supersession = SourceTrailSchemaV9, supersession
+	}
 	trail.ID, err = vectorTrailIdentity(trail)
 	if err != nil {
 		return SourceTrail{}, err
 	}
-	return trail, trail.validateVectorTrail()
+	return trail, trail.Validate()
 }
 
 func vectorTrailIdentity(trail SourceTrail) (SourceTrailID, error) {
@@ -67,7 +88,7 @@ func vectorTrailIdentity(trail SourceTrail) (SourceTrailID, error) {
 
 func (trail SourceTrail) validateVectorTrail() error {
 	invalid := func() error { return errors.New("invalid v5 vector trail bindings, coverage or order") }
-	if trail.Schema != SourceTrailSchemaV5 || trail.Expression != "" || trail.Supersession != nil || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 || trail.Vector == nil || trail.Hybrid != nil {
+	if (trail.Schema != SourceTrailSchemaV5 && trail.Schema != SourceTrailSchemaV9) || trail.Expression != "" || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 || trail.Vector == nil || trail.Hybrid != nil {
 		return invalid()
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {

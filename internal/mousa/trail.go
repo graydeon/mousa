@@ -367,6 +367,9 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV9 {
+		return trail.validateRetrievalSupersessionTrail()
+	}
 	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 {
 		return trail.validateTokenTrail()
 	}
@@ -504,6 +507,9 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
+	if trail.Schema == SourceTrailSchemaV9 {
+		return vectorTrailIdentity(trail)
+	}
 	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 {
 		return vectorTrailIdentity(trail)
 	}
@@ -664,6 +670,8 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
+		case SourceTrailSchemaV9:
+			return decodeRetrievalSupersessionTrail(data)
 		case SourceTrailSchemaV7, SourceTrailSchemaV8:
 			return decodeTokenSourceTrail(data)
 		case SourceTrailSchemaV6:

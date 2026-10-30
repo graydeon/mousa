@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,15 +14,30 @@ import (
 // Tests invoke the built CLI against fresh stores and real directories so each
 // command exercises store reopening as well as its requested operation.
 
-func buildCLI(t *testing.T) string {
-	t.Helper()
-	binary := filepath.Join(t.TempDir(), "mousa")
-	cmd := exec.Command("go", "build", "-o", binary, ".")
-	cmd.Dir = "."
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build mousa CLI: %v\n%s", err, out)
+var cliBinary string
+
+// The executable is immutable across client tests; stores and processes remain
+// isolated per test. Build once rather than charge identical builds to every case.
+func TestMain(m *testing.M) {
+	directory, err := os.MkdirTemp("", "mousa-cli-tests-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	return binary
+	cliBinary = filepath.Join(directory, "mousa")
+	cmd := exec.Command("go", "build", "-o", cliBinary, ".")
+	cmd.Dir = "."
+	code := 1
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "build mousa CLI: %v\n%s", err, out)
+	} else {
+		code = m.Run()
+	}
+	if err := os.RemoveAll(directory); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		code = 1
+	}
+	os.Exit(code)
 }
 
 type testRun struct {
@@ -73,9 +89,8 @@ func lenOf(report map[string]any, key string) int {
 
 func setup(t *testing.T) (testRun, string) {
 	t.Helper()
-	binary := buildCLI(t)
 	root := t.TempDir()
-	return testRun{t: t, binary: binary, store: filepath.Join(t.TempDir(), "local.sqlite")}, root
+	return testRun{t: t, binary: cliBinary, store: filepath.Join(t.TempDir(), "local.sqlite")}, root
 }
 
 func writeFile(t *testing.T, root, name, content string) {

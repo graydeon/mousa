@@ -1,6 +1,6 @@
 # Using Mousa
 
-For source-build versus release status and the pending v8 composition boundary,
+For source-build versus release status and the proposed v9 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
@@ -413,9 +413,9 @@ Each call reopens the persistent store. Source revisions/deletions deactivate ol
 vectors without rewriting them; re-export and import vectors for the new passage
 pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
 triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
-with vector queries. Explicit query-term policy, associations and supersession
-flags are rejected in vector mode. MCP has a separate `mousa_vector_query` tool
-and opted-in recorded retrieval-details inspection; resource search stays lexical.
+with vector queries. Explicit query-term policy and associations reject.
+Byte-only supersession is an opt-in described below. MCP has a separate
+`mousa_vector_query` tool and recorded retrieval-details inspection; resource search stays lexical.
 
 ### Hybrid lexical and vector query
 
@@ -430,9 +430,9 @@ After importing embeddings, combine text and a supplied vector explicitly:
 
 `query-vector.json` uses the existing `mousa.vector_query.v1` object. Query text
 does not attest which text generated that vector. Unknown/mismatched spaces and
-invalid input reject; zero current vectors is reported as hybrid coverage, not
-a fallback. Associations/supersession/vector-only flags cannot be combined with
-hybrid mode. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
+invalid input reject; zero current vectors is reported as hybrid coverage, not a fallback.
+Associations and vector-only flags cannot be combined with hybrid mode;
+byte-only supersession is supported. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
 defines candidate bounds, rank domains, errors and historical verification limits.
 
 This runnable example creates lexical-only `c`, vector-only `b` and overlapping
@@ -489,6 +489,49 @@ PY
 Native v6 history records both branch contributions and the fixed
 `rrf-equal-k60-v1` policy. Both byte packers apply after fusion; exact-v1 handles
 byte-equal passages with different identities separately from the identity union.
+
+### Vector and hybrid supersession
+
+Build the executable, then run the synthetic external-vector import, selection
+and recorded-history example:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 examples/vector_supersession.py --mousa ./mousa
+```
+
+It imports supplied two-dimensional vectors, deliberately leaves the successor
+without a vector, and compares ordinary versus enforced queries through native
+JSONL and configured MCP. Under both packers, the ordinary predecessor wins;
+enforcement withholds it and selects later surviving guidance within the same
+byte budget. Producing history records the original ranks and consultation.
+These synthetic values establish protocol/arithmetic, not semantic quality.
+
+After preparing a directory or JSONL source and importing external vectors, add
+`--supersession` to either byte query:
+
+```sh
+printf '%s' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
+  ./mousa -store local.sqlite query --vector-space SPACE_ID --supersession ./documents
+printf '%s' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
+  ./mousa -store local.sqlite query --hybrid-space SPACE_ID --supersession --source SOURCE_ID 'Drain'
+```
+
+Replace placeholders with the imported space and configured source. Administer
+the exact declaration and activation through the native commands first; merely
+recording them changes no default query. MCP uses `supersession: true` on
+`mousa_vector_query` or `mousa_hybrid_query`. Both report
+`supersession_excluded`, including zero. Omission/false retains ordinary response
+properties and v5/v6 history; true writes v9 even without history or on denial.
+All-withheld is `supersession_excluded`, not a budget omission. Coverage remains
+the admitted producing source coverage, not the survivor count.
+
+Inspect natively with `trail`, or request MCP `mousa_trail` with independent
+`supersession: true` and `retrieval_details: true` to see both verified recorded
+members. Later activation, deactivation and revision changes do not rerank history.
+Fresh authorization can deny it and can append audit evidence. Retired text is
+not reconstructed. True vector/hybrid supersession with token budgets rejects;
+it never silently switches to byte packing.
 No automatic embeddings, retrieval-quality, semantic-truth or model-window claim
 follows. MCP also exposes explicit vector/hybrid tools; resource search stays lexical.
 
@@ -959,9 +1002,9 @@ Window/reservation fields require it even when zero. Caps are positive integers
 up to 524288; declarations are integers 0..1000000000. Nonzero reservations
 require a positive window and cannot exceed it together. Null, booleans,
 fractional/overflow numbers, duplicate and unknown fields reject before mutation.
-Token mode rejects lexical `supersession` even when false; vector/hybrid continue
-to reject supersession and associations. Tool inputs cannot set interpreter,
-cache, store or caller paths/identity.
+Lexical token mode accepts supersession. Vector/hybrid token mode rejects true
+supersession; byte mode supports it. Associations remain unsupported.
+Tool inputs cannot set interpreter, cache, store or caller paths/identity.
 
 Without a configured usable backend, token mode returns `tokenizer_unavailable`;
 byte tools remain available. The query-scoped offline worker is bounded and

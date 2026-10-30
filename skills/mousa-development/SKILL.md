@@ -28,7 +28,9 @@ The source/segment/space slot is immutable; vector identities bind supplied valu
 and canonical revision pins. Fresh authorization/current-pointer selection and v5
 trace persistence share one writer snapshot. Historical verification reads recorded
 producing embeddings rather than current vectors. Keep cosine separate from BM25,
-report coverage and reject vector policy/association/supersession flags. MCP
+report coverage and reject vector policy/association flags. Byte-only explicit
+supersession uses v9 with the existing producing facts and consultation; source
+admission precedes masking and ranks/coverage stay unchanged. MCP
 `mousa_vector_query` reuses that native transaction for configured JSONL sources.
 
 For hybrid changes, read [native hybrid retrieval](../../docs/CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval).
@@ -78,8 +80,10 @@ transaction after authorization. Pack only survivors; verify every withheld
 candidate's original canonical size/content and ancestry. v8 binds both token
 facts and recorded consultation using packet v3's full-selection wrapper; it is
 not a released-text-only identity. Historical reads rederive membership from the
-recorded event/declaration, not current activation. Vector/hybrid/association
-supersession remains unsupported. Explicit false lexical token requests use v7.
+recorded event/declaration, not current activation. Vector/hybrid token-plus-
+supersession and association combinations remain unsupported. Byte-only
+vector/hybrid supersession uses v9 and packet v1's released-selection binding.
+Preserve v1–v8 bytes/identities. Explicit false lexical token requests use v7.
 
 
 ## Prove and deliver the change

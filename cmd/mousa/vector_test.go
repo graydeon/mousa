@@ -95,7 +95,7 @@ func TestNativeVectorWorkflowDirectoryAndJSONL(t *testing.T) {
 		}
 		run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, true,
 			append(append([]string{"query", "--vector-space="}, selector...), "unplug")...)
-		for _, option := range []string{"--supersession", "--associations=unused", "--policy=original"} {
+		for _, option := range []string{"--associations=unused", "--policy=original"} {
 			args := append([]string{"query", "--vector-space", space, option}, selector...)
 			message, _ := run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, true, args...)
 			if !strings.Contains(message, "cannot be combined") {

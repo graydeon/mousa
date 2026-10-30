@@ -55,29 +55,30 @@ type mcpRetrievalEvidence struct {
 }
 
 type mcpRetrievalResult struct {
-	Mode             string                       `json:"mode"`
-	Source           string                       `json:"source"`
-	SpaceID          mousa.SHA256                 `json:"space_id"`
-	QueryVectorID    mousa.SHA256                 `json:"query_vector_id"`
-	DecisionID       mousa.PolicyDecisionID       `json:"decision_id"`
-	DecisionOutcome  mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
-	DecisionReasons  []mousa.PolicyDecisionReason `json:"decision_reasons"`
-	TrailID          mousa.SourceTrailID          `json:"trail_id"`
-	PacketID         string                       `json:"packet_id"`
-	Eligible         int                          `json:"eligible"`
-	Indexed          int                          `json:"indexed"`
-	Missing          int                          `json:"missing"`
-	Outcome          string                       `json:"outcome"`
-	PackingPolicy    string                       `json:"packing_policy"`
-	BudgetBytes      uint64                       `json:"budget_bytes"`
-	UsedBytes        uint64                       `json:"used_bytes"`
-	BudgetOmitted    int                          `json:"budget_omitted"`
-	DuplicateOmitted int                          `json:"duplicate_omitted"`
-	Evidence         []mcpRetrievalEvidence       `json:"evidence"`
-	Vector           *mcpVectorDetails            `json:"vector,omitempty"`
-	Hybrid           *mcpHybridDetails            `json:"hybrid,omitempty"`
-	Context          *string                      `json:"context,omitempty"`
-	Token            *mousa.TokenSelectionView    `json:"token,omitempty"`
+	Mode                 string                       `json:"mode"`
+	Source               string                       `json:"source"`
+	SpaceID              mousa.SHA256                 `json:"space_id"`
+	QueryVectorID        mousa.SHA256                 `json:"query_vector_id"`
+	DecisionID           mousa.PolicyDecisionID       `json:"decision_id"`
+	DecisionOutcome      mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
+	DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	TrailID              mousa.SourceTrailID          `json:"trail_id"`
+	PacketID             string                       `json:"packet_id"`
+	Eligible             int                          `json:"eligible"`
+	Indexed              int                          `json:"indexed"`
+	Missing              int                          `json:"missing"`
+	Outcome              string                       `json:"outcome"`
+	PackingPolicy        string                       `json:"packing_policy"`
+	BudgetBytes          uint64                       `json:"budget_bytes"`
+	UsedBytes            uint64                       `json:"used_bytes"`
+	BudgetOmitted        int                          `json:"budget_omitted"`
+	DuplicateOmitted     int                          `json:"duplicate_omitted"`
+	Evidence             []mcpRetrievalEvidence       `json:"evidence"`
+	Vector               *mcpVectorDetails            `json:"vector,omitempty"`
+	Hybrid               *mcpHybridDetails            `json:"hybrid,omitempty"`
+	Context              *string                      `json:"context,omitempty"`
+	Token                *mousa.TokenSelectionView    `json:"token,omitempty"`
+	SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
 }
 
 type mcpLexicalResult struct {
@@ -103,8 +104,18 @@ func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcp
 		result.Mode, result.SpaceID, result.QueryVectorID, result.Eligible, result.Indexed = "hybrid", h.SpaceID, h.QueryVectorID, h.Eligible, h.Indexed
 	}
 	result.Missing = result.Eligible - result.Indexed
+	supersessionIndex := 0
+	if trail.Supersession != nil {
+		result.SupersessionExcluded = new(int)
+		*result.SupersessionExcluded = len(trail.Supersession.Dispositions)
+	}
 	for i, row := range trail.Candidates {
 		if row.Disposition != mousa.CandidateAccepted {
+			continue
+		}
+		if trail.Supersession != nil && supersessionIndex < len(trail.Supersession.Dispositions) &&
+			trail.Supersession.Dispositions[supersessionIndex].SegmentID == row.SegmentID {
+			supersessionIndex++
 			continue
 		}
 		if !row.Selected && row.Omission != "duplicate" {
@@ -137,6 +148,8 @@ func mcpRetrievalProjection(source string, traced sqlite.TracedVectorResult) mcp
 		result.Outcome = "no_indexed_passages"
 	case len(trail.Candidates) == 0:
 		result.Outcome = "no_candidates"
+	case result.SupersessionExcluded != nil && *result.SupersessionExcluded == len(trail.Candidates):
+		result.Outcome = "supersession_excluded"
 	default:
 		result.Outcome = "budget_omitted"
 	}

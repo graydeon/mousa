@@ -11,17 +11,17 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted main at that audit was `4bfe775d8ae4dbfe3a429c6bc9c63bb1f0e5d404`.
-It includes native/MCP external-vector import, vector/hybrid retrieval and token
-budgets. Combining lexical supersession with token budgets is implemented on
-[PR90](https://github.com/graydeon/mousa/pull/90), not yet merged or accepted.
-The combined examples and v8 descriptions in this branch describe that proposal.
-[Issue91](https://github.com/graydeon/mousa/issues/91) records a confirmed failure
-at the earlier PR head: 65 withheld 4,096-byte predecessor segments exhausted
-token aggregate admission while the byte-only control succeeded. This revision
-applies that aggregate limit to survivors, retaining withheld content verification.
-Focused boundary regressions pass; final-head review and paired public-revision
-evidence remain required before acceptance.
+Accepted main as of 2026-10-30 is `12e959e1c4a0c2242a654e3e6fa8e7e3789c9ea6`.
+It includes native/MCP external-vector import, vector/hybrid retrieval, token
+budgets and lexical supersession with token budgets. [PR90](https://github.com/graydeon/mousa/pull/90)
+and its independent client evidence are accepted; [issue91](https://github.com/graydeon/mousa/issues/91)
+is closed after the survivor aggregate-admission correction.
+
+This branch proposes explicit supersession for byte-packed vector/hybrid queries,
+with closed v9 producing history. The implementation and runnable example below
+do not establish independent acceptance. Vector/hybrid token-plus-supersession
+remains unsupported. Synthetic vectors establish protocol and arithmetic, not
+embedding-model quality.
 
 ## Why Mousa?
 
@@ -64,6 +64,11 @@ consults administration and records a v4 trail inside one writer transaction.
 Only an accepted candidate whose own representation is the active declaration's
 exact predecessor pin is withheld. Successor availability does not gate suppression,
 and no successor passage is manufactured. Both packing policies apply to survivors.
+
+Byte-packed vector and hybrid queries also accept explicit supersession, natively
+and through configured MCP aliases. Their v9 history records the existing producing
+ranking facts and consultation together. Source admission and coverage remain
+unchanged before withholding. See the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 
 Defaults are unchanged: recording an activation alone does not filter a default
 query, reinterpret a recorded member or move item pointers. MCP administration and

@@ -1,6 +1,6 @@
 # Mousa research record
 
-For source-build versus release status and the pending v8 composition boundary,
+For source-build versus release status and the proposed v9 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 Raw benchmark reports and optional comparison dependencies are maintained in
@@ -42,11 +42,14 @@ retriever alone. General temporal-memory benchmarks await explicit semantics; se
 ## Evaluation priorities and promotion gates
 
 These are development decisions and proposed checks, not new benchmark results.
-The immediate product priority is the combined-token aggregate-bound correction
-in [issue91](https://github.com/graydeon/mousa/issues/91), followed by independent
-native/MCP observations at the corrected public revision. Preserve older captures,
-conditions and negative results. Startup-study timeout/export holds remain separate;
-a passing archive check does not resolve them.
+PR90 and its independent client evidence are accepted as of 2026-10-30;
+[issue91](https://github.com/graydeon/mousa/issues/91) is closed after the
+survivor aggregate-admission correction. The next proposal composes explicit
+supersession with byte-packed vector/hybrid retrieval and v9 history, without
+changing producing ranks, coverage or full-source admission. Its product
+regressions and runnable synthetic example are distinct from independent
+public-client observations and final-head acceptance. Preserve older captures,
+conditions and negative results. Startup-study timeout/export holds remain separate.
 
 Use existing passage pins, coverage counts, branch contributions, omission reasons
 and exact returned context before adding another store, graph, reranker or cache.

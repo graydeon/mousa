@@ -129,9 +129,9 @@ query options (before positional arguments):
                             token mode rejects associations and vector/hybrid supersession;
                             all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
-                            cannot combine with policy, associations or supersession flags
+                            cannot combine with policy or associations flags
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
-                            supports --policy; no vector-space/associations/supersession flags
+                            supports --policy; no vector-space/associations flags
   --supersession            withhold the exact active predecessor revision (directory or --source);
                             cannot be combined with --associations
   --associations <file>      opt-in declared-association JSON file
@@ -297,27 +297,27 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if hybridMode {
 		incompatible := vectorMode
 		flags.Visit(func(option *flag.Flag) {
-			if option.Name == "associations" || option.Name == "supersession" {
+			if option.Name == "associations" {
 				incompatible = true
 			}
 		})
 		if incompatible {
-			return usageError{"hybrid mode cannot be combined with vector-space, associations or supersession flags"}
+			return usageError{"hybrid mode cannot be combined with vector-space or associations flags"}
 		}
-		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing)
+		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession)
 	}
 	if vectorMode {
 		incompatible := false
 		flags.Visit(func(option *flag.Flag) {
 			switch option.Name {
-			case "policy", "associations", "supersession":
+			case "policy", "associations":
 				incompatible = true
 			}
 		})
 		if incompatible {
-			return usageError{"vector mode cannot be combined with policy, associations or supersession flags"}
+			return usageError{"vector mode cannot be combined with policy or associations flags"}
 		}
-		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing)
+		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
 	}
 	if *supersession {
 		associationSupplied := false
