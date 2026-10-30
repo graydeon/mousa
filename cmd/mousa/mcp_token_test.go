@@ -194,7 +194,7 @@ func TestMCPTokenStrictInputs(t *testing.T) {
 			client.call("mousa_query", raw, "invalid_arguments")
 		}
 	}
-	for _, extra := range []string{`"context_tokens":0`, `"context_tokens":524289`, `"window_tokens":0`, `"prompt_reserve_tokens":0`, `"output_reserve_tokens":0`, `"context_tokens":100,"prompt_reserve_tokens":1`, `"context_tokens":100,"window_tokens":10,"prompt_reserve_tokens":7,"output_reserve_tokens":4`, `"context_tokens":100,"window_tokens":1000000001`, `"context_tokens":100,"supersession":false`, `"context_tokens":100,"context_tokens":100`, `"context_tokens":100,"tokenizer_python":"bad"`, `"context_tokens":100,"tokenizer_cache":"bad"`, `"context_tokens":100,"store":"bad"`, `"context_tokens":100,"caller":"bad"`} {
+	for _, extra := range []string{`"context_tokens":0`, `"context_tokens":524289`, `"window_tokens":0`, `"prompt_reserve_tokens":0`, `"output_reserve_tokens":0`, `"context_tokens":100,"prompt_reserve_tokens":1`, `"context_tokens":100,"window_tokens":10,"prompt_reserve_tokens":7,"output_reserve_tokens":4`, `"context_tokens":100,"window_tokens":1000000001`, `"context_tokens":100,"context_tokens":100`, `"context_tokens":100,"tokenizer_python":"bad"`, `"context_tokens":100,"tokenizer_cache":"bad"`, `"context_tokens":100,"store":"bad"`, `"context_tokens":100,"caller":"bad"`} {
 		client.call("mousa_query", json.RawMessage(`{"source":"alpha","query":"Drain","policy":"original","budget_bytes":1000,`+extra+`}`), "invalid_arguments")
 	}
 	for _, value := range []string{"null", "0", "1", "\"true\""} {
@@ -269,10 +269,14 @@ func TestMCPTokenSkippedCandidatesAndAuthorization(t *testing.T) {
 
 func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 	startup := mcpTokenStartup(t)
-	for _, cancelled := range []bool{false, true} {
-		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
+	for _, scenario := range []struct{ cancelled, supersession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+		cancelled, supersession := scenario.cancelled, scenario.supersession
+		t.Run(fmt.Sprintf("cancelled=%v/supersession=%v", cancelled, supersession), func(t *testing.T) {
 			run, _ := setup(t)
 			jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
+			if supersession {
+				newMCPWithholdingTrailFixture(t, run, "alpha", "Drain predecessor", "Drain successor")
+			}
 			store, err := sqlite.Open(t.Context(), run.store)
 			if err != nil {
 				t.Fatal(err)
@@ -297,7 +301,7 @@ func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				response, err := app.call(ctx, "mousa_query", []byte(`{"source":"alpha","query":"Drain","policy":"original","budget_bytes":4096,"context_tokens":256}`))
+				response, err := app.call(ctx, "mousa_query", []byte(fmt.Sprintf(`{"source":"alpha","query":"Drain","policy":"original","budget_bytes":4096,"context_tokens":256,"supersession":%v}`, supersession)))
 				if err == nil && !response.IsError {
 					err = fmt.Errorf("worker failure reported success")
 				}

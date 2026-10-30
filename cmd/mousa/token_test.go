@@ -142,7 +142,6 @@ func TestNativeTokenInvalidOptionsAndUnavailableBackend(t *testing.T) {
 		{"--context-tokens", "100", "--prompt-reserve", "1"},
 		{"--context-tokens", "100", "--context-window", "10", "--output-reserve", "11"},
 		{"--context-tokens", "100", "--associations", "unused"},
-		{"--context-tokens", "100", "--supersession=false"},
 		{"--context-tokens", "100", "--tokenizer-python", "/nonexistent/mousa-python"},
 	} {
 		args := append(append([]string{"query"}, options...), "--source", "token-invalid", "amber")

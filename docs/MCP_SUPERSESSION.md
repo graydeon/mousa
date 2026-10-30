@@ -1,5 +1,8 @@
 # MCP supersession opt-in
 
+For source-build versus release status and the pending v8 composition boundary,
+see [development status](OVERVIEW.md#source-and-release-status).
+
 **Status: the `mousa_query` and `mousa_trail` opt-ins are implemented; their
 independent client captures are separate.** This document specifies one explicit optional
 `supersession` boolean on the existing `mousa_query` tool, and a matching opt-in on
@@ -19,6 +22,15 @@ The implemented native contract remains
 client boundary for that contract. It changes no native behavior, storage object,
 canonical record, schema version, migration, dependency or benchmark file.
 
+Lexical token composition also accepts `supersession: true` with `context_tokens`
+and reservations on `mousa_query`, using the operator-configured backend.
+It records v8 rather than the byte-only v4; omission and false retain v7.
+The query's optional count is unchanged. An authorized `mousa_trail` request
+can independently opt into the v8 recorded consultation and safe token facts
+with `supersession: true` and `token_details: true`. Counts are producing
+observations, not MCP recounts. Vector/hybrid/association supersession remains
+unsupported. See [combined usage](USAGE.md#lexical-supersession-with-token-budgets).
+
 ## Recommendation
 
 Extend the two existing tools with **declared optional inputs and declared optional
@@ -29,7 +41,7 @@ result properties**, and keep the envelope identifier `mousa.mcp_result.v1`:
 | `mousa_query` input | optional `supersession`: boolean (implemented) | supplied `true` |
 | `mousa_query` result | optional `supersession_excluded`: integer (implemented) | the caller opted in, including value `0` |
 | `mousa_trail` input | optional `supersession`: boolean (implemented) | supplied `true` |
-| `mousa_trail` result `historical` | optional `supersession`: object (implemented) | the caller opted in and the recorded trail is `mousa.source_trail.v4` |
+| `mousa_trail` result `historical` | optional `supersession`: object (implemented) | the caller opted in and the recorded trail is `mousa.source_trail.v4` or v8 |
 
 Reasons, in detail below: a tool publishes one static output schema per session, that
 schema is closed, and a validating client rejects a response field the schema does not
@@ -50,8 +62,10 @@ The client boundary of the implemented build, from the current source:
 - `mcpOutputSchema` in the same file declares `supersession_excluded` for `mousa_query`
   and the recorded `supersession` member inside `mousa_trail`'s `historical` schema, and
   maps the activation, declaration and representation identity types that member contains
-  to the existing lowercase hex string declaration. The other three output schemas are
-  unchanged from the query-only build.
+  to the existing lowercase hex string declaration. The original sync/status definitions were preserved by this opt-in. Vector,
+  hybrid, embedding interchange and token additions are documented separately in
+  [current usage](USAGE.md#local-mcp-usage); the original four-tool design is not
+  the complete current discovery surface.
 - `(*mcpApplication).call` in `cmd/mousa/mcp.go` runs `mousa_query` through
   `queryItemsForRequestWithSupersession` with the caller's boolean and a nil association
   list, and inspects the trail through `Store.InspectSourceTrail` in both cases, clearing
