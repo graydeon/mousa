@@ -319,10 +319,11 @@ target passages in total; a larger target is read only up to that bound and its
 remaining passages are reported as an omission. Associated
 passages pack into the remaining budget after primary evidence, keep their own
 item, segment identity, byte coordinates and content digest, and carry the
-declaration that included them. A missing, inactive or unfired declaration is
-recorded as a visible omission, never a silent gap or a completeness claim. A
-relationship is not an access grant: resolution stays inside the one allowed
-source decision and only reaches the current active revision. The stored trail
+declaration that included them. Missing or inactive targets are recorded as
+visible omissions. An unfired declaration leaves ordinary retrieval unchanged.
+Neither behavior claims completeness. A relationship is not an access grant:
+resolution stays inside the one allowed source decision and only reaches the
+current active revision. The stored trail
 records the complete association stage; decoding stays strict across trail
 versions, and reading a stored trail re-verifies every released passage against
 canonical store content. See the
@@ -870,6 +871,51 @@ Native `query --source <id> --associations <file>` can produce v3 history that t
 configured same-source MCP inspector reads. Omitted, false and true `supersession`
 inputs all preserve its association metadata and producing identities without adding
 a supersession member.
+
+### MCP declared supporting context
+
+The current source adds optional inline `associations` to `mousa_query`, pending
+PR review, not release. After merge, build from a containing source revision;
+older binaries still reject the input. Refresh client tool discovery.
+Run the standard-library Python example without a model, API key or tokenizer:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 examples/mcp_associations.py --mousa ./mousa
+```
+
+It creates a temporary synthetic JSONL source through `mousa_sync`, queries
+`backup` ordinarily, then supplies this complete declaration document inline:
+
+```json
+{
+  "source": "notes",
+  "query": "backup",
+  "policy": "original",
+  "budget_bytes": 8192,
+  "associations": {
+    "schema": "mousa.association_declarations.v1",
+    "associations": [
+      {"from_item": "backup", "to_item": "closure", "basis": "connection cleanup qualification", "author": "example.maintainer"}
+    ]
+  }
+}
+```
+
+The ordinary result contains the primary instruction alone. The declared result
+keeps that evidence and appends the nonmatching connection-closure qualification,
+with its own provenance, `origin: "association"` and declaration, without a
+lexical rank or BM25 score. `mousa_trail` binds v3 facts to the producing call
+and reauthorizes history. Retrieval does not require `--ingest-source`; the
+example uses it only to prepare its fixture.
+
+Both term policies and both byte packers work. Omitted/false supersession works;
+true supersession, tokens/reservations and vector/hybrid combinations reject.
+Supply an object, not null, a filename or URL. The
+[native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
+apply. Assertions check protocol, selection and attribution consistency, not
+authenticated authorship, semantic sufficiency, recall, completeness or truth.
+No answer generation or judging runs.
 
 `--caller cli` uses the existing CLI retrieval policy, including source-scoped
 denials and withdrawal. This is trusted local configuration, not caller

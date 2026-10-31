@@ -345,7 +345,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 					}
 				}
 			} else {
-				evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, nil, args.Supersession)
+				evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
 				result = evidence
 			}
 			if err == nil {

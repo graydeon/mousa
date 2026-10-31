@@ -162,7 +162,7 @@ func TestMCPSupersessionQueryDeclaresOptInSchema(t *testing.T) {
 	for name, want := range map[string][]string{
 		"mousa_sync":   {"items", "segment_policy", "source"},
 		"mousa_status": {"source"},
-		"mousa_query":  {"budget_bytes", "context_tokens", "output_reserve_tokens", "packing_policy", "policy", "prompt_reserve_tokens", "query", "source", "supersession", "window_tokens"},
+		"mousa_query":  {"associations", "budget_bytes", "context_tokens", "output_reserve_tokens", "packing_policy", "policy", "prompt_reserve_tokens", "query", "source", "supersession", "window_tokens"},
 		"mousa_trail":  {"retrieval_details", "source", "supersession", "token_details", "trail_id"},
 	} {
 		got := make([]string, 0, len(properties[name]))
