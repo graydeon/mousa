@@ -99,7 +99,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical enforcement (bytes or tokens) and byte-only vector/hybrid enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
 
@@ -227,7 +227,7 @@ Implemented and planned capabilities, marked per item:
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit directory/JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical and byte-only vector/hybrid enforcement with v4/v8/v9 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
