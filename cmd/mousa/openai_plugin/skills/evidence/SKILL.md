@@ -17,7 +17,7 @@ On supported desktop hosts, a Mousa composer mention provides an evidence resour
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
 
-Supersession declarations and activation are administered through the native CLI. When the discovered query schema declares supersession, pass true only for an explicitly requested enforcement query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer replacement or establish factual truth. When the discovered mousa_trail schema declares supersession, pass true to read the consultation recorded by v4, lexical token v8 or byte vector/hybrid v9 history: consulted state, nullable activation/declaration identities and withholding rows. Legacy trails carry no member. Recorded consultation is not today's activation state. Supersession administration remains native-only. Composer mentions and evidence resources keep their fixed defaults. Explain conflicting released passages using their provenance.
+Supersession declarations and activation are administered through the native CLI. When the discovered query schema declares supersession, pass true only for an explicitly requested enforcement query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer replacement or establish factual truth. When the discovered mousa_trail schema declares supersession, pass true to read the consultation recorded by v4, lexical token v8, byte vector/hybrid v9 or token vector/hybrid v10 history: consulted state, nullable activation/declaration identities and withholding rows. Legacy trails carry no member. Recorded consultation is not today's activation state. Supersession administration remains native-only. Composer mentions and evidence resources keep their fixed defaults. Explain conflicting released passages using their provenance.
 
 When discovery declares `mousa_vector_inputs`, export current authorized normalized
 passage bytes/pins for an approved external producer. Preserve all five pins and
@@ -35,9 +35,9 @@ exact declared predecessor and reports `supersession_excluded`, including zero.
 Omission/false retains ordinary retrieval. Associations reject.
 No embedding service is bundled. Query text does not attest how values were
 generated; declared labels and synthetic vectors establish no semantic truth.
-Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6/v9 or safe v7
-vector/hybrid facts under fresh authorization. Independently opt into supersession
-to see v9's recorded consultation. Default history omits those members.
+Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6/v9 or safe
+v7/v10 vector/hybrid facts under fresh authorization. Independently opt into
+supersession to see v9/v10 recorded consultation. Default history omits those members.
 OpenAI mention/resource search stays lexical.
 
 When discovery declares `context_tokens`, any of the three query tools can opt
@@ -48,11 +48,11 @@ whose token count includes headers/separators but excludes tool envelopes and
 unknown client/model framing. Reservations do not prove model-window safety.
 The operator configures the prepared offline backend at startup; tool arguments
 cannot choose interpreter/cache/store/caller. Report tokenizer_unavailable rather
-than silently falling back to bytes. Lexical `mousa_query` can combine
+than silently falling back to bytes. All three query tools can combine
 `supersession: true` with token budgets; withheld predecessors consume neither
-budget nor duplicate retention. Omission/false retains v7; the combination records
-v8. Vector/hybrid token-plus-supersession and association combinations remain unsupported.
-OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7/v8 token facts under
+budget nor duplicate retention. Omission/false retains v7; true records lexical
+v8 or vector/hybrid v10. Full vector-source admission remains before masking.
+Associations remain unsupported. OpenAI mentions/resources stay byte-only.
+Use `mousa_trail` with token_details true for safe recorded v7/v8/v10 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.

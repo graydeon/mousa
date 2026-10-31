@@ -1,6 +1,8 @@
-"""Compare byte-packed vector/hybrid evidence with explicit supersession."""
+"""Compare vector/hybrid evidence under byte and optional measured token budgets."""
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,7 +14,34 @@ from token_supersession import identity
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mousa", type=Path, required=True)
+    parser.add_argument("--tokenizer-python", type=Path)
+    parser.add_argument("--tokenizer-cache", type=Path)
     args = parser.parse_args()
+    if (args.tokenizer_python is None) != (args.tokenizer_cache is None):
+        parser.error("configure both tokenizer interpreter and prepared cache")
+    token_args = []
+    if args.tokenizer_python is not None:
+        token_args = ["--context-tokens", "4096", "--tokenizer-python",
+                      str(args.tokenizer_python.absolute()), "--tokenizer-cache",
+                      str(args.tokenizer_cache.resolve())]
+
+    def verify_tokens(report):
+        if not token_args:
+            return
+        context = report["context"]
+        result = subprocess.run(
+            [str(args.tokenizer_python.absolute()), "-I", "-c",
+             "import sys,tiktoken,tiktoken.load\n"
+             "def offline(*args, **kwargs): raise RuntimeError('prepare the offline cache first')\n"
+             "tiktoken.load.read_file=offline\n"
+             "print(len(tiktoken.get_encoding('o200k_base').encode_ordinary(sys.stdin.read())))"],
+            input=context, text=True, capture_output=True, timeout=30, check=True,
+            env=dict(os.environ, TIKTOKEN_CACHE_DIR=str(args.tokenizer_cache.resolve())))
+        assert report["token"]["measured_tokens"] == int(result.stdout)
+        assert report["token"]["measured_tokens"] <= report["token"]["limit"]
+        assert report["token"]["rendered_sha256"] == hashlib.sha256(context.encode()).hexdigest()
+        assert report["token"]["rendered_bytes"] == len(context.encode())
+
     binary = args.mousa.resolve()
     source = "synthetic-vector-supersession"
     with tempfile.TemporaryDirectory(prefix="mousa-vector-supersession-") as temporary:
@@ -57,21 +86,43 @@ def main():
                 for opted in (False, True):
                     argv = ["query", "--" + mode + "-space", imported["space_id"],
                             "--packing-policy", packing, "--budget-bytes", "24"]
+                    argv += token_args
                     if opted:
                         argv += ["--supersession"]
                     argv += ["--source", source]
                     if mode == "hybrid":
                         argv += ["Drain"]
                     report = command(*argv, value='{"schema":"mousa.vector_query.v1","values":[1,0]}')
-                    assert [p["item"] for p in report["evidence"]] == (["peer"] if opted else ["old"])
+                    expected = "peer" if opted else "old"
+                    if token_args:
+                        assert [p["segment"]["id"] for p in report["evidence"]] == [pins[expected]["segment_id"]]
+                    else:
+                        assert [p["item"] for p in report["evidence"]] == [expected]
+                    verify_tokens(report)
                     reports.append(report)
                 history = command("trail", "--source", source, reports[1]["trail_id"])
-                assert history["historical"]["schema"] == "mousa.source_trail.v9"
+                assert history["historical"]["schema"] == ("mousa.source_trail.v10" if token_args else "mousa.source_trail.v9")
                 assert history["historical"]["supersession"]["activation_id"] == activation["id"]
+                if token_args:
+                    recounted = command("trail", "--verify-tokens", "--tokenizer-python",
+                                        args.tokenizer_python.absolute(), "--tokenizer-cache",
+                                        args.tokenizer_cache.resolve(), "--source", source,
+                                        reports[1]["trail_id"])
+                    assert recounted["historical"]["token_verification"] == "official_recount_verified"
+                    count = reports[1]["token"]["measured_tokens"]
+                    cap_index = argv.index("--context-tokens") + 1
+                    argv[cap_index] = str(count)
+                    exact = command(*argv, value='{"schema":"mousa.vector_query.v1","values":[1,0]}')
+                    assert exact["context"] == reports[1]["context"]
+                    argv[cap_index] = str(count - 1)
+                    short = command(*argv, value='{"schema":"mousa.vector_query.v1","values":[1,0]}')
+                    assert short["context"] == "" and short["outcome"] == "budget_omitted"
+                    verify_tokens(short)
                 print(json.dumps({"surface": "native", "mode": mode, "packing": packing,
                                   "ordinary": reports[0], "enforced": reports[1], "history": history}))
         with (Path(temporary) / "wire.jsonl").open("w") as receipts:
-            client = Client(binary, store, receipts, False, 30, source)
+            client = Client(binary, store, receipts, False, 30, source,
+                            tokenizer_python=args.tokenizer_python, tokenizer_cache=args.tokenizer_cache)
             try:
                 client.initialize()
                 for mode in ("vector", "hybrid"):
@@ -80,13 +131,18 @@ def main():
                                      budget_bytes=24, packing_policy=packing)
                         if mode == "hybrid":
                             query.update(query="Drain", policy="original")
+                        if token_args:
+                            query["context_tokens"] = 4096
                         ordinary, _ = client.call("mousa_" + mode + "_query", query)
                         enforced, _ = client.call("mousa_" + mode + "_query", dict(query, supersession=True))
                         assert [p["item"] for p in ordinary["evidence"]] == ["old"]
                         assert [p["item"] for p in enforced["evidence"]] == ["peer"]
+                        verify_tokens(ordinary)
+                        verify_tokens(enforced)
                         assert enforced["supersession_excluded"] == 1
                         history, _ = client.call("mousa_trail", dict(source=source, trail_id=enforced["trail_id"],
-                                                                  supersession=True, retrieval_details=True))
+                                                                  supersession=True, retrieval_details=True,
+                                                                  token_details=bool(token_args)))
                         assert history["historical"][mode] == enforced[mode]
                         print(json.dumps({"surface": "mcp", "mode": mode, "packing": packing,
                                           "ordinary": ordinary, "enforced": enforced, "history": history}))

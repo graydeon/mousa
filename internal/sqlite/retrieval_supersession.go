@@ -34,6 +34,9 @@ func clearWithheldPassages(result *TracedVectorResult) {
 		}
 		if result.Passages[i].SegmentID == rows[next].SegmentID {
 			result.Passages[i].Text = ""
+			if len(result.Verified) > 0 {
+				result.Verified[i].Text = ""
+			}
 			next++
 		}
 	}

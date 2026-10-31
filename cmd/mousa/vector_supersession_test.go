@@ -61,8 +61,6 @@ func TestVectorHybridSupersessionNativeAndMCP(t *testing.T) {
 					}
 				}
 			}
-			args["context_tokens"] = 128
-			client.call("mousa_"+mode+"_query", args, "invalid_arguments")
 		}
 	}
 	activateQueryDeclaration(t, run, source, &active, nil, 2)
@@ -140,47 +138,61 @@ func TestNativeVectorHybridSupersessionSelectorsAndSurvivors(t *testing.T) {
 		active := activateQueryDeclaration(t, run, source, nil, &declaration, 1)
 		for _, mode := range []string{"vector", "hybrid"} {
 			for _, packing := range []string{"original", "exact-v1"} {
-				var legacy map[string]any
-				for _, opt := range []string{"", "false", "true"} {
-					args := []string{"query", "--" + mode + "-space", imported["space_id"].(string), "--packing-policy", packing, "--budget-bytes", "24"}
-					if opt != "" {
-						args = append(args, "--supersession="+opt)
-					}
-					args = append(args, selector...)
-					if mode == "hybrid" {
-						args = append(args, "unmatched")
-					}
-					_, got := run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, false, args...)
-					if opt == "" {
-						legacy = got
-					}
-					want := "old.md"
-					if opt == "true" {
-						want = "twin.md"
-						if got["supersession_excluded"] != float64(1) {
-							t.Fatalf("count: %v", got)
+				for _, token := range []bool{false, true} {
+					t.Run(fmt.Sprintf("directory=%v/%s/%s/token=%v", directory, mode, packing, token), func(t *testing.T) {
+						var tokenArgs []string
+						version := "mousa.source_trail.v9"
+						if token {
+							tokenArgs = append([]string{"--context-tokens", "4096"}, mcpTokenStartup(t)...)
+							version = "mousa.source_trail.v10"
 						}
-					} else if got["supersession_excluded"] != nil {
-						t.Fatal("legacy property grew")
-					}
-					if len(hits(got)) != 1 || hits(got)[0].(map[string]any)["item"] != want {
-						t.Fatalf("selection directory=%v mode=%s opt=%s: %v", directory, mode, opt, got)
-					}
-					if opt == "false" && (!reflect.DeepEqual(got["evidence"], legacy["evidence"]) || got["packet_id"] != legacy["packet_id"]) {
-						t.Fatal("false changed canonical selection")
-					}
-					historyArgs := append([]string{"trail"}, selector...)
-					_, history := run.run(false, append(historyArgs, got["trail_id"].(string))...)
-					if opt == "true" && history["historical"].(map[string]any)["schema"] != "mousa.source_trail.v9" {
-						t.Fatal("native history lost v9")
-					}
+						var legacy map[string]any
+						for _, opt := range []string{"", "false", "true"} {
+							args := []string{"query", "--" + mode + "-space", imported["space_id"].(string), "--packing-policy", packing, "--budget-bytes", "24"}
+							args = append(args, tokenArgs...)
+							if opt != "" {
+								args = append(args, "--supersession="+opt)
+							}
+							args = append(args, selector...)
+							if mode == "hybrid" {
+								args = append(args, "unmatched")
+							}
+							_, got := run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, false, args...)
+							if opt == "" {
+								legacy = got
+							}
+							want := "old.md"
+							if opt == "true" {
+								want = "twin.md"
+								if got["supersession_excluded"] != float64(1) {
+									t.Fatalf("count: %v", got)
+								}
+							} else if got["supersession_excluded"] != nil {
+								t.Fatal("legacy property grew")
+							}
+							if len(hits(got)) != 1 {
+								t.Fatalf("selection: %v", got)
+							}
+							hit := hits(got)[0].(map[string]any)
+							if token {
+								assertMCPTokenRendering(t, got)
+								if hit["segment"].(map[string]any)["id"] != pins[want]["segment_id"] {
+									t.Fatalf("token survivor: %v", got)
+								}
+							} else if hit["item"] != want {
+								t.Fatalf("byte survivor: %v", got)
+							}
+							if opt == "false" && (!reflect.DeepEqual(got["evidence"], legacy["evidence"]) || got["packet_id"] != legacy["packet_id"]) {
+								t.Fatal("false changed canonical selection")
+							}
+							historyArgs := append([]string{"trail"}, selector...)
+							_, history := run.run(false, append(historyArgs, got["trail_id"].(string))...)
+							if opt == "true" && history["historical"].(map[string]any)["schema"] != version {
+								t.Fatalf("native history lost %s", version)
+							}
+						}
+					})
 				}
-				bad := []string{"query", "--" + mode + "-space", imported["space_id"].(string), "--supersession", "--context-tokens", fmt.Sprint(128)}
-				bad = append(bad, selector...)
-				if mode == "hybrid" {
-					bad = append(bad, "Drain")
-				}
-				run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, true, bad...)
 			}
 		}
 		activateQueryDeclaration(t, run, source, &active, nil, 2)

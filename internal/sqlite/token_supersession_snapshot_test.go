@@ -13,12 +13,25 @@ import (
 )
 
 func TestTokenSupersessionWriterHeldThroughCounting(t *testing.T) {
+	for _, mode := range []string{"lexical", "vector", "hybrid"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			testTokenSupersessionWriterHeldThroughCounting(t, mode)
+		})
+	}
+}
+
+func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
 		t.Skip("official tokenizer acceptance environment not configured")
 	}
 	f := newV4Fixture(t)
 	defer f.store.Close()
+	var space mousa.SHA256
+	if mode != "lexical" {
+		space = importSupersessionVectors(t, f)
+	}
 	_, state := f.activate(t)
 	other, err := Open(t.Context(), f.store.path)
 	if err != nil {
@@ -59,13 +72,19 @@ while True:
 	}
 	defer counter.Close()
 	type result struct {
-		r   TracedLexicalResult
-		err error
+		trail mousa.SourceTrail
+		err   error
 	}
 	done := make(chan result, 1)
 	go func() {
-		r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, TokenQuery{Budget: mousa.TokenBudget{Cap: 1000}, Counter: counter, Supersession: true})
-		done <- result{r, err}
+		options := TokenQuery{Budget: mousa.TokenBudget{Cap: 1000}, Counter: counter, Supersession: true}
+		if mode == "lexical" {
+			r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, options)
+			done <- result{r.Trail, err}
+		} else {
+			r, err := queryTokenRetrieval(t, f, space, mode, mousa.PackingExactV1, "gated-query", 1024, options)
+			done <- result{r.Trail, err}
+		}
 	}()
 	gate, err := listener.Accept()
 	if err != nil {
@@ -102,14 +121,14 @@ while True:
 	if got.err != nil {
 		t.Fatal(got.err)
 	}
-	if got.r.Trail.Supersession.ActivationID == nil || *got.r.Trail.Supersession.ActivationID != state.CurrentActivationID || len(got.r.Trail.Supersession.Dispositions) != 1 {
+	if got.trail.Supersession.ActivationID == nil || *got.trail.Supersession.ActivationID != state.CurrentActivationID || len(got.trail.Supersession.Dispositions) != 1 {
 		t.Fatal("mixed consultation")
 	}
 	transition := activationTestTransition(t, f.source.ID, state.CurrentActivationID, mousa.SupersessionDeclarationID{}, "after measured query", activationBaseUsec+1)
 	if err := other.ApplySupersessionActivation(t.Context(), transition); err != nil {
 		t.Fatal(err)
 	}
-	historical, err := f.store.GetSourceTrail(t.Context(), got.r.Trail.ID)
+	historical, err := f.store.GetSourceTrail(t.Context(), got.trail.ID)
 	if err != nil || *historical.Supersession.ActivationID != state.CurrentActivationID {
 		t.Fatal("later activation reinterpreted snapshot", err)
 	}

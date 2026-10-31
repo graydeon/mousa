@@ -1,6 +1,6 @@
 # MCP supersession opt-in
 
-For source-build versus release status and the proposed v9 composition boundary,
+For source-build versus release status and the proposed v10 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 **Status: the `mousa_query` and `mousa_trail` opt-ins are implemented; their
@@ -28,13 +28,14 @@ It records v8 rather than the byte-only v4; omission and false retain v7.
 The query's optional count is unchanged. An authorized `mousa_trail` request
 can independently opt into the v8 recorded consultation and safe token facts
 with `supersession: true` and `token_details: true`. Counts are producing
-observations, not MCP recounts. Byte-only `mousa_vector_query` and
-`mousa_hybrid_query` also declare optional strict `supersession` and optional
-`supersession_excluded`, including zero, through the same envelope. True writes
-closed v9 with original ranking/coverage and survivor packing; omission/false
-preserves v5/v6 and response properties. Trail `supersession` and
-`retrieval_details` independently expose their respective verified recorded
-members. Vector/hybrid token-plus-supersession and associations remain unsupported.
+observations, not MCP recounts. `mousa_vector_query` and `mousa_hybrid_query` also
+declare optional strict `supersession` and optional `supersession_excluded`,
+including zero, through the same envelope. True writes byte-only v9 or measured
+token v10 with original ranking/coverage and survivor packing; omission/false
+preserves v5/v6 bytes or v7 tokens and response properties. Full-source vector
+admission precedes masking. Trail `supersession`, `retrieval_details` and
+`token_details` independently expose their respective verified recorded members
+under fresh authorization, without recounting. Associations remain unsupported.
 See [vector/hybrid usage](USAGE.md#vector-and-hybrid-supersession).
 
 ## Recommendation
@@ -47,7 +48,7 @@ result properties**, and keep the envelope identifier `mousa.mcp_result.v1`:
 | `mousa_query` input | optional `supersession`: boolean (implemented) | supplied `true` |
 | `mousa_query` result | optional `supersession_excluded`: integer (implemented) | the caller opted in, including value `0` |
 | `mousa_trail` input | optional `supersession`: boolean (implemented) | supplied `true` |
-| `mousa_trail` result `historical` | optional `supersession`: object (implemented) | the caller opted in and the recorded trail is v4, v8 or v9 |
+| `mousa_trail` result `historical` | optional `supersession`: object (implemented) | the caller opted in and the recorded trail is v4, v8, v9 or v10 |
 
 Reasons, in detail below: a tool publishes one static output schema per session, that
 schema is closed, and a validating client rejects a response field the schema does not

@@ -284,9 +284,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		if _, err := args.TokenBudget.Available(); err != nil {
 			return args, err
 		}
-		if args.Supersession && operation != "mousa_query" {
-			return args, errors.New("vector/hybrid supersession does not support token budgets")
-		}
 	}
 	if operation == "mousa_hybrid_query" || operation == "mousa_query" && args.TokenBudget != nil {
 		terms, err := mousa.PrepareLexicalTerms(args.Query, args.Policy == "dedup")
@@ -353,9 +350,9 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "trail_id"}, "properties": map[string]any{
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
-				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact withholding rows. Present only for v4, lexical token/supersession v8 or byte vector/hybrid v9 history. Reports producing evidence, not today's activation projection; omitted or false hides it."},
+				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact withholding rows. Present only for v4, lexical token/supersession v8, byte vector/hybrid v9 or token vector/hybrid v10 history. Reports producing evidence, not today's activation projection; omitted or false hides it."},
 				"retrieval_details": map[string]any{"type": "boolean", "description": "Return verified producing vector/hybrid identities, coverage and ranking facts when recorded. No search is rerun; historical completeness is not inferred from today's index. Omitted or false keeps the default inspection."},
-				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7 or v8. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
+				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7, v8 or v10. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
 			},
 		}},
 	}

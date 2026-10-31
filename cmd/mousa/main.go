@@ -126,7 +126,7 @@ query options (before positional arguments):
   --context-window <W>       optional caller-declared window, at most 1000000000
   --prompt-reserve <P>       caller-declared prompt/tool overhead; requires a window
   --output-reserve <O>       caller-declared output tokens; requires a window
-                            token mode rejects associations and vector/hybrid supersession;
+                            token mode rejects associations;
                             all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
                             cannot combine with policy or associations flags
@@ -266,8 +266,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			tokenSpecific = true
 		case "associations":
 			tokenIncompatible = true
-		case "supersession":
-			tokenIncompatible = tokenIncompatible || vectorMode || hybridMode
 		}
 	})
 	if tokenSpecific && !tokenMode {
@@ -275,7 +273,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	}
 	if tokenMode {
 		if tokenIncompatible || vectorMode && hybridMode {
-			return usageError{"token mode cannot combine associations, vector/hybrid supersession or both vector modes"}
+			return usageError{"token mode cannot combine associations or both vector modes"}
 		}
 		mode, space := "lexical", ""
 		if hybridMode {
