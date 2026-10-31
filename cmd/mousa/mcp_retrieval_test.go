@@ -243,7 +243,7 @@ func TestMCPRetrievalStrictInputsBeforeMutation(t *testing.T) {
 			"budget_bytes":   {`true`, `0`, `-1`, `1.5`, `262145`},
 			"space_id":       {`"bad"`, `"` + strings.Repeat("A", 64) + `"`, `"` + strings.Repeat("0", 64) + `"`},
 			"packing_policy": {`"unknown"`, `false`},
-			"supersession":   {`false`}, "associations": {`[]`}, "context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
+			"supersession":   {`null`, `"true"`, `0`, `{}`, `[]`}, "associations": {`[]`}, "context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
 		} {
 			for _, value := range values {
 				clone := make(map[string]json.RawMessage)

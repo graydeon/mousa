@@ -47,7 +47,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 	exact := trail.PackingPolicy == mousa.PackingExactV1
 	// A v4 record names each canonical record this pass reads, which decides how a missing one is
 	// classified below.
-	v4 := trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV8
+	v4 := trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV9
 	// The candidates a v4 record names as withheld remain content-verified, but they are neither
 	// selected nor allowed to seed the retained byte-equal set, so the byte-aware duplicate check
 	// leaves them alone.

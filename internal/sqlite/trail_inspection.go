@@ -176,12 +176,12 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 				view.TokenVerification = "official_recount_verified"
 			}
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV6 {
+		if trail.Schema == mousa.SourceTrailSchemaV6 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Hybrid != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Hybrid = trail.Hybrid
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV5 {
+		if trail.Schema == mousa.SourceTrailSchemaV5 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Vector != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Vector = trail.Vector

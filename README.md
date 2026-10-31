@@ -123,9 +123,14 @@ facts only with `token_details: true`, without recounting.
 Lexical queries can combine supersession and token budgets with either packer,
 for native directory/JSONL sources and configured MCP JSONL aliases.
 Withheld predecessors consume neither budget nor duplicate slots. The combined
-v8 trail binds recorded consultation and measured survivor rendering; vector/hybrid
-and association combinations with supersession remain unsupported.
-See the [runnable combined example](docs/USAGE.md#lexical-supersession-with-token-budgets).
+v8 trail binds recorded consultation and measured survivor rendering.
+Byte-packed vector/hybrid queries also accept explicit supersession through
+native directory/JSONL and configured MCP aliases, recording v9 history without
+reranking or relaxing source admission. See the
+[runnable vector/hybrid example](docs/USAGE.md#vector-and-hybrid-supersession).
+Vector/hybrid token-plus-supersession and association-plus-supersession remain
+unsupported. The [lexical token example](docs/USAGE.md#lexical-supersession-with-token-budgets)
+keeps its separate v8 contract.
 Automatic embedding generation and secret filtering remain pending.
 Caller-declared reservations do not prove full model-window safety.
 

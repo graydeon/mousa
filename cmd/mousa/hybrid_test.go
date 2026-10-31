@@ -75,7 +75,7 @@ func TestNativeHybridDirectoryAndJSONL(t *testing.T) {
 		for _, bad := range []string{`{"schema":"mousa.vector_query.v1","values":[1]}`, `{"schema":"mousa.vector_query.v1","values":[1,0],"extra":true}`, `{"schema":"mousa.vector_query.v1","values":[1,0],"values":[0,1]}`, `{"schema":"mousa.vector_query.v1","values":[0,0]}`, `[]`, `{"schema":`, strings.Repeat(" ", 128<<10) + vector} {
 			run.runInput(bad, true, args...)
 		}
-		for _, option := range []string{"--supersession=false", "--associations=unused", "--vector-space=" + space} {
+		for _, option := range []string{"--associations=unused", "--vector-space=" + space} {
 			raw, _ := run.runInput(vector, true, append(append([]string{"query", "--hybrid-space", space, option}, selector...), "Drain")...)
 			if !strings.Contains(raw, "cannot be combined") {
 				t.Fatalf("combination: %s", raw)

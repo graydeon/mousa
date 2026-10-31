@@ -11,17 +11,17 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted main at that audit was `4bfe775d8ae4dbfe3a429c6bc9c63bb1f0e5d404`.
-It includes native/MCP external-vector import, vector/hybrid retrieval and token
-budgets. Combining lexical supersession with token budgets is implemented on
-[PR90](https://github.com/graydeon/mousa/pull/90), not yet merged or accepted.
-The combined examples and v8 descriptions in this branch describe that proposal.
-[Issue91](https://github.com/graydeon/mousa/issues/91) records a confirmed failure
-at the earlier PR head: 65 withheld 4,096-byte predecessor segments exhausted
-token aggregate admission while the byte-only control succeeded. This revision
-applies that aggregate limit to survivors, retaining withheld content verification.
-Focused boundary regressions pass; final-head review and paired public-revision
-evidence remain required before acceptance.
+Accepted main as of 2026-10-30 is `12e959e1c4a0c2242a654e3e6fa8e7e3789c9ea6`.
+It includes native/MCP external-vector import, vector/hybrid retrieval, token
+budgets and lexical supersession with token budgets. [PR90](https://github.com/graydeon/mousa/pull/90)
+and its independent client evidence are accepted; [issue91](https://github.com/graydeon/mousa/issues/91)
+is closed after the survivor aggregate-admission correction.
+
+This branch proposes explicit supersession for byte-packed vector/hybrid queries,
+with closed v9 producing history. The implementation and runnable example below
+do not establish independent acceptance. Vector/hybrid token-plus-supersession
+remains unsupported. Synthetic vectors establish protocol and arithmetic, not
+embedding-model quality.
 
 ## Why Mousa?
 
@@ -65,6 +65,11 @@ Only an accepted candidate whose own representation is the active declaration's
 exact predecessor pin is withheld. Successor availability does not gate suppression,
 and no successor passage is manufactured. Both packing policies apply to survivors.
 
+Byte-packed vector and hybrid queries also accept explicit supersession, natively
+and through configured MCP aliases. Their v9 history records the existing producing
+ranking facts and consultation together. Source admission and coverage remain
+unchanged before withholding. See the [runnable example](USAGE.md#vector-and-hybrid-supersession).
+
 Defaults are unchanged: recording an activation alone does not filter a default
 query, reinterpret a recorded member or move item pointers. MCP administration and
 association-plus-supersession queries are unsupported. Actor, time and reason labels
@@ -94,7 +99,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical query enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical enforcement (bytes or tokens) and byte-only vector/hybrid enforcement. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
 
@@ -222,7 +227,7 @@ Implemented and planned capabilities, marked per item:
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit directory/JSONL query supersession enforcement with v4 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical and byte-only vector/hybrid enforcement with v4/v8/v9 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);

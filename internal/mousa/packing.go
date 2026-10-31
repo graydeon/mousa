@@ -91,10 +91,10 @@ func packExact(trail []TrailCandidate, candidates []VerifiedLexicalCandidate, bu
 // it cannot show that a named representation is the candidate's ancestry or that the named declaration
 // exists.
 func suppressSupersededCandidates(candidates []TrailCandidate, selection *SupersessionSelection) ([]bool, error) {
-	mask := make([]bool, len(candidates))
 	if selection == nil {
-		return mask, nil
+		return nil, nil
 	}
+	mask := make([]bool, len(candidates))
 	bySegment := make(map[SegmentID]int, len(candidates))
 	for index, candidate := range candidates {
 		if _, seen := bySegment[candidate.SegmentID]; seen {
@@ -218,7 +218,7 @@ func (trail SourceTrail) validatePackedCandidates() error {
 		return invalid("deny cannot carry candidates")
 	}
 	var suppressed []bool
-	if trail.Schema == SourceTrailSchemaV4 {
+	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV9 {
 		mask, err := suppressSupersededCandidates(trail.Candidates, trail.Supersession)
 		if err != nil {
 			return err

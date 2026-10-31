@@ -538,7 +538,7 @@ func TestSupersessionQueryMixedLifecyclePrecedence(t *testing.T) {
 // queryCommand's parser: only the opt-in preflight may reject before the store
 // is opened.
 func TestSupersessionQueryValidationPreservesDirectoryDefaultOpen(t *testing.T) {
-	binary := buildCLI(t)
+	binary := cliBinary
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("harbor inspection evidence"), 0o600); err != nil {
 		t.Fatal(err)
@@ -579,7 +579,7 @@ func TestSupersessionQueryValidationPreservesDirectoryDefaultOpen(t *testing.T) 
 }
 
 func TestSupersessionQueryValidationPreservesDefaultWritableOpen(t *testing.T) {
-	binary := buildCLI(t)
+	binary := cliBinary
 	for _, policy := range []string{"original", "dedup"} {
 		for name, query := range map[string]string{
 			"oversized":    strings.Repeat("a", mousa.MaxLexicalExpressionBytes+1),

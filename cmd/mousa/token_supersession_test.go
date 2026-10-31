@@ -17,7 +17,7 @@ func TestNativeTokenSupersessionNoHistory(t *testing.T) {
 	if python == "" || cache == "" {
 		t.Skip("official tokenizer acceptance environment not configured")
 	}
-	binary := buildCLI(t)
+	binary := cliBinary
 	for _, directory := range []bool{false, true} {
 		for _, packing := range []string{"original", "exact-v1"} {
 			t.Run(fmt.Sprintf("directory=%v/%s", directory, packing), func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestNativeTokenSupersessionNoHistory(t *testing.T) {
 
 func TestMCPTokenSupersessionActivePin(t *testing.T) {
 	startup := mcpTokenStartup(t)
-	binary := buildCLI(t)
+	binary := cliBinary
 	for _, packing := range []string{"original", "exact-v1"} {
 		t.Run(packing, func(t *testing.T) {
 			t.Parallel()
@@ -75,7 +75,7 @@ func TestMCPTokenSupersessionActivePin(t *testing.T) {
 
 func TestNativeTokenSupersessionLifecycle(t *testing.T) {
 	startup := mcpTokenStartup(t)
-	binary := buildCLI(t)
+	binary := cliBinary
 	for _, directory := range []bool{false, true} {
 		for _, packing := range []string{"original", "exact-v1"} {
 			t.Run(fmt.Sprintf("%v/%s", directory, packing), func(t *testing.T) {

@@ -74,7 +74,7 @@ type vectorEvidence struct {
 	EmbeddingID mousa.SHA256 `json:"embedding_id"`
 }
 
-func vectorQueryCommand(ctx context.Context, storePath, external string, args []string, space string, budget uint64, packing string) error {
+func vectorQueryCommand(ctx context.Context, storePath, external string, args []string, space string, budget uint64, packing string, supersession bool) error {
 	source, label, err := selectSource(external, args, "vector query")
 	if err != nil {
 		return err
@@ -106,35 +106,45 @@ func vectorQueryCommand(ctx context.Context, storePath, external string, args []
 	if err != nil {
 		return err
 	}
-	traced, err := store.EvaluateAndTraceVector(ctx, request, id, query.Values, budget, packing)
+	var traced sqlite.TracedVectorResult
+	if supersession {
+		traced, err = store.EvaluateAndTraceSupersessionVector(ctx, request, id, query.Values, budget, packing)
+	} else {
+		traced, err = store.EvaluateAndTraceVector(ctx, request, id, query.Values, budget, packing)
+	}
 	if err != nil {
 		return err
 	}
 	selection := traced.Trail.Vector
 	result := struct {
-		Schema          string                       `json:"schema"`
-		Mode            string                       `json:"mode"`
-		Source          string                       `json:"source"`
-		SpaceID         mousa.SHA256                 `json:"space_id"`
-		QueryVectorID   mousa.SHA256                 `json:"query_vector_id"`
-		DecisionID      mousa.PolicyDecisionID       `json:"decision_id"`
-		DecisionOutcome mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
-		DecisionReasons []mousa.PolicyDecisionReason `json:"decision_reasons"`
-		TrailID         mousa.SourceTrailID          `json:"trail_id"`
-		PacketID        string                       `json:"packet_id"`
-		Eligible        int                          `json:"eligible"`
-		Indexed         int                          `json:"indexed"`
-		Missing         int                          `json:"missing"`
-		Outcome         string                       `json:"outcome"`
-		PackingPolicy   string                       `json:"packing_policy"`
-		BudgetBytes     uint64                       `json:"budget_bytes"`
-		UsedBytes       uint64                       `json:"used_bytes"`
-		Evidence        []vectorEvidence             `json:"evidence"`
+		Schema               string                       `json:"schema"`
+		Mode                 string                       `json:"mode"`
+		Source               string                       `json:"source"`
+		SpaceID              mousa.SHA256                 `json:"space_id"`
+		QueryVectorID        mousa.SHA256                 `json:"query_vector_id"`
+		DecisionID           mousa.PolicyDecisionID       `json:"decision_id"`
+		DecisionOutcome      mousa.PolicyDecisionOutcome  `json:"decision_outcome"`
+		DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
+		TrailID              mousa.SourceTrailID          `json:"trail_id"`
+		PacketID             string                       `json:"packet_id"`
+		Eligible             int                          `json:"eligible"`
+		Indexed              int                          `json:"indexed"`
+		Missing              int                          `json:"missing"`
+		Outcome              string                       `json:"outcome"`
+		PackingPolicy        string                       `json:"packing_policy"`
+		BudgetBytes          uint64                       `json:"budget_bytes"`
+		UsedBytes            uint64                       `json:"used_bytes"`
+		Evidence             []vectorEvidence             `json:"evidence"`
+		SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
 	}{
 		Schema: "mousa.vector_result.v1", Mode: "vector", Source: label, SpaceID: id, QueryVectorID: selection.QueryVectorID,
 		DecisionID: traced.Decision.ID, DecisionOutcome: traced.Decision.Outcome, DecisionReasons: traced.Decision.ReasonCodes,
 		TrailID: traced.Trail.ID, PacketID: traced.Trail.PacketID, Eligible: selection.Eligible, Indexed: selection.Indexed, Missing: selection.Eligible - selection.Indexed,
 		PackingPolicy: packing, BudgetBytes: budget, UsedBytes: traced.Trail.UsedBytes, Evidence: []vectorEvidence{},
+	}
+	if traced.Trail.Supersession != nil {
+		result.SupersessionExcluded = new(int)
+		*result.SupersessionExcluded = len(traced.Trail.Supersession.Dispositions)
 	}
 	for i, row := range traced.Trail.Candidates {
 		if row.Selected {
@@ -151,6 +161,8 @@ func vectorQueryCommand(ctx context.Context, storePath, external string, args []
 		result.Outcome = "no_passages"
 	case selection.Indexed == 0:
 		result.Outcome = "no_indexed_passages"
+	case result.SupersessionExcluded != nil && *result.SupersessionExcluded == len(traced.Trail.Candidates):
+		result.Outcome = "supersession_excluded"
 	default:
 		result.Outcome = "budget_omitted"
 	}
