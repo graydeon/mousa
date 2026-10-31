@@ -1,6 +1,6 @@
 # Opt-in supersession enforcement
 
-For source-build versus release status and the proposed v9 composition boundary,
+For source-build versus release status and the proposed v10 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 **Status: implemented in the fresh store retrieval entry point, native directory and
@@ -38,8 +38,10 @@ content and ancestry verification with its positive size and original rank.
 Byte-only lexical enforcement still writes v4; omitted/false token enforcement writes v7.
 Byte-only vector/hybrid enforcement writes v9, retaining the existing producing
 ranking facts and this consultation contract. Its full source admission occurs
-before masking. Vector/hybrid token-plus-supersession and association combinations
-remain unsupported. See [v9 semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
+before masking, including when combined with token budgets as v10. Both modes
+reuse token packet v3's full producing-selection binding and complete survivor
+rendering, with null proposed counts for withheld candidates. Association
+combinations remain unsupported. See [retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
 and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
 preserves packet v3's full producing-selection binding, so equal returned text

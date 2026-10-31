@@ -110,7 +110,7 @@ Revision-pinned supersession declarations and activation administration are avai
 together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
 JSONL (`query --source ID --supersession TEXT`) query opt-ins, and the same opt-in on
 the local stdio MCP `mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
-`mousa.source_trail.v4` or combined token/supersession v8 record recorded. Default and opted-out queries remain
+`mousa.source_trail.v4`, v8, v9 or v10 record recorded. Default and opted-out queries remain
 uncurated; inspections preserve recorded selection and omit the member unless requested.
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Native-created v1–v3 history remains inspectable without a
@@ -124,12 +124,13 @@ Lexical queries can combine supersession and token budgets with either packer,
 for native directory/JSONL sources and configured MCP JSONL aliases.
 Withheld predecessors consume neither budget nor duplicate slots. The combined
 v8 trail binds recorded consultation and measured survivor rendering.
-Byte-packed vector/hybrid queries also accept explicit supersession through
-native directory/JSONL and configured MCP aliases, recording v9 history without
-reranking or relaxing source admission. See the
-[runnable vector/hybrid example](docs/USAGE.md#vector-and-hybrid-supersession).
-Vector/hybrid token-plus-supersession and association-plus-supersession remain
-unsupported. The [lexical token example](docs/USAGE.md#lexical-supersession-with-token-budgets)
+Vector/hybrid queries also accept explicit supersession through native
+directory/JSONL and configured MCP aliases: byte-only selection records v9;
+measured token composition records v10. Neither reranks nor relaxes full-source
+admission. The [runnable vector/hybrid example](docs/USAGE.md#vector-and-hybrid-supersession)
+supports an optional independently counted token run and a Python-independent
+byte-only run. Association-plus-supersession remains unsupported.
+The [lexical token example](docs/USAGE.md#lexical-supersession-with-token-budgets)
 keeps its separate v8 contract.
 Automatic embedding generation and secret filtering remain pending.
 Caller-declared reservations do not prove full model-window safety.

@@ -56,7 +56,7 @@ v7 retrieval details use verified safe vector/hybrid fields.
 
 For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
 and its runtime preparation/limits in the usage guide. Native token mode writes
-v7 and packet v3, or v8 for lexical supersession composition; preserve v1–v7 bytes.
+v7 and packet v3, v8 for lexical supersession or v10 for vector/hybrid supersession.
 Count the complete proposed versioned rendering through the bounded official offline process, after fresh
 authorization and within the same writer snapshot. Reap/verify the worker before
 canonical insertion. Skipped passages neither spend released budget nor seed
@@ -75,15 +75,17 @@ Keep rejected slots and original search ordinals out of release views. Accepted
 budget/duplicate omissions still have legitimate metadata. Internal canonical
 `TokenSelection` retains all producing facts; never mutate or rehash it to filter
 an inspection. Fresh inspection may append authorization evidence.
-For combined lexical token/supersession queries, consult through the same writer
+For combined token/supersession queries, consult through the same writer
 transaction after authorization. Pack only survivors; verify every withheld
-candidate's original canonical size/content and ancestry. v8 binds both token
-facts and recorded consultation using packet v3's full-selection wrapper; it is
-not a released-text-only identity. Historical reads rederive membership from the
-recorded event/declaration, not current activation. Vector/hybrid token-plus-
-supersession and association combinations remain unsupported. Byte-only
-vector/hybrid supersession uses v9 and packet v1's released-selection binding.
-Preserve v1–v8 bytes/identities. Explicit false lexical token requests use v7.
+candidate's original canonical size/content and ancestry. Lexical v8 and
+vector/hybrid v10 bind token facts and recorded consultation using packet v3's
+full-selection wrapper, not released text alone. Project token ranking through
+suppression-aware v4 or v9 respectively. Historical reads rederive membership
+from recorded events/declarations, not current activation. Vector/hybrid full-source
+admission still precedes masking; survivor accounting cannot relax it.
+Association combinations remain unsupported. Byte-only vector/hybrid uses v9
+and packet v1's released-selection binding. Preserve valid v1–v9 bytes/identities;
+omitted/false token supersession uses v7, including native vector/hybrid flags.
 
 
 ## Prove and deliver the change

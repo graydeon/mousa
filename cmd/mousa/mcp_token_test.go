@@ -269,83 +269,97 @@ func TestMCPTokenSkippedCandidatesAndAuthorization(t *testing.T) {
 
 func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 	startup := mcpTokenStartup(t)
-	for _, scenario := range []struct{ cancelled, supersession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
-		cancelled, supersession := scenario.cancelled, scenario.supersession
-		t.Run(fmt.Sprintf("cancelled=%v/supersession=%v", cancelled, supersession), func(t *testing.T) {
-			run, _ := setup(t)
-			jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
-			if supersession {
-				newMCPWithholdingTrailFixture(t, run, "alpha", "Drain predecessor", "Drain successor")
-			}
-			store, err := sqlite.Open(t.Context(), run.store)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer store.Close()
-			root := t.TempDir()
-			path, pidPath, ready := filepath.Join(root, "counter"), filepath.Join(root, "pid"), filepath.Join(root, "count")
-			tail := "sys.stdout.buffer.write(b'\\x00');sys.stdout.buffer.flush()"
-			if cancelled {
-				tail = "time.sleep(30)"
-			}
-			// Fault injection starts successfully and reads a real proposed rendering
-			// before failure/cancellation, rather than refusing at startup.
-			script := fmt.Sprintf("#!%s\nimport os,sys,struct,time\nopen(%q,'w').write(str(os.getpid()))\nsys.stdout.buffer.write(b'mousa.tokens.v1/tiktoken/0.12.0/o200k_base/ordinary\\n');sys.stdout.buffer.flush()\nn=struct.unpack('>I',sys.stdin.buffer.read(4))[0]\nsys.stdin.buffer.read(n)\nopen(%q,'w').write('counting')\n%s\n", startup[1], pidPath, ready, tail)
-			if err := os.WriteFile(path, []byte(script), 0700); err != nil {
-				t.Fatal(err)
-			}
-			source := declarationSource(t, "alpha")
-			app := mcpApplication{store: store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source}}, gate: make(chan struct{}, 1), tokenizerPython: path, tokenizerCache: startup[3]}
-			before := inspectionRows(t, run.store, nil)
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			done := make(chan error, 1)
-			go func() {
-				response, err := app.call(ctx, "mousa_query", []byte(fmt.Sprintf(`{"source":"alpha","query":"Drain","policy":"original","budget_bytes":4096,"context_tokens":256,"supersession":%v}`, supersession)))
-				if err == nil && !response.IsError {
-					err = fmt.Errorf("worker failure reported success")
+	for _, mode := range []string{"lexical", "vector", "hybrid"} {
+		for _, scenario := range []struct{ cancelled, supersession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+			cancelled, supersession := scenario.cancelled, scenario.supersession
+			t.Run(fmt.Sprintf("%s/cancelled=%v/supersession=%v", mode, cancelled, supersession), func(t *testing.T) {
+				run, _ := setup(t)
+				jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
+				if supersession {
+					newMCPWithholdingTrailFixture(t, run, "alpha", "Drain predecessor", "Drain successor")
 				}
-				done <- err
-			}()
-			if cancelled {
-				deadline := time.After(5 * time.Second)
-				for {
-					if _, err := os.Stat(ready); err == nil {
-						break
-					}
-					select {
-					case <-deadline:
-						t.Fatal("worker never received rendering")
-					case <-time.After(5 * time.Millisecond):
-					}
+				tool := "mousa_query"
+				args := mcpQuery("alpha", "Drain", 4096)
+				if mode != "lexical" {
+					space := prepareMCPVectors(t, run, map[string][]float64{"a": {1, 0}})
+					args = mcpRetrievalArgs(space, mode, "original", 4096)
+					tool = "mousa_" + mode + "_query"
 				}
-				cancel()
-			}
-			select {
-			case err := <-done:
+				args["context_tokens"], args["supersession"] = 256, supersession
+				input, err := json.Marshal(args)
 				if err != nil {
 					t.Fatal(err)
 				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("unbounded tokenizer error")
-			}
-			if _, err := os.Stat(ready); err != nil {
-				t.Fatal("failure did not reach count seam")
-			}
-			raw, err := os.ReadFile(pidPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pid, err := strconv.Atoi(string(raw))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
-				t.Fatalf("child not reaped: %v", err)
-			}
-			if !reflect.DeepEqual(before, inspectionRows(t, run.store, nil)) {
-				t.Fatal("failed token production committed records")
-			}
-		})
+				store, err := sqlite.Open(t.Context(), run.store)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer store.Close()
+				root := t.TempDir()
+				path, pidPath, ready := filepath.Join(root, "counter"), filepath.Join(root, "pid"), filepath.Join(root, "count")
+				tail := "sys.stdout.buffer.write(b'\\x00');sys.stdout.buffer.flush()"
+				if cancelled {
+					tail = "time.sleep(30)"
+				}
+				// Fault injection starts successfully and reads a real proposed rendering
+				// before failure/cancellation, rather than refusing at startup.
+				script := fmt.Sprintf("#!%s\nimport os,sys,struct,time\nopen(%q,'w').write(str(os.getpid()))\nsys.stdout.buffer.write(b'mousa.tokens.v1/tiktoken/0.12.0/o200k_base/ordinary\\n');sys.stdout.buffer.flush()\nn=struct.unpack('>I',sys.stdin.buffer.read(4))[0]\nsys.stdin.buffer.read(n)\nopen(%q,'w').write('counting')\n%s\n", startup[1], pidPath, ready, tail)
+				if err := os.WriteFile(path, []byte(script), 0700); err != nil {
+					t.Fatal(err)
+				}
+				source := declarationSource(t, "alpha")
+				app := mcpApplication{store: store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source}}, gate: make(chan struct{}, 1), tokenizerPython: path, tokenizerCache: startup[3]}
+				before := inspectionRows(t, run.store, nil)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				done := make(chan error, 1)
+				go func() {
+					response, err := app.call(ctx, tool, input)
+					if err == nil && !response.IsError {
+						err = fmt.Errorf("worker failure reported success")
+					}
+					done <- err
+				}()
+				if cancelled {
+					deadline := time.After(5 * time.Second)
+					for {
+						if _, err := os.Stat(ready); err == nil {
+							break
+						}
+						select {
+						case <-deadline:
+							t.Fatal("worker never received rendering")
+						case <-time.After(5 * time.Millisecond):
+						}
+					}
+					cancel()
+				}
+				select {
+				case err := <-done:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("unbounded tokenizer error")
+				}
+				if _, err := os.Stat(ready); err != nil {
+					t.Fatal("failure did not reach count seam")
+				}
+				raw, err := os.ReadFile(pidPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pid, err := strconv.Atoi(string(raw))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+					t.Fatalf("child not reaped: %v", err)
+				}
+				if !reflect.DeepEqual(before, inspectionRows(t, run.store, nil)) {
+					t.Fatal("failed token production committed records")
+				}
+			})
+		}
 	}
 }

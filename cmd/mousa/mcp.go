@@ -359,7 +359,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var traced sqlite.TracedVectorResult
 			if args.TokenBudget != nil {
-				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter}
+				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession}
 				if operation == "mousa_vector_query" {
 					traced, err = a.store.EvaluateAndTraceTokenVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				} else {

@@ -370,7 +370,7 @@ func (trail SourceTrail) Validate() error {
 	if trail.Schema == SourceTrailSchemaV9 {
 		return trail.validateRetrievalSupersessionTrail()
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
 		return trail.validateTokenTrail()
 	}
 	if trail.Token != nil {
@@ -510,7 +510,7 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 	if trail.Schema == SourceTrailSchemaV9 {
 		return vectorTrailIdentity(trail)
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
 		return vectorTrailIdentity(trail)
 	}
 	if trail.Schema == SourceTrailSchemaV6 {
@@ -672,7 +672,7 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		switch header.Schema {
 		case SourceTrailSchemaV9:
 			return decodeRetrievalSupersessionTrail(data)
-		case SourceTrailSchemaV7, SourceTrailSchemaV8:
+		case SourceTrailSchemaV7, SourceTrailSchemaV8, SourceTrailSchemaV10:
 			return decodeTokenSourceTrail(data)
 		case SourceTrailSchemaV6:
 			return decodeHybridSourceTrail(data)

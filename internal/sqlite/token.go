@@ -121,10 +121,7 @@ func (store *Store) EvaluateAndTraceTokenVector(ctx context.Context, request mou
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	if options.Supersession {
-		return TracedVectorResult{}, errors.New("supersession requires lexical token retrieval")
-	}
-	return store.traceVector(ctx, request, space, values, budget, packing, &options, false)
+	return store.traceVector(ctx, request, space, values, budget, packing, &options, options.Supersession)
 }
 
 // EvaluateAndTraceTokenHybrid keeps token packing inside the existing fused snapshot.
@@ -132,10 +129,7 @@ func (store *Store) EvaluateAndTraceTokenHybrid(ctx context.Context, request mou
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	if options.Supersession {
-		return TracedVectorResult{}, errors.New("supersession requires lexical token retrieval")
-	}
-	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options, false)
+	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options, options.Supersession)
 }
 
 func verifyTokenTrail(ctx context.Context, q queryer, t mousa.SourceTrail, source mousa.SourceID) error {

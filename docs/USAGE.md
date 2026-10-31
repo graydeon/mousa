@@ -1,6 +1,6 @@
 # Using Mousa
 
-For source-build versus release status and the proposed v9 composition boundary,
+For source-build versus release status and the proposed v10 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
@@ -133,7 +133,7 @@ facts with accepted candidates, including unselected budget/duplicate omissions.
 Lexical ranks count only accepted order, not original search positions. A null
 proposed count means that accepted passage was not counted (for example, a
 duplicate); a lifecycle-rejected candidate has no slot at all. Query and history
-use this filtered view, not the full canonical v7/v8 producing record.
+use this filtered view, not the full canonical v7/v8/v10 producing record.
 
 For externally supplied vectors, use the same exported passages, immutable
 space and query-vector JSON from the [vector workflow](#caller-supplied-vector-workflow):
@@ -215,9 +215,9 @@ deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
 Token-specific options without `--context-tokens` reject. Token mode rejects
-explicit association flags, even empty, and supersession flags in vector/hybrid
-mode, even false. Lexical token mode accepts supersession: true writes v8;
-omission and explicit false keep the same v7 producing contract.
+explicit association flags, even empty. Supersession true writes lexical v8
+or vector/hybrid v10; omission and explicit false keep v7. Explicit false
+vector/hybrid token flags, previously rejected, are now accepted as omission.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
@@ -260,9 +260,9 @@ adds `"supersession": true` to its existing token arguments. Query results add
 `budget_omitted`. Withheld candidates remain accepted metadata with positive
 size/rank and null proposed count, not rejected slots or replacement passages.
 
-Only lexical composition is supported. Vector/hybrid token queries and
-association queries still reject supersession. Normal/recount native history
-uses the recorded selection, not today's activation. MCP history independently
+Vector/hybrid composition is also supported as v10; association queries still
+reject supersession. Normal/recount native history uses the recorded selection,
+not today's activation. MCP history independently
 accepts `supersession: true` and `token_details: true`, returning producing
 observations without recounting. Retired selected text cannot be reconstructed;
 application/model framing is unknown and remains outside these counts.
@@ -414,7 +414,7 @@ vectors without rewriting them; re-export and import vectors for the new passage
 pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
 triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
 with vector queries. Explicit query-term policy and associations reject.
-Byte-only supersession is an opt-in described below. MCP has a separate
+Supersession with byte or token budgets is an opt-in described below. MCP has a separate
 `mousa_vector_query` tool and recorded retrieval-details inspection; resource search stays lexical.
 
 ### Hybrid lexical and vector query
@@ -432,7 +432,7 @@ After importing embeddings, combine text and a supplied vector explicitly:
 does not attest which text generated that vector. Unknown/mismatched spaces and
 invalid input reject; zero current vectors is reported as hybrid coverage, not a fallback.
 Associations and vector-only flags cannot be combined with hybrid mode;
-byte-only supersession is supported. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
+supersession with byte or token budgets is supported. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
 defines candidate bounds, rank domains, errors and historical verification limits.
 
 This runnable example creates lexical-only `c`, vector-only `b` and overlapping
@@ -530,8 +530,24 @@ Inspect natively with `trail`, or request MCP `mousa_trail` with independent
 `supersession: true` and `retrieval_details: true` to see both verified recorded
 members. Later activation, deactivation and revision changes do not rerank history.
 Fresh authorization can deny it and can append audit evidence. Retired text is
-not reconstructed. True vector/hybrid supersession with token budgets rejects;
-it never silently switches to byte packing.
+not reconstructed. Add `--context-tokens N --tokenizer-python "$TOKEN_PY"
+--tokenizer-cache "$TOKEN_CACHE"` before positional arguments to combine either
+mode with measured tokens and retain the independent byte budget. True records
+v10; omitted/false records v7. Full vector-source admission remains before masking.
+
+The same runnable example has an optional token mode:
+
+```sh
+python3 examples/vector_supersession.py --mousa ./mousa \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
+```
+
+It independently counts the exact returned rendering with official
+`encode_ordinary`, checks exact-fit and one-token-short contexts, and verifies
+v10 history. Without these options, the byte-only run needs no tokenizer.
+Configured MCP uses `context_tokens` and the existing reservations alongside
+`supersession: true`; history's `token_details` remains independent of the
+consultation and retrieval-details opt-ins. No MCP recount or byte fallback occurs.
 No automatic embeddings, retrieval-quality, semantic-truth or model-window claim
 follows. MCP also exposes explicit vector/hybrid tools; resource search stays lexical.
 
@@ -1002,8 +1018,8 @@ Window/reservation fields require it even when zero. Caps are positive integers
 up to 524288; declarations are integers 0..1000000000. Nonzero reservations
 require a positive window and cannot exceed it together. Null, booleans,
 fractional/overflow numbers, duplicate and unknown fields reject before mutation.
-Lexical token mode accepts supersession. Vector/hybrid token mode rejects true
-supersession; byte mode supports it. Associations remain unsupported.
+All three token modes accept supersession: true records lexical v8 or
+vector/hybrid v10; byte-only vector/hybrid remains v9. Associations are unsupported.
 Tool inputs cannot set interpreter, cache, store or caller paths/identity.
 
 Without a configured usable backend, token mode returns `tokenizer_unavailable`;

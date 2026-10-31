@@ -142,7 +142,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV7 || trail.Schema == mousa.SourceTrailSchemaV8 {
+		if trail.Schema == mousa.SourceTrailSchemaV7 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV10 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Token, view.Vector, view.Hybrid = mousa.ReleasedTokenSelection(trail), trail.Vector, trail.Hybrid

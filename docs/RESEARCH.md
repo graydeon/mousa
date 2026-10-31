@@ -1,6 +1,6 @@
 # Mousa research record
 
-For source-build versus release status and the proposed v9 composition boundary,
+For source-build versus release status and the proposed v10 composition boundary,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 Raw benchmark reports and optional comparison dependencies are maintained in
@@ -42,14 +42,14 @@ retriever alone. General temporal-memory benchmarks await explicit semantics; se
 ## Evaluation priorities and promotion gates
 
 These are development decisions and proposed checks, not new benchmark results.
-PR90 and its independent client evidence are accepted as of 2026-10-30;
-[issue91](https://github.com/graydeon/mousa/issues/91) is closed after the
-survivor aggregate-admission correction. The next proposal composes explicit
-supersession with byte-packed vector/hybrid retrieval and v9 history, without
-changing producing ranks, coverage or full-source admission. Its product
-regressions and runnable synthetic example are distinct from independent
-public-client observations and final-head acceptance. Preserve older captures,
-conditions and negative results. Startup-study timeout/export holds remain separate.
+PR92 and its paired byte-only vector/hybrid supersession evidence are accepted
+as of 2026-10-31. The earlier lexical composition and survivor aggregate-admission
+correction remain accepted. This proposal combines measured whole-context token
+budgets with vector/hybrid supersession and v10 history without changing producing
+ranks, coverage or full-source admission. Product regressions and the runnable
+synthetic example are distinct from independent public-client observations and
+final-head acceptance. Preserve older captures, conditions and negative results.
+Startup-study timeout/export holds remain separate.
 
 Use existing passage pins, coverage counts, branch contributions, omission reasons
 and exact returned context before adding another store, graph, reranker or cache.
@@ -112,6 +112,14 @@ checks, not retrieval-quality, latency or full-window measurements.
 The [runnable example](USAGE.md#lexical-supersession-with-token-budgets) compares
 the returned context with an independent official ordinary-text count.
 Retired text is unarchived; unknown application/model framing remains outside the cap.
+
+Vector/hybrid token composition uses v10 on this proposal branch. Its whole-source
+admission precedes suppression, unlike lexical survivor aggregate accounting.
+Recorded cosine/hybrid branches and RRF(k60) remain unchanged; only survivor
+packing changes. Independent official counts cover the exact returned versioned
+rendering, not summed passage estimates or unknown application framing.
+Public-client captures cannot establish internal graph, corruption or concurrency
+seams; those remain product-local checks, not semantic or performance evidence.
 
 Caller-declared prompt/output reservations provide bounded arithmetic, not
 authenticated model-window safety. No model was called and no answer quality,
@@ -176,7 +184,7 @@ replacement during external computation requires a fresh export and embeddings.
 These observations do not attest an external producer or model integration.
 
 MCP lexical/vector/hybrid queries also accept explicit whole-rendering token
-budgets through the native v7 transactions. Product stdio checks independently
+budgets through the native v7/v8/v10 transactions. Product stdio checks independently
 count returned context with official `encode_ordinary` under both packers,
 exercise exact fit/one-token-short and byte pressure, reservation arithmetic,
 strict inputs, denial and recorded history after restart/replacement. A deterministic
