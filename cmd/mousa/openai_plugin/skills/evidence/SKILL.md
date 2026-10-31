@@ -13,6 +13,16 @@ Report selected evidence with its source/item, segment ID, content digest and by
 
 Use mousa_trail with the same source and returned trail_id to inspect current-authorized historical selection metadata. A historical trail is not a new release of text; current policy/lifecycle can deny access. Preserve packet and trail IDs in the explanation when the user asks for provenance.
 
+When the discovered mousa_query schema declares associations and the caller
+supplies a relationship, pass the complete association_declarations.v1 document
+inline. Use lexical byte packing only, with supersession omitted or false.
+Keep author and basis as caller assertions; do not infer or authenticate them.
+Associated evidence follows selected primary evidence, keeps its own provenance
+and has no lexical rank/BM25 score. Report omissions without claiming completeness.
+Inspect the producing v3 trail under current authorization. A declaration grants
+no access and does not establish semantic sufficiency. Tokens and vector/hybrid
+association combinations reject; mention/resource behavior is unchanged.
+
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.

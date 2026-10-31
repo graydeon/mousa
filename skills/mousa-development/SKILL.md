@@ -21,6 +21,17 @@ Reuse the supplied SQLite transaction for candidate, administrative and provenan
 
 Historical trail reads verify recorded immutable evidence and current authorization without reinterpreting selection under today's activation projection. Preserve canonical candidate sizes and ranks when withholding; suppressed candidates consume no packing budget and cannot become retained duplicates. Keep unavailable historical text verification limits explicit.
 
+For declared context, lexical byte-only MCP `mousa_query` accepts the complete
+inline association_declarations.v1 document through DecodeAssociationDeclarations
+on the original nested bytes. Keep this input query-only; reject tokens,
+supersession true and vector/hybrid combinations before producing state.
+Reuse native associated selection and v3 history; omission/unfired declarations
+retain existing version and identity rules. Inspect current output schemas
+before adding fields: association provenance and omissions are already declared.
+Caller author/basis strings are untrusted assertions, not authenticated identities.
+The runnable examples/mcp_associations.py checks selection/provenance, not
+semantic sufficiency. Fresh history authorization may append audit evidence.
+
 For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
 Native `vector inputs`, `vector import` and `query --vector-space` form one supported
 workflow; embedding inference stays external and never holds a canonical transaction.

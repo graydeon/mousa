@@ -100,6 +100,14 @@ canonical v7/v8 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
+For caller-declared supporting notes, use inline `associations` on lexical
+`mousa_query`; the [stdio example](docs/USAGE.md#mcp-declared-supporting-context)
+shows ordinary evidence, an appended qualification and freshly authorized v3 history.
+This source change is pending PR review, not a released capability. After merge,
+build from the containing source revision and refresh cached tool schemas.
+Declarations assert relationships and attribution, not semantic sufficiency or access.
+Token, vector/hybrid and supersession combinations remain unsupported.
+
 ## What works today?
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
