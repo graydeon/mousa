@@ -66,6 +66,12 @@ This lets the demonstrated closure fact be supported from the initial packet
 without the caller already knowing which note to seek. The judgment remains a
 caller judgment, not an engine claim.
 
+For the same primary-instruction/separate-qualification pattern over configured
+MCP, run the [synthetic stdio example](../../docs/USAGE.md#mcp-declared-supporting-context).
+It supplies declarations inline rather than reading a client file. The MCP
+source change is pending review, not a release; the existing native example
+and its historical evidence retain their original meaning.
+
 ## One explicit follow-up
 
 When a fact remains unresolved, the caller may put this object in the assessment:

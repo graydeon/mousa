@@ -30,7 +30,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
-| Declared associated context | Yes | Opt-in `query --associations <file>` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and its bounded development cases; no general retrieval-quality claim |
+| Declared associated context | Yes | Native `query --associations <file>`; inline `associations` on lexical byte-only MCP `mousa_query` | Same-source authorization, selected-primary trigger, bounded fan-out/target passages, omission reasons and v3 trail readback | [Caller-reviewed backup example](../examples/backup/README.md) and [synthetic stdio example](USAGE.md#mcp-declared-supporting-context); no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
@@ -735,7 +735,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
-| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`) | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; an opted-in response adds the withheld-candidate count `supersession_excluded` |
+| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`); inline `associations` document for byte-only queries without supersession | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds `supersession_excluded`, associations append independently attributed evidence and any omissions |
 | `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10 token view that exists |
 | `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields below | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing and producing IDs; opted-in withheld count |
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession and token options | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
@@ -1627,6 +1627,27 @@ source), a non-empty `basis`, and a non-empty `author`. Duplicate
 `(from_item, to_item)` pairs and self-references are rejected. Mousa never
 infers relationships and never treats a declaration as discovery; the author
 and basis remain attached to every passage the declaration releases.
+
+MCP `mousa_query` accepts the complete document as optional inline `associations`,
+decoded from its original nested JSON bytes by the same native codec. This
+source change is pending PR review, not a release; after merge, a source build
+containing it supports the input. Refresh cached closed tool schemas.
+Omission preserves exact default response properties. Supplied null, wrong
+shape/schema, empty lists, unknown/repeated keys at any depth, invalid or repeated
+declarations and more than 32 declarations return `invalid_arguments` before
+producing query/trail/packet state. Item names are bounded to 1024 UTF-8 bytes,
+basis to 512 and author to 128; schema character bounds do not replace byte checks.
+The existing transport frame bound still applies. No path, URL or additional
+source selector is accepted. Both term policies and byte packers work; omitted
+or false `supersession` works. True supersession, any token budget/reservation
+and vector/hybrid association requests reject during argument validation.
+The other seven tools and the `mousa.mcp_result.v1` envelope are unchanged.
+Source text and declaration strings are untrusted data; `author` is not an
+authenticated identity. No ingestion permission is needed for retrieval.
+`mousa_trail` already exposes verified v3 metadata under fresh source
+authorization, including its ordinary authorization audit write. An unfired
+declaration preserves native unassociated version/identity rules, not fresh
+request/decision/trail IDs across separate calls.
 
 A declaration is honored only when the declaring item contributed selected
 primary evidence to that packet, so an unrelated query releases nothing.

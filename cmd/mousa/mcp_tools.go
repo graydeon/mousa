@@ -36,6 +36,7 @@ type mcpArguments struct {
 	TokenBudget      *mousa.TokenBudget
 	TokenDetails     bool
 	VectorImport     mousa.VectorImport
+	Associations     []mousa.AssociationDeclaration
 }
 
 type mcpToolError struct {
@@ -122,7 +123,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		allowed = append(allowed, "import")
 		required = append(required, "import")
 	case "mousa_query":
-		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession")
+		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession", "associations")
 		required = append(required, "query", "policy", "budget_bytes")
 	case "mousa_vector_query", "mousa_hybrid_query":
 		allowed = append(allowed, "space_id", "values", "budget_bytes", "packing_policy", "supersession")
@@ -165,6 +166,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
+		case "associations":
+			declarations, err := mousa.DecodeAssociationDeclarations(value)
+			if err != nil {
+				return args, err
+			}
+			args.Associations = declarations
 		case "import":
 			input, err := mousa.DecodeVectorImport(value)
 			if err != nil {
@@ -277,6 +284,9 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, fmt.Errorf("missing argument %s", key)
 		}
 	}
+	if args.Associations != nil && (args.Supersession || args.TokenBudget != nil) {
+		return args, errors.New("associations require lexical byte packing without supersession")
+	}
 	if args.TokenBudget != nil {
 		if !seen["context_tokens"] {
 			return args, errors.New("token window and reservations require context_tokens")
@@ -345,6 +355,26 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"policy": stringEnum("original", "dedup"), "packing_policy": stringEnum("original", "exact-v1"),
 				"budget_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": mcpMaxBudgetBytes},
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
+				"associations": map[string]any{
+					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
+					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte packing only, without supersession. Not a discovered relation, access grant or authenticated authorship. String limits are also enforced in UTF-8 bytes.",
+					"properties": map[string]any{
+						"schema": map[string]any{"const": mousa.AssociationDeclarationSchema},
+						"associations": map[string]any{
+							"type": "array", "minItems": 1, "maxItems": mousa.MaxAssociationDeclarations,
+							"items": map[string]any{
+								"type": "object", "additionalProperties": false,
+								"required": []string{"from_item", "to_item", "basis", "author"},
+								"properties": map[string]any{
+									"from_item": map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationItemBytes},
+									"to_item":   map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationItemBytes},
+									"basis":     map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationBasisBytes},
+									"author":    map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationAuthorBytes},
+								},
+							},
+						},
+					},
+				},
 			},
 		}},
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{

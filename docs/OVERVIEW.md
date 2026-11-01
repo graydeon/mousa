@@ -233,7 +233,7 @@ Implemented and planned capabilities, marked per item:
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical/vector/hybrid enforcement with byte or token budgets and v4/v8/v9/v10 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
-- source-scoped declared associations with attributed, bounded context (opt-in CLI query; not inferred relationships or access grants);
+- source-scoped declared associations with attributed, bounded context (native CLI and inline lexical byte-only MCP query; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 
