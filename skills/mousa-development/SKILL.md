@@ -9,7 +9,7 @@ Read the current task, repository documentation and operator-supplied workflow b
 
 ## Find the affected contract
 
-Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory and JSONL queries support an explicit opt-in, as do the MCP query and trail tools. Defaults remain uncurated; MCP administration and association-plus-supersession combinations remain unsupported. Inspect current code and documentation before changing a client or store path.
+Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in, including byte-only lexical associations as v12. Defaults remain uncurated; MCP administration, token triples and vector/hybrid associations remain unsupported.
 
 Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection, supersession selection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
 
@@ -24,10 +24,10 @@ Historical trail reads verify recorded immutable evidence and current authorizat
 For declared context, native directory/JSONL and lexical MCP queries accept byte
 or measured token budgets. MCP decodes the complete inline
 association_declarations.v1 document from its original nested bytes. Reject
-supersession true and vector/hybrid associations before producing state.
+token-plus-association-plus-supersession and vector/hybrid associations before producing state.
 Resolve only primary passages surviving both budgets in the same writer snapshot;
 append associated text using the one query counter, then confirm and Finish once.
-Byte-only stages retain v3 and its 256-target-passage consideration bound. Token
+Byte-only stages retain v3, or v12 with supersession, and the 256-target-passage consideration bound. Token
 composition uses v11 and packet v3, with at most100 total primary/associated rows
 and256KiB accepted text before duplicate/budget omissions. Unfired declarations
 retain ordinary history. Keep associated IDs/counts separately aligned from
@@ -108,9 +108,14 @@ full-selection wrapper, not released text alone. Project token ranking through
 suppression-aware v4 or v9 respectively. Historical reads rederive membership
 from recorded events/declarations, not current activation. Vector/hybrid full-source
 admission still precedes masking; survivor accounting cannot relax it.
-Association-plus-supersession remains unsupported. Byte-only vector/hybrid uses v9
-and packet v1's released-selection binding. Preserve valid v1–v10 bytes/identities;
-omitted/false token supersession uses v7 unless declared lexical context records v11.
+Byte-only lexical association/supersession uses v12 only for recorded supporting
+stages; non-firing calls retain v4. Reuse one consultation and suppress exact
+target predecessors before retained-byte/dedup accounting, verifying withheld
+content and ancestry too. Recorded history must rederive both stages from immutable
+pins, not today's projection. Token triples remain unsupported. Byte-only
+vector/hybrid uses v9 and packet v1's released-selection binding.
+Preserve valid v1–v11 bytes/identities; omitted/false token supersession uses v7
+unless declared lexical context records v11.
 
 
 ## Prove and deliver the change

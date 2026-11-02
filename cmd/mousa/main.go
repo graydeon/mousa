@@ -137,7 +137,7 @@ query options (before positional arguments):
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
                             supports --policy; no vector-space/associations flags
   --supersession            withhold the exact active predecessor revision (directory or --source);
-                            cannot be combined with --associations
+                            supports byte-only lexical --associations; token triples reject
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
@@ -326,16 +326,14 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		}
 		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
 	}
-	if *supersession {
-		associationSupplied := false
-		flags.Visit(func(option *flag.Flag) {
-			if option.Name == "associations" {
-				associationSupplied = true
-			}
-		})
-		if associationSupplied {
-			return usageError{"supersession cannot be combined with associations"}
+	emptyAssociations := false
+	flags.Visit(func(option *flag.Flag) {
+		if option.Name == "associations" && *associations == "" {
+			emptyAssociations = true
 		}
+	})
+	if emptyAssociations {
+		return usageError{"associations requires a declaration file"}
 	}
 	var declarations []mousa.AssociationDeclaration
 	if *associations != "" {

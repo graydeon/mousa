@@ -174,13 +174,13 @@ func (trail SourceTrail) validatePacking() error {
 		// association stage continues in validateAssociated, which also rechecks packet identity.
 		return trail.validatePackedCandidates()
 	}
-	if trail.Schema == SourceTrailSchemaV4 {
+	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV12 {
 		// v4 requires a packing policy, carries no association stage, and checks its recorded
 		// selection over the candidates that survive the recorded suppression.
 		if trail.PackingPolicy != PackingOriginal && trail.PackingPolicy != PackingExactV1 {
 			return invalid("v4 requires a packing policy of original or exact-v1")
 		}
-		if len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 {
+		if trail.Schema == SourceTrailSchemaV4 && (len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0) {
 			return invalid("v4 records no associated passages or association omissions")
 		}
 		return trail.validatePackedCandidates()
@@ -218,7 +218,7 @@ func (trail SourceTrail) validatePackedCandidates() error {
 		return invalid("deny cannot carry candidates")
 	}
 	var suppressed []bool
-	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV9 {
+	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV9 || trail.Schema == SourceTrailSchemaV12 {
 		mask, err := suppressSupersededCandidates(trail.Candidates, trail.Supersession)
 		if err != nil {
 			return err

@@ -21,7 +21,10 @@ Associated evidence follows selected primary evidence, keeps its own provenance
 and has no lexical rank/BM25 score. Report omissions without claiming completeness.
 Inspect producing v3 byte or v11 token history under current authorization.
 A declaration grants no access and does not establish semantic sufficiency.
-Vector/hybrid associations and association-plus-supersession reject; mention/resource behavior is unchanged.
+Byte-only lexical associations can combine explicit supersession and record v12.
+Only selected surviving primary evidence triggers support; suppressed targets are
+omitted before packing. Token triples and vector/hybrid associations reject.
+Mention/resource behavior is unchanged.
 
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
 

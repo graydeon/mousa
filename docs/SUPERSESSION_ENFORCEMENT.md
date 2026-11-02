@@ -8,7 +8,8 @@ JSONL query opt-ins and the local stdio MCP tools.** Use
 `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT`
 with flags before positional arguments, or MCP `mousa_query` with `supersession: true`.
 Defaults, legacy trail versions and every opted-out MCP response are unchanged.
-Association-plus-supersession combinations are rejected.
+Byte-only lexical queries can combine declared supporting context with supersession.
+Token triples and vector/hybrid associations remain unsupported.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md). The
@@ -21,7 +22,7 @@ source-scoped verified candidates, consults verified administration and builds
 `mousa.source_trail.v4` inside the existing writer transaction. It reuses
 `readSupersessionConsultation`, `BuildSupersessionSelection` and
 `NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
-Every byte-only opted-in lexical query records v4, even when denied or nothing is suppressed.
+Byte-only opted-in lexical queries record v4 unless a composed association stage records v12.
 Canonical readback must agree before commit.
 
 Lexical token-budget composition is also implemented: add `--context-tokens N`
@@ -40,8 +41,9 @@ Byte-only vector/hybrid enforcement writes v9, retaining the existing producing
 ranking facts and this consultation contract. Its full source admission occurs
 before masking, including when combined with token budgets as v10. Both modes
 reuse token packet v3's full producing-selection binding and complete survivor
-rendering, with null proposed counts for withheld candidates. Association
-combinations remain unsupported. See [retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
+rendering, with null proposed counts for withheld candidates. Token-plus-association-
+plus-supersession and vector/hybrid associations remain unsupported. See
+[retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
 and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
 preserves packet v3's full producing-selection binding, so equal returned text
@@ -67,6 +69,55 @@ Directory resolution retains the `mousa-local` namespace and absolute path; `--s
 retains the distinct `mousa-jsonl` namespace. Both call the same enforced transaction.
 Resyncing a changed predecessor creates an unpinned revision; historical v4 inspection
 continues to verify the original pins.
+
+## Byte-only lexical supporting context
+
+Native directory/JSONL queries accept `--supersession --associations FILE`.
+Configured MCP `mousa_query` accepts `supersession: true` with its strict inline
+association document. No new tool, configuration, dependency or migration is needed.
+The [complete runnable example](USAGE.md#supersession-safe-supporting-context)
+prepares exact declaration/activation pins and inspects both client surfaces.
+
+Authorization, current candidates, consultation, expansion, packing and insertion
+share the existing writer transaction. Primary evidence is suppressed and packed
+first. Only selected primary items can fire caller declarations. Target resolution
+retains caller order, same-source ownership, current pins, four-target fan-out,
+256 considered passages and existing unknown/inactive/truncated omissions.
+Supporting passages never recursively trigger another declaration.
+
+Each considered target is content/ancestry verified, then compared to the same
+recorded declaration's exact predecessor representation. A withheld row records
+`omission: "superseded"`, positive canonical size and its own segment/digest and
+attribution, but no selection or duplicate link. It spends no retained bytes and
+does not seed exact-v1 duplicate retention. Unsuppressed support is appended after
+primary evidence; successor availability never enables fallback or reinstatement.
+
+For example, selected `keep` fires `keep -> old` and `keep -> twin`. A declaration
+pins `old -> new`. Associated `old` is withheld; byte-equal unpinned `twin` can still
+be retained. If `old` also matched the lexical query, its primary row is withheld
+and cannot fire an `old -> other` association.
+
+Only a recorded composed stage uses closed `mousa.source_trail.v12`. Its fields
+reuse v4 consultation/primary dispositions and v3 association rows/omissions.
+The trail identity hashes the complete canonical record with its ID zeroed,
+including its v12 schema. Byte packet v2 binds selected primary then associated
+rows through the established association packet construction. Empty/non-firing,
+denied and no-match stages keep v4. Valid v1–v11 codecs/identities are unchanged;
+old schemas do not accept this combination.
+
+Canonical reads/startup rederive both suppression stages from the recorded
+activation chain/declaration and immutable segment ancestry through the supplied
+transaction queryer, not today's activation or item pointers. They verify sizes,
+target ordering, selected-primary origin and retained exact bytes, including
+withheld content. Retired indexed text is unavailable and is not reconstructed.
+Missing named canonical parents are integrity errors; an unknown trail is not_found.
+
+Native history exposes text-free associated suppression rows after fresh
+authorization. MCP's existing independent `supersession` inspection opt-in gates
+the recorded consultation; associated history retains its established fields.
+Query `supersession_excluded` counts primary suppression; associated withholding
+appears as `superseded` in `association_omissions`. Denial releases neither history
+nor aligned rejected metadata. Omitted/false behavior and property sets remain unchanged.
 
 ## What exists today
 

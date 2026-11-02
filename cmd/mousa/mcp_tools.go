@@ -284,8 +284,8 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, fmt.Errorf("missing argument %s", key)
 		}
 	}
-	if args.Associations != nil && args.Supersession {
-		return args, errors.New("associations require lexical packing without supersession")
+	if args.Associations != nil && args.Supersession && args.TokenBudget != nil {
+		return args, errors.New("token associations require lexical packing without supersession")
 	}
 	if args.TokenBudget != nil {
 		if !seen["context_tokens"] {
@@ -357,7 +357,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
 				"associations": map[string]any{
 					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
-					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte or measured token packing, without supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
+					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte or measured token packing. Byte-only queries may opt into supersession; token triples reject. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
 					"properties": map[string]any{
 						"schema": map[string]any{"const": mousa.AssociationDeclarationSchema},
 						"associations": map[string]any{
@@ -380,7 +380,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "trail_id"}, "properties": map[string]any{
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
-				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact withholding rows. Present only for v4, lexical token/supersession v8, byte vector/hybrid v9 or token vector/hybrid v10 history. Reports producing evidence, not today's activation projection; omitted or false hides it."},
+				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact primary withholding rows. Available for recorded supersession history, including byte-only lexical supporting context v12. Reports producing evidence, not today's activation projection; omitted or false hides it."},
 				"retrieval_details": map[string]any{"type": "boolean", "description": "Return verified producing vector/hybrid identities, coverage and ranking facts when recorded. No search is rerun; historical completeness is not inferred from today's index. Omitted or false keeps the default inspection."},
 				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7, v8, v10 or declared-context v11. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
 			},

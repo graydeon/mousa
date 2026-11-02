@@ -250,7 +250,6 @@ func TestSupersessionQueryInvalidOptionsDoNotCreateStore(t *testing.T) {
 		{"--supersession", root, "!!!"},
 		{"--source", "x", "--supersession", root, "text"},
 		{"--source", "x", "--supersession", "--associations=", "text"},
-		{"--source", "x", "--supersession", "--associations", "missing.json", "text"},
 		{"--source", "x", "--supersession", "--unknown", "text"},
 	}
 	for index, args := range cases {

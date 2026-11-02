@@ -11,9 +11,11 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source through PR98 includes measured token budgets with declared lexical
-supporting context and closed v11 producing history, alongside native/MCP
-lexical/vector/hybrid supersession and byte-only lexical associations.
+Accepted source through PR100 includes native attributed classification administration,
+measured token budgets with declared lexical supporting context and closed v11
+history, alongside native/MCP lexical/vector/hybrid supersession.
+Source builds containing byte-only lexical association/supersession composition
+also record v12 supporting-stage history; this is not a tagged-release claim.
 
 Source builds containing native `classification put|get` also record immutable
 attributed assertions against existing evidence. The commands reuse canonical
@@ -66,14 +68,15 @@ and no successor passage is manufactured. Both packing policies apply to survivo
 
 Vector and hybrid queries also accept explicit supersession, natively and through
 configured MCP aliases. Byte selection records v9; measured token composition
-records v10 on this proposal branch. Both retain producing ranks and consultation,
+records v10. Both retain producing ranks and consultation,
 with unchanged full-source admission before withholding. See the
 [runnable example](USAGE.md#vector-and-hybrid-supersession).
 
 Defaults are unchanged: recording an activation alone does not filter a default
-query, reinterpret a recorded member or move item pointers. MCP administration and
-association-plus-supersession queries are unsupported. Actor, time and reason labels
-do not authenticate authorship or establish factual truth.
+query, reinterpret a recorded member or move item pointers. Byte-only lexical
+queries can combine declared supporting context with supersession in v12.
+Token triples, vector/hybrid associations and MCP administration remain unsupported.
+Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 A query prepares and size-checks its expression before opening the store only when it
 opts in. Default and `--supersession=false` queries, including directory queries, keep
