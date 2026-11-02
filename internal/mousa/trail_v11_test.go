@@ -3,6 +3,7 @@ package mousa
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -142,5 +143,81 @@ func TestV11FixedTrailAndPacket(t *testing.T) {
 		if _, err := DecodeSourceTrail(damaged); err == nil || !strings.Contains(err.Error(), "token association members require v11") {
 			t.Fatalf("legacy closed token boundary changed: %v", err)
 		}
+	}
+}
+
+func TestV11AggregateByteAdmission(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("testdata/trail-v11.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, packing := range []string{PackingOriginal, PackingExactV1} {
+		t.Run(string(packing), func(t *testing.T) {
+			for _, name := range []string{"unchanged", "below-cap", "at-cap", "above-cap", "max-uint64", "near-max-uint64", "multi-term-wrap", "primary-wrap"} {
+				t.Run(name, func(t *testing.T) {
+					var trail SourceTrail
+					if err := json.Unmarshal(data, &trail); err != nil {
+						t.Fatal(err)
+					}
+					trail.PackingPolicy = packing
+					otherBytes := uint64(11)
+					if packing == PackingOriginal {
+						// The fixed exact-v1 duplicate is not a duplicate under original.
+						trail.Associated = append(trail.Associated[:1], trail.Associated[2:]...)
+						s := trail.Token.Associations
+						s.AssociatedIDs = append(s.AssociatedIDs[:1], s.AssociatedIDs[2:]...)
+						s.ProposedTokens = append(s.ProposedTokens[:1], s.ProposedTokens[2:]...)
+						otherBytes = 8
+					}
+					last := len(trail.Associated) - 1
+					valid := name == "unchanged" || name == "below-cap" || name == "at-cap"
+					if name != "unchanged" {
+						trail.Associated[last].Omission = "bytes"
+						trail.Token.Associations.ProposedTokens[last] = nil
+						switch name {
+						case "below-cap":
+							trail.Associated[last].TextBytes = MaxVectorTextBytes - otherBytes - 1
+						case "at-cap":
+							trail.Associated[last].TextBytes = MaxVectorTextBytes - otherBytes
+						case "above-cap":
+							trail.Associated[last].TextBytes = MaxVectorTextBytes - otherBytes + 1
+						case "max-uint64":
+							trail.Associated[last].TextBytes = math.MaxUint64
+						case "near-max-uint64":
+							trail.Associated[last].TextBytes = math.MaxUint64 - otherBytes + 1
+						case "multi-term-wrap":
+							trail.Associated[0].TextBytes = math.MaxUint64 - 4
+							trail.Associated[last].TextBytes = 10
+						case "primary-wrap":
+							trail.Candidates[0].TextBytes = math.MaxUint64 - 4
+							trail.Associated[last].TextBytes = 10
+						}
+					}
+					trail.PacketID, err = tokenPacketIdentity(trail)
+					if err != nil {
+						t.Fatal(err)
+					}
+					trail.ID, err = NewSourceTrailID(trail)
+					if err != nil {
+						t.Fatal(err)
+					}
+					encoded, err := json.Marshal(trail)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, decodeErr := DecodeSourceTrail(encoded)
+					for boundary, got := range map[string]error{"Validate": trail.Validate(), "Decode": decodeErr} {
+						if valid {
+							if got != nil {
+								t.Errorf("%s rejected valid aggregate: %v", boundary, got)
+							}
+						} else if got == nil || !strings.Contains(got.Error(), "v11 token association profile") {
+							t.Errorf("%s must reject aggregate before omission accounting: %v", boundary, got)
+						}
+					}
+				})
+			}
+		})
 	}
 }

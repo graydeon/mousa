@@ -1717,6 +1717,9 @@ omissions. All primary consideration rows count, including lifecycle rejections;
 rejected primary text keeps its existing handling. Exceeding either bound rejects
 the whole request, not a successful partial selection. Ordinary byte/token queries
 retain their limits, including the byte-only 256-target-passage consideration bound.
+Construction and canonical v11 validation check each accepted-primary and associated
+size against the remaining aggregate capacity before addition. Omitted associated
+rows still count; even extreme unsigned sizes reject without wrapping the total.
 Declaration order, document order, depth one, four targets and relationship
 omission meanings remain unchanged. The shared counter retains its 512 KiB
 per-rendering, 32 MiB cumulative work, 102-call and 15-second limits. The 100-row

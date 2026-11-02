@@ -37,6 +37,9 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 	retained := make([]retainedPassage, 0, len(candidates)+len(associated))
 	for i, r := range t.Candidates {
 		if r.Disposition == CandidateAccepted {
+			if r.TextBytes > MaxVectorTextBytes-total {
+				return SourceTrail{}, "", errors.New("combined token association passage bytes exceed bound")
+			}
 			total += r.TextBytes
 		}
 		if r.Selected {
@@ -47,10 +50,10 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 		if err := p.Validate(); err != nil {
 			return SourceTrail{}, "", err
 		}
+		if uint64(len(p.Text)) > MaxVectorTextBytes-total {
+			return SourceTrail{}, "", errors.New("combined token association passage bytes exceed bound")
+		}
 		total += uint64(len(p.Text))
-	}
-	if total > MaxVectorTextBytes {
-		return SourceTrail{}, "", errors.New("combined token association passage bytes exceed bound")
 	}
 	t.Schema = SourceTrailSchemaV11
 	t.AssociationOmissions = slices.Clone(omissions)
@@ -120,6 +123,9 @@ func (t SourceTrail) validateTokenAssociationProfile() error {
 		}
 		hasPrimary = hasPrimary || r.Selected
 		if r.Disposition == CandidateAccepted {
+			if r.TextBytes > MaxVectorTextBytes-total {
+				return invalid()
+			}
 			total += r.TextBytes
 		}
 	}
@@ -135,6 +141,9 @@ func (t SourceTrail) validateTokenAssociationProfile() error {
 			return invalid()
 		}
 		seen[r.SegmentID] = true
+		if r.TextBytes > MaxVectorTextBytes-total {
+			return invalid()
+		}
 		total += r.TextBytes
 		key := r.FromItem + "\x00" + r.ToItem
 		d := AssociationDeclaration{r.FromItem, r.ToItem, r.Basis, r.Author}
@@ -152,7 +161,7 @@ func (t SourceTrail) validateTokenAssociationProfile() error {
 		}
 		declarations[key] = AssociationDeclaration{}
 	}
-	if total > MaxVectorTextBytes || len(targets) > MaxAssociationTargets || len(declarations) > MaxAssociationDeclarations {
+	if len(targets) > MaxAssociationTargets || len(declarations) > MaxAssociationDeclarations {
 		return invalid()
 	}
 	return t.validateAssociated()

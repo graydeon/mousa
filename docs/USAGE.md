@@ -944,6 +944,8 @@ only after primary byte/token selection, using the remaining body-byte and whole
 rendering token budgets. The combination rejects above 100 total primary-plus-
 associated consideration rows or 256 KiB aggregate accepted passage text before
 duplicate/budget omissions. It never silently truncates to this new profile.
+Canonical validation applies the byte cap before adding each accepted-primary or
+associated size, including omitted rows, so extreme declared sizes cannot wrap the total.
 Ordinary byte/token bounds and the byte-only 256-target-passage bound are unchanged.
 The one counter retains its 512 KiB rendering, 32 MiB work, 102-call and 15-second
 ceilings and must finish before persistence. V11 records the measured associated

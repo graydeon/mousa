@@ -105,6 +105,8 @@ inline `associations` on lexical `mousa_query`. Both accept measured token budge
 only primary passages that survive both budgets trigger supporting context.
 The [runnable example](docs/USAGE.md#mcp-declared-supporting-context) checks a
 whole-context exact fit and omission one token below it, without displacing the primary.
+Canonical v11 validation checks aggregate byte admission before each addition,
+including omitted associated rows; oversized sizes cannot wrap the 256 KiB total.
 Byte-only MCP associations are available in source builds containing merged PR95;
 token composition requires this change. No tagged release is claimed.
 Declarations assert relationships and attribution, not semantic sufficiency or access.
