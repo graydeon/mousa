@@ -33,7 +33,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Declared associated context | Yes | Native directory/JSONL `query --associations <file>`; inline `associations` on lexical MCP `mousa_query`, with byte or measured token budgets | Same-source authorization, measured-selected-primary trigger, primary priority, bounded consideration, omissions and v3/v11 history | [Caller-reviewed backup example](../examples/backup/README.md) and [synthetic stdio example](USAGE.md#mcp-declared-supporting-context); no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
-| Classification records | Yes | No administration command | Canonical storage and validation | None; not automatic classification or classification-based authorization |
+| Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
@@ -57,6 +57,37 @@ keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
+
+## Native attributed classification administration
+
+The [native workflow and runnable example](USAGE.md#native-classification-administration)
+record caller-reviewed assertions against existing evidence through the implemented
+immutable `mousa.classification.v1` primitive. A strict bounded
+`mousa.classification_input.v1` draft omits the computed ID; put derives it, validates
+all facts and writes through the existing single-store transaction. Put/get return
+the existing canonical record. No stored schema, migration, query/packet/trail
+property, canonical v1–v11 bytes, default selection or MCP definition changes.
+
+Subjects and ordered basis references support source, observation, artifact,
+representation and segment parents. All must exist; no placeholder parents are
+created. Existing storage permits cross-source basis. Exact retry adds no record or
+link; different facts yield a different immutable ID. Get re-verifies canonical
+identity, subject projection and ordered basis and refuses damage without repair.
+Read-only get never creates/migrates a store; syntax is checked before writable put
+open, but parent/storage rejection need not undo database creation or migration.
+
+These commands are trusted local store-owner administration, not an MCP write
+surface or access shortcut. Caller labels, confidence and asserter names are
+untrusted attribution, not authenticated authorship, calibrated probability or
+policy authority. Conflicting assertions can coexist without a winner resolver.
+Revision-pinned assertions retain their own evidence identities after resync, not
+unavailable old text or labels on replacement revisions. Source-level assertions
+name stable identity, not automatic approval of future content.
+
+Delivered value is durable, inspectable attribution with typed evidence basis.
+Classification-based filtering/authorization, secret scanning and automatic
+classification/inference remain unimplemented. Indexing, retrieval permission,
+ranking, freshness and supersession do not consume these labels.
 
 ## Native token-aware packing
 

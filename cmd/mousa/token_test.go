@@ -30,6 +30,7 @@ func officialTokenCount(t *testing.T, text string) int {
 }
 
 func TestNativeTokenModesAndHistory(t *testing.T) {
+	t.Parallel()
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
 		t.Skip("official tokenizer acceptance environment not configured")

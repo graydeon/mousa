@@ -37,6 +37,15 @@ Caller author/basis strings are untrusted assertions, not authenticated identiti
 The runnable examples/mcp_associations.py checks selection/provenance, not
 semantic sufficiency. Fresh history authorization may append audit evidence.
 
+For classification administration, use the
+[native draft contract](../../docs/USAGE.md#native-classification-administration).
+`DecodeClassificationInput` requires explicit facts and derives the existing
+classification.v1 identity; preserve typed subject parsing and ordered basis.
+Put/get use existing store validation and transactional parents, including
+cross-source basis. Keep parser tests separate from store rollback/damage evidence
+and native-client observations. Labels are attribution, not access authority or
+automatic classification; revision pins do not relabel replacement evidence.
+
 For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
 Native `vector inputs`, `vector import` and `query --vector-space` form one supported
 workflow; embedding inference stays external and never holds a canonical transaction.
