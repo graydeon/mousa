@@ -10,7 +10,7 @@ import (
 
 func TestActiveRepresentationMigrationPreservesRevisionsAndBackup(t *testing.T) {
 	ctx := context.Background()
-	store := openLexicalStore(t)
+	store := openFreshLexicalStore(t)
 	path := store.path
 	source, old, oldText := prepareLocalRevision(t, store, "doc", "oldterm original evidence")
 	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText); err != nil {
@@ -101,7 +101,7 @@ func TestStartupVerificationReleasesSnapshotsAndRechecksDamage(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := t.Context()
-			store := openLexicalStore(t)
+			store := openFreshLexicalStore(t)
 			defer store.Close()
 			source, representation, content := prepareLocalRevision(t, store, "doc", "newterm current evidence")
 			if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", representation.ID, content); err != nil {
@@ -131,7 +131,7 @@ func TestStartupVerificationReleasesSnapshotsAndRechecksDamage(t *testing.T) {
 
 func TestStartupPreservesActiveEmptyAndIndexedItems(t *testing.T) {
 	ctx := t.Context()
-	store := openLexicalStore(t)
+	store := openFreshLexicalStore(t)
 	path := store.path
 	source, empty, emptyText := prepareLocalRevision(t, store, "empty", "")
 	if _, err := store.ActivateLocalItem(ctx, source.ID, "empty", empty.ID, emptyText); err != nil {

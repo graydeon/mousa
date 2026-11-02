@@ -126,7 +126,7 @@ query options (before positional arguments):
   --context-window <W>       optional caller-declared window, at most 1000000000
   --prompt-reserve <P>       caller-declared prompt/tool overhead; requires a window
   --output-reserve <O>       caller-declared output tokens; requires a window
-                            token mode rejects associations;
+                            lexical token mode supports declared associations;
                             all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
                             cannot combine with policy or associations flags
@@ -137,8 +137,10 @@ query options (before positional arguments):
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
-                            applied targets; associated passages share the byte budget and carry
-                            their own identity plus the declaration that included them
+                            applied targets; primary evidence has priority in both budgets
+                            byte-only: at most 256 target passages considered
+                            with tokens: at most 100 total rows / 256 KiB accepted passage text
+                            supporting text keeps its own identity and declaring attribution
 
 trail options:
   --verify-tokens            explicitly recount retained token-aware context with the
@@ -272,8 +274,11 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		return usageError{"tokenizer options require --context-tokens"}
 	}
 	if tokenMode {
-		if tokenIncompatible || vectorMode && hybridMode {
+		if vectorMode && hybridMode {
 			return usageError{"token mode cannot combine associations or both vector modes"}
+		}
+		if tokenIncompatible && (vectorMode || hybridMode || *supersession) {
+			return usageError{"token associations require lexical retrieval without supersession"}
 		}
 		mode, space := "lexical", ""
 		if hybridMode {
@@ -290,7 +295,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 				return usageError{"vector mode cannot use an explicit policy"}
 			}
 		}
-		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession)
+		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession, *associations)
 	}
 	if hybridMode {
 		incompatible := vectorMode

@@ -11,17 +11,15 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted main as of 2026-10-31 is `ca34c658521edd67333e8dac00410e21470233e5`.
-It includes native/MCP external-vector import, vector/hybrid retrieval, token
-budgets, lexical token/supersession and byte-only vector/hybrid supersession.
-[PR92](https://github.com/graydeon/mousa/pull/92) and its independent client
-evidence are accepted; the earlier survivor aggregate-admission correction
-and lexical composition remain accepted.
+Accepted main as of 2026-11-01 is `6a7f0fef501441b8f3ef5e5e9a284c2daa23495e`.
+It includes native/MCP token budgets with lexical/vector/hybrid supersession
+(v8/v10) and inline byte-only lexical MCP associations (v3), accepted through
+PR94 and PR95. These are source-build capabilities, not tagged releases.
 
-This branch proposes measured token budgets with explicit vector/hybrid
-supersession and closed v10 producing history. Product checks and the runnable
-example do not establish independent acceptance. Synthetic vectors establish
-protocol and arithmetic, not embedding-model quality.
+This change adds measured token budgets with declared lexical supporting context
+and closed v11 producing history. Product checks and runnable examples do not
+establish independent acceptance. Synthetic counting establishes protocol and
+arithmetic, not retrieval quality or semantic sufficiency.
 
 ## Why Mousa?
 
@@ -151,12 +149,14 @@ reaped before insertion. Default queries and v1–v6 remain unchanged.
 See [token packing](CAPABILITIES.md#native-token-aware-packing).
 
 Lexical token queries with supersession write v8. Vector/hybrid token queries
-with supersession write v10 on this proposal branch. Both bind recorded
+with supersession write v10. Both bind recorded
 consultation and token selection, verify withheld canonical content and pack
 survivors. Omitted/false token supersession stays v7; byte-only enforcement
 stays lexical v4 or vector/hybrid v9. Full vector-source admission precedes
 masking. Packet v3 binds the complete producing selection: equal returned text
-does not establish equal v7/v8/v10 packet identities. See the
+does not establish equal v7/v8/v10 packet identities. Declared lexical token
+context writes v11 only when its association stage has something to record;
+unfired declarations retain v7. See the
 [source status](#source-and-release-status).
 
 Canonical read and startup verification check the recorded administration and candidate
@@ -233,7 +233,7 @@ Implemented and planned capabilities, marked per item:
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical/vector/hybrid enforcement with byte or token budgets and v4/v8/v9/v10 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
-- source-scoped declared associations with attributed, bounded context (native CLI and inline lexical byte-only MCP query; not inferred relationships or access grants);
+- source-scoped declared associations with attributed, bounded context (native CLI and inline lexical MCP query, with byte or measured token budgets; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 

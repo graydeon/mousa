@@ -727,7 +727,7 @@ func TestVersionTwoMigrationBackupConflictAndReadOnlyRefusal(t *testing.T) {
 func TestLexicalMigrationRejectsDamageAndPlausibleNewerVersion(t *testing.T) {
 	ctx := context.Background()
 	t.Run("damaged projection", func(t *testing.T) {
-		store := openLexicalStore(t)
+		store := openFreshLexicalStore(t)
 		representation, content, _ := addLexicalDocument(t, store, "migration-damage", "alpha")
 		if err := store.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
 			t.Fatal(err)

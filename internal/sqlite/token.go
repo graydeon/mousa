@@ -17,11 +17,29 @@ type TokenQuery struct {
 	Budget       mousa.TokenBudget
 	Counter      *tokenizer.Counter
 	Supersession bool
+	Associations []mousa.AssociationDeclaration
 }
 
 func (options TokenQuery) validate() error {
 	if options.Counter == nil {
 		return errors.New("token query requires a ready local tokenizer")
+	}
+	if options.Supersession && len(options.Associations) > 0 {
+		return errors.New("associations cannot combine supersession")
+	}
+	if len(options.Associations) > mousa.MaxAssociationDeclarations {
+		return errors.New("too many association declarations")
+	}
+	seen := make(map[string]bool, len(options.Associations))
+	for _, declaration := range options.Associations {
+		if err := declaration.Validate(); err != nil {
+			return err
+		}
+		key := declaration.FromItem + "\x00" + declaration.ToItem
+		if seen[key] {
+			return errors.New("duplicate association declaration")
+		}
+		seen[key] = true
 	}
 	_, err := options.Budget.Available()
 	return err
@@ -85,7 +103,19 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 		if err != nil {
 			return err
 		}
-		trail, text, err := mousa.PackTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter)
+		var trail mousa.SourceTrail
+		var text string
+		var associated []mousa.AssociatedPassage
+		if len(options.Associations) == 0 {
+			trail, text, err = mousa.PackTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter)
+		} else {
+			trail, text, err = mousa.PackAssociatedTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter, func(primary mousa.SourceTrail) ([]mousa.AssociatedPassage, []mousa.AssociationOmission, error) {
+				var omissions []mousa.AssociationOmission
+				var resolveErr error
+				associated, omissions, resolveErr = resolveAssociatedPassages(ctx, conn, request.SourceID, options.Associations, enforced.Candidates, primary)
+				return associated, omissions, resolveErr
+			})
+		}
 		if err != nil {
 			return err
 		}
@@ -106,7 +136,7 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 				}
 			}
 		}
-		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates, Associated: associated}
 		rendered = text
 		return nil
 	})
@@ -118,6 +148,9 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 
 // EvaluateAndTraceTokenVector keeps token packing inside the existing cosine snapshot.
 func (store *Store) EvaluateAndTraceTokenVector(ctx context.Context, request mousa.PolicyEvaluationRequest, space mousa.SHA256, values []float64, budget uint64, packing string, options TokenQuery) (TracedVectorResult, error) {
+	if len(options.Associations) > 0 {
+		return TracedVectorResult{}, errors.New("vector associations are unsupported")
+	}
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -126,6 +159,9 @@ func (store *Store) EvaluateAndTraceTokenVector(ctx context.Context, request mou
 
 // EvaluateAndTraceTokenHybrid keeps token packing inside the existing fused snapshot.
 func (store *Store) EvaluateAndTraceTokenHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, policy string, space mousa.SHA256, values []float64, budget uint64, packing string, options TokenQuery) (TracedVectorResult, error) {
+	if len(options.Associations) > 0 {
+		return TracedVectorResult{}, errors.New("hybrid associations are unsupported")
+	}
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -156,11 +192,19 @@ func verifyTokenTrail(ctx context.Context, q queryer, t mousa.SourceTrail, sourc
 func retainedTokenContext(ctx context.Context, q queryer, t mousa.SourceTrail) (string, bool, error) {
 	var b strings.Builder
 	complete := true
-	for _, r := range t.Candidates {
-		if !r.Selected {
+	for i := 0; i < len(t.Candidates)+len(t.Associated); i++ {
+		var id mousa.SegmentID
+		var selected bool
+		if i < len(t.Candidates) {
+			id, selected = t.Candidates[i].SegmentID, t.Candidates[i].Selected
+		} else {
+			row := t.Associated[i-len(t.Candidates)]
+			id, selected = row.SegmentID, row.Selected
+		}
+		if !selected {
 			continue
 		}
-		segment, err := getSegment(ctx, q, r.SegmentID)
+		segment, err := getSegment(ctx, q, id)
 		if err != nil {
 			return "", false, lexicalStructuralError("token segment", err)
 		}

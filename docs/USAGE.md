@@ -1,6 +1,6 @@
 # Using Mousa
 
-For source-build versus release status and the proposed v10 composition boundary,
+For source-build versus tagged-release availability,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
@@ -214,10 +214,10 @@ Oversized passages are skipped and later candidates are tried. `exact-v1`
 deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
-Token-specific options without `--context-tokens` reject. Token mode rejects
-explicit association flags, even empty. Supersession true writes lexical v8
-or vector/hybrid v10; omission and explicit false keep v7. Explicit false
-vector/hybrid token flags, previously rejected, are now accepted as omission.
+Token-specific options without `--context-tokens` reject. Lexical token mode
+accepts declared associations without supersession; vector/hybrid associations
+still reject. Supersession true writes lexical v8 or vector/hybrid v10;
+omission and explicit false keep v7 unless an association stage records v11.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
@@ -314,9 +314,9 @@ without the qualification documented in another item. Mousa never infers these
 relationships; the author and basis stay attached to every passage the
 declaration releases. A declaration is honored only when the declaring item
 contributed selected primary evidence, so an unrelated query releases nothing.
-Depth is one and at most four distinct targets are read per query, up to 256
-target passages in total; a larger target is read only up to that bound and its
-remaining passages are reported as an omission. Associated
+Depth is one and at most four distinct targets are read per query. Byte-only
+queries consider up to 256 target passages; a larger target's remaining
+passages are reported as an omission. Associated
 passages pack into the remaining budget after primary evidence, keep their own
 item, segment identity, byte coordinates and content digest, and carry the
 declaration that included them. Missing or inactive targets are recorded as
@@ -874,9 +874,9 @@ a supersession member.
 
 ### MCP declared supporting context
 
-The current source adds optional inline `associations` to `mousa_query`, pending
-PR review, not release. After merge, build from a containing source revision;
-older binaries still reject the input. Refresh client tool discovery.
+Source builds containing merged PR95 accept optional inline `associations` on
+`mousa_query`; this is not a tagged-release claim. Older binaries reject the
+input. Measured token composition requires this change. Refresh client discovery.
 Run the standard-library Python example without a model, API key or tokenizer:
 
 ```sh
@@ -909,13 +909,48 @@ lexical rank or BM25 score. `mousa_trail` binds v3 facts to the producing call
 and reauthorizes history. Retrieval does not require `--ingest-source`; the
 example uses it only to prepare its fixture.
 
-Both term policies and both byte packers work. Omitted/false supersession works;
-true supersession, tokens/reservations and vector/hybrid combinations reject.
-Supply an object, not null, a filename or URL. The
+Both term policies and both packers work with byte or measured token budgets.
+Omitted/false supersession works; true supersession and vector/hybrid associations
+reject. Supply an object, not null, a filename or URL. The
 [native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
 apply. Assertions check protocol, selection and attribution consistency, not
 authenticated authorship, semantic sufficiency, recall, completeness or truth.
 No answer generation or judging runs.
+
+With a prepared official backend, run the same example with token checks:
+
+```sh
+python3 examples/mcp_associations.py --mousa ./mousa \
+  --tokenizer-python /path/to/venv/bin/python --tokenizer-cache /path/to/prepared-cache
+```
+
+It exercises configured MCP and native directory queries under both policies and
+packers. An independent official count/hash checks every complete returned rendering.
+An exact fit includes the primary and nonmatching qualification; one token less
+omits the qualification without displacing the primary. Tokenizer interpreter
+paths remain operator startup configuration, not MCP tool arguments.
+
+For native JSONL, reuse the same strict declaration file:
+
+```sh
+./mousa -store notes.sqlite query --source notes --associations associations.json \
+  --budget-bytes 8192 --context-tokens 512 \
+  --tokenizer-python /path/to/venv/bin/python --tokenizer-cache /path/to/prepared-cache backup
+```
+
+Flags must precede positional query text. Directory spelling replaces `--source notes`
+with the synced directory as the first positional argument. Supporting notes append
+only after primary byte/token selection, using the remaining body-byte and whole-
+rendering token budgets. The combination rejects above 100 total primary-plus-
+associated consideration rows or 256 KiB aggregate accepted passage text before
+duplicate/budget omissions. It never silently truncates to this new profile.
+Canonical validation applies the byte cap before adding each accepted-primary or
+associated size, including omitted rows, so extreme declared sizes cannot wrap the total.
+Ordinary byte/token bounds and the byte-only 256-target-passage bound are unchanged.
+The one counter retains its 512 KiB rendering, 32 MiB work, 102-call and 15-second
+ceilings and must finish before persistence. V11 records the measured associated
+stage; unfired declarations retain v7. Native retained-text `trail --verify-tokens`
+recounts both stages; MCP `token_details` only projects recorded facts.
 
 `--caller cli` uses the existing CLI retrieval policy, including source-scoped
 denials and withdrawal. This is trusted local configuration, not caller

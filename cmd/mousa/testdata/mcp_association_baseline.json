@@ -66,7 +66,7 @@
             "type": "string"
           },
           "supersession": {
-            "description": "Withhold exact declared predecessor pins after ranking; byte budgets only. Omitted or false preserves ordinary retrieval.",
+            "description": "Withhold exact declared predecessor pins after ranking; supports byte and measured token budgets. Omitted or false preserves ordinary retrieval.",
             "type": "boolean"
           },
           "values": {
@@ -711,6 +711,42 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "associations": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "associated_ids": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      },
+                      "proposed_tokens": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ],
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    "required": [
+                      "associated_ids",
+                      "proposed_tokens"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1223,6 +1259,42 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "associations": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "associated_ids": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      },
+                      "proposed_tokens": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ],
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    "required": [
+                      "associated_ids",
+                      "proposed_tokens"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1710,7 +1782,7 @@
             "type": "boolean"
           },
           "token_details": {
-            "description": "Return the verified accepted-candidate token selection recorded by v7, v8 or v10. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts.",
+            "description": "Return the verified accepted-candidate token selection recorded by v7, v8, v10 or declared-context v11. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts.",
             "type": "boolean"
           },
           "trail_id": {
@@ -2430,6 +2502,42 @@
                           ],
                           "additionalProperties": false
                         }
+                      },
+                      "associations": {
+                        "type": [
+                          "null",
+                          "object"
+                        ],
+                        "properties": {
+                          "associated_ids": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          },
+                          "proposed_tokens": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "required": [
+                          "associated_ids",
+                          "proposed_tokens"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -2975,7 +3083,7 @@
             "type": "string"
           },
           "supersession": {
-            "description": "Withhold exact declared predecessor pins after ranking; byte budgets only. Omitted or false preserves ordinary retrieval.",
+            "description": "Withhold exact declared predecessor pins after ranking; supports byte and measured token budgets. Omitted or false preserves ordinary retrieval.",
             "type": "boolean"
           },
           "values": {
@@ -3618,6 +3726,42 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "associations": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "associated_ids": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      },
+                      "proposed_tokens": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ],
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    "required": [
+                      "associated_ids",
+                      "proposed_tokens"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
