@@ -107,8 +107,8 @@ The [runnable example](docs/USAGE.md#mcp-declared-supporting-context) checks a
 whole-context exact fit and omission one token below it, without displacing the primary.
 Canonical v11 validation checks aggregate byte admission before each addition,
 including omitted associated rows; oversized sizes cannot wrap the 256 KiB total.
-Byte-only MCP associations are available in source builds containing merged PR95;
-token composition requires this change. No tagged release is claimed.
+Byte-only MCP associations and token composition are available in source builds
+containing those capabilities. No tagged release is claimed.
 Declarations assert relationships and attribution, not semantic sufficiency or access.
 Vector/hybrid associations and association-plus-supersession remain unsupported.
 
@@ -117,6 +117,13 @@ Vector/hybrid associations and association-plus-supersession remain unsupported.
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
 checks, byte-budget packing, exact-content deduplication, declared associations and
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
+
+Native `classification put` and `classification get ID` record and retrieve
+immutable attributed labels against existing evidence. The
+[runnable classification example](docs/USAGE.md#native-classification-administration)
+demonstrates exact retry, coexisting conflicting labels and revision-pinned readback.
+Labels do not change indexing, ranking, retrieval permission or supersession;
+caller attribution is not authenticated authorship or factual verification.
 
 Revision-pinned supersession declarations and activation administration are available,
 together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
@@ -168,6 +175,7 @@ retrieval quality and performance.
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
+| [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
 
 ## Contributing
 

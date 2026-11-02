@@ -52,6 +52,8 @@ func main() {
 		err = accessCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
+	case "classification":
+		err = classificationCommand(ctx, *storePath, rest)
 	case "supersession":
 		err = supersessionCommand(ctx, *storePath, rest)
 	case "mcp":
@@ -93,6 +95,8 @@ commands:
   access --source <id> allow|deny
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
+  classification put        append one strict attributed assertion draft from stdin (JSON)
+  classification get <id>   read one verified assertion; read-only, never creates a store (JSON)
   supersession declaration put
                             append one strict revision-pinned declaration read from stdin (JSON)
   supersession declaration get <declaration-id>

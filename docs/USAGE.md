@@ -568,6 +568,10 @@ from pinned Python documentation, accepts caller-authored fact judgments, and
 reports coverage, unresolved facts, or one requested follow-up retrieval.
 Citation consistency is separate from the caller's assessment of semantic support.
 
+For native attributed labels on existing evidence, run the
+[classification example](#native-classification-administration). It checks
+canonical retry/readback and retired revision pins without changing retrieval.
+
 Run the maintained Python standard-library example against the built CLI:
 
 ```sh
@@ -645,6 +649,87 @@ it is not a substitute for this required command.
 `--source <id>`. `withdraw ./documents` changes source lifecycle state: policy allow
 does not undo withdrawal, and the CLI has no resume command. These controls are not
 secure erasure or a replacement for filesystem access controls.
+
+### Native classification administration
+
+Source builds containing these commands can persist a caller-reviewed label
+against existing evidence and retrieve the immutable assertion by its computed ID:
+
+```sh
+./mousa -store local.sqlite classification put < assertion-input.json
+./mousa -store local.sqlite classification get CLASSIFICATION_ID
+```
+
+Put accepts exactly one `mousa.classification_input.v1` draft, not a canonical
+record and not a caller-supplied `id`. Replace the sample pins below with existing
+IDs from your store (for example, the segment and representation returned by query):
+
+```json
+{
+  "schema": "mousa.classification_input.v1",
+  "subject": {"kind": "segment", "id": "SEGMENT_ID"},
+  "taxonomy": "example.caller-review",
+  "taxonomy_version": "1",
+  "label": "synthetic-caller-reviewed",
+  "asserter_id": "example.caller",
+  "asserter_version": "1",
+  "basis": [{"kind": "representation", "id": "REPRESENTATION_ID"}],
+  "asserted_at_usec": 1,
+  "confidence_ppm": 0
+}
+```
+
+Every field is required and non-null. The subject and each basis entry contain
+exactly `kind` and `id`; kinds are `source`, `observation`, `artifact`,
+`representation` and `segment`. IDs are the existing kind's lowercase hex identity.
+Taxonomy, version, label and asserter strings must be nonempty UTF-8. Basis has
+1–4096 unique typed entries, in caller order. The explicit timestamp is a positive
+signed 64-bit integer in microseconds; confidence is an integer from 0 to 1000000,
+including 0. It is caller attribution, not a calibrated probability.
+Input is limited to 1 MiB including whitespace, enough for 4096 ordinary typed basis
+entries; stored-record size limits still apply. Unknown, repeated or case-aliased
+keys at any object level, invalid UTF-8, trailing JSON, nulls and non-integer numeric
+forms fail before writable open.
+
+Both commands print one canonical `mousa.classification.v1` JSON record. Put derives
+the ID from all assertion facts and returns the persisted verified record. Exact
+retry returns identical bytes without extra assertion or basis rows; changed facts
+create a different immutable assertion. Conflicting labels may coexist. There is no
+update, delete, current-winner resolver, validity interval or newest/confident choice.
+Existing subject and basis parents are checked transactionally. A missing parent or
+link failure leaves no partial assertion/links, but a valid put may already have
+created or migrated the database when storage rejects it. Basis may name existing
+records from different sources; this trusted local action is not a source access grant.
+
+Get opens read-only: an absent database is not created and an older store is not
+migrated. Unknown IDs return a typed `not_found` error; damaged canonical bytes,
+identity or projections return an integrity error without repair or success JSON.
+Invalid invocation/ID exits 2; rejected input/storage operations exit 1.
+
+These are local store-owner administration commands, not MCP/hosted writes. Labels
+do not affect indexing, serving permission, ranking, freshness or supersession.
+Asserter strings do not authenticate authorship and label/confidence does not prove
+truth. Representation/segment subjects pin specific revisions: after resync, an old
+assertion retains its own pins without relabeling replacement evidence or recovering
+retired text. Source subjects name a stable identity, not approval of future content.
+Classification-based filtering/authorization, secret scanning and automatic inference
+remain unimplemented.
+
+Run the standard-library example on a temporary native JSONL store:
+
+```sh
+CGO_ENABLED=0 go build -o mousa ./cmd/mousa
+python3 examples/classifications.py --mousa ./mousa
+```
+
+It syncs synthetic text, retrieves a real passage, submits a clearly synthetic
+caller-reviewed segment label with its representation as basis, retries and compares
+canonical readback, records a conflicting label and checks the original is unchanged.
+It also verifies unchanged ordinary selection and readback after replacing the source
+revision. It exercises segment subjects and representation basis, not all subject
+kinds. No SQL, model, classifier, answer generation or semantic judging is involved.
+
+### Supersession administration
 
 `supersession declaration put` appends one strict revision-pinned declaration read
 from stdin, and `supersession declaration get <declaration-id>` reads one stored

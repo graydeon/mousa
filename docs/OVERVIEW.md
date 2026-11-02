@@ -11,15 +11,16 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted main as of 2026-11-01 is `6a7f0fef501441b8f3ef5e5e9a284c2daa23495e`.
-It includes native/MCP token budgets with lexical/vector/hybrid supersession
-(v8/v10) and inline byte-only lexical MCP associations (v3), accepted through
-PR94 and PR95. These are source-build capabilities, not tagged releases.
+Accepted source through PR98 includes measured token budgets with declared lexical
+supporting context and closed v11 producing history, alongside native/MCP
+lexical/vector/hybrid supersession and byte-only lexical associations.
 
-This change adds measured token budgets with declared lexical supporting context
-and closed v11 producing history. Product checks and runnable examples do not
-establish independent acceptance. Synthetic counting establishes protocol and
-arithmetic, not retrieval quality or semantic sufficiency.
+Source builds containing native `classification put|get` also record immutable
+attributed assertions against existing evidence. The commands reuse canonical
+classification storage; they do not change selection, permissions or factual truth.
+See the [classification workflow](USAGE.md#native-classification-administration).
+Synthetic examples establish protocol/identity behavior, not label correctness,
+retrieval quality or semantic sufficiency. No tagged-release availability is claimed.
 
 ## Why Mousa?
 
