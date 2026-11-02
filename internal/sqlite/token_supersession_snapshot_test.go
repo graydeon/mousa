@@ -1,10 +1,12 @@
 package sqlite
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -21,6 +23,16 @@ func TestTokenSupersessionWriterHeldThroughCounting(t *testing.T) {
 	}
 }
 
+func TestTokenAssociationsWriterHeldThroughCounting(t *testing.T) {
+	t.Parallel()
+	testTokenSupersessionWriterHeldThroughCounting(t, "associations")
+}
+
+func TestTokenAssociationsCancellationRollsBack(t *testing.T) {
+	t.Parallel()
+	testTokenSupersessionWriterHeldThroughCounting(t, "association-cancel")
+}
+
 func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
@@ -28,11 +40,15 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	}
 	f := newV4Fixture(t)
 	defer f.store.Close()
+	associations := mode == "associations" || mode == "association-cancel"
 	var space mousa.SHA256
-	if mode != "lexical" {
+	if mode != "lexical" && !associations {
 		space = importSupersessionVectors(t, f)
 	}
 	_, state := f.activate(t)
+	if associations {
+		seedLocalItem(t, f.store, f.source, "qualification", "Close idle sockets explicitly.")
+	}
 	other, err := Open(t.Context(), f.store.path)
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +63,10 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "gated-counter")
+	gateStage := "primary"
+	if associations {
+		gateStage = "association"
+	}
 	script := fmt.Sprintf(`#!%s
 import sys,struct,socket,tiktoken
 enc=tiktoken.get_encoding('o200k_base')
@@ -57,16 +77,18 @@ while True:
  h=i.read(4)
  if not h: break
  n=struct.unpack('>I',h)[0];text=i.read(n).decode('utf-8')
- if first:
+ if first and (%q == "primary" or "Close idle sockets explicitly." in text):
   first=False
   with socket.create_connection(('127.0.0.1',%d)) as s:
    s.sendall(b'counting');s.recv(1)
  o.write(struct.pack('>Q',len(enc.encode_ordinary(text))));o.flush()
-`, python, listener.Addr().(*net.TCPAddr).Port)
+`, python, gateStage, listener.Addr().(*net.TCPAddr).Port)
 	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	counter, err := tokenizer.Start(t.Context(), path, cache)
+	counterContext, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	counter, err := tokenizer.Start(counterContext, path, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,9 +98,14 @@ while True:
 		err   error
 	}
 	done := make(chan result, 1)
+	before := freshAuditCounts(t, f.store)
 	go func() {
 		options := TokenQuery{Budget: mousa.TokenBudget{Cap: 1000}, Counter: counter, Supersession: true}
-		if mode == "lexical" {
+		if associations {
+			options.Supersession = false
+			options.Associations = []mousa.AssociationDeclaration{{FromItem: "predecessor", ToItem: "qualification", Basis: "explicit cleanup", Author: "example.operator"}}
+		}
+		if mode == "lexical" || associations {
 			r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, options)
 			done <- result{r.Trail, err}
 		} else {
@@ -116,10 +143,30 @@ while True:
 		t.Fatalf("unexpected competing writer error: %v", lockErr)
 	}
 	conn.Close()
+	if mode == "association-cancel" {
+		cancel()
+		gate.Close()
+		got := <-done
+		if got.err == nil || got.trail.ID != (mousa.SourceTrailID{}) || !reflect.DeepEqual(before, freshAuditCounts(t, f.store)) {
+			t.Fatal("associated cancellation committed producing state", got.err)
+		}
+		return
+	}
 	gate.Close()
 	got := <-done
 	if got.err != nil {
 		t.Fatal(got.err)
+	}
+	if mode == "associations" {
+		if got.trail.Schema != mousa.SourceTrailSchemaV11 || len(got.trail.Associated) != 1 || !got.trail.Associated[0].Selected {
+			t.Fatal("association did not share measured snapshot")
+		}
+		seedLocalItem(t, other, f.source, "qualification", "Replacement qualification.")
+		historical, err := f.store.GetSourceTrail(t.Context(), got.trail.ID)
+		if err != nil || historical.Associated[0] != got.trail.Associated[0] {
+			t.Fatal("later target revision reinterpreted selection", err)
+		}
+		return
 	}
 	if got.trail.Supersession.ActivationID == nil || *got.trail.Supersession.ActivationID != state.CurrentActivationID || len(got.trail.Supersession.Dispositions) != 1 {
 		t.Fatal("mixed consultation")

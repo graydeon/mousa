@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -365,12 +367,52 @@ func TestLexicalFTSStructuralTamperDetectedOnOpenStore(t *testing.T) {
 
 func openLexicalStore(t *testing.T) *Store {
 	t.Helper()
+	data, err := lexicalStoreTemplate()
+	if err != nil {
+		t.Fatalf("empty store template: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "lexical.sqlite")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return store
+}
+
+func openFreshLexicalStore(t *testing.T) *Store {
+	t.Helper()
 	store, err := Open(context.Background(), filepath.Join(t.TempDir(), "lexical.sqlite"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	return store
 }
+
+// Behavioral fixtures copy only a closed empty database; migration tests use fresh stores.
+var lexicalStoreTemplate = sync.OnceValues(func() ([]byte, error) {
+	root, err := os.MkdirTemp("", "mousa-empty-store-template-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(root)
+	path := filepath.Join(root, "empty.sqlite")
+	store, err := Open(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Close(); err != nil {
+		return nil, err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); !os.IsNotExist(err) {
+			return nil, fmt.Errorf("closed template has sidecar %s: %v", suffix, err)
+		}
+	}
+	return os.ReadFile(path)
+})
 
 func addLexicalDocument(t *testing.T, store *Store, key, text string) (mousa.Representation, []byte, []mousa.Segment) {
 	t.Helper()

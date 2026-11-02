@@ -15,13 +15,13 @@ Use mousa_trail with the same source and returned trail_id to inspect current-au
 
 When the discovered mousa_query schema declares associations and the caller
 supplies a relationship, pass the complete association_declarations.v1 document
-inline. Use lexical byte packing only, with supersession omitted or false.
+inline. Lexical byte or measured token packing works with supersession omitted or false.
 Keep author and basis as caller assertions; do not infer or authenticate them.
 Associated evidence follows selected primary evidence, keeps its own provenance
 and has no lexical rank/BM25 score. Report omissions without claiming completeness.
-Inspect the producing v3 trail under current authorization. A declaration grants
-no access and does not establish semantic sufficiency. Tokens and vector/hybrid
-association combinations reject; mention/resource behavior is unchanged.
+Inspect producing v3 byte or v11 token history under current authorization.
+A declaration grants no access and does not establish semantic sufficiency.
+Vector/hybrid associations and association-plus-supersession reject; mention/resource behavior is unchanged.
 
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
 
@@ -62,7 +62,10 @@ than silently falling back to bytes. All three query tools can combine
 `supersession: true` with token budgets; withheld predecessors consume neither
 budget nor duplicate retention. Omission/false retains v7; true records lexical
 v8 or vector/hybrid v10. Full vector-source admission remains before masking.
-Associations remain unsupported. OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7/v8/v10 token facts under
+Lexical associations can combine tokens without supersession, within the documented
+100-total-passage/256KiB accepted-text profile. Only primary passages surviving both
+budgets trigger supporting notes; notes cannot displace primary evidence.
+OpenAI mentions/resources stay byte-only.
+Use `mousa_trail` with token_details true for safe recorded v7/v8/v10/v11 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.

@@ -4,18 +4,19 @@ package mousa
 // CandidateIDs aligns both arrays; lexical ranks refer only to this accepted order.
 // Every slice and proposed-count pointer is owned by the view.
 type TokenSelectionView struct {
-	Mode           string             `json:"mode"`
-	Backend        string             `json:"backend"`
-	Rendering      string             `json:"rendering"`
-	SourceID       SourceID           `json:"source_id"`
-	Limit          uint64             `json:"limit"`
-	Budget         TokenBudget        `json:"budget"`
-	MeasuredTokens uint64             `json:"measured_tokens"`
-	RenderedBytes  uint64             `json:"rendered_bytes"`
-	RenderedSHA256 SHA256             `json:"rendered_sha256"`
-	CandidateIDs   []SegmentID        `json:"candidate_ids"`
-	ProposedTokens []*uint64          `json:"proposed_tokens"`
-	Lexical        []TokenLexicalFact `json:"lexical,omitempty"`
+	Mode           string                     `json:"mode"`
+	Backend        string                     `json:"backend"`
+	Rendering      string                     `json:"rendering"`
+	SourceID       SourceID                   `json:"source_id"`
+	Limit          uint64                     `json:"limit"`
+	Budget         TokenBudget                `json:"budget"`
+	MeasuredTokens uint64                     `json:"measured_tokens"`
+	RenderedBytes  uint64                     `json:"rendered_bytes"`
+	RenderedSHA256 SHA256                     `json:"rendered_sha256"`
+	CandidateIDs   []SegmentID                `json:"candidate_ids"`
+	ProposedTokens []*uint64                  `json:"proposed_tokens"`
+	Lexical        []TokenLexicalFact         `json:"lexical,omitempty"`
+	Associations   *TokenAssociationSelection `json:"associations,omitempty"`
 }
 
 // ReleasedTokenSelection projects a validated producing trail without changing it.
@@ -53,6 +54,18 @@ func ReleasedTokenSelection(trail SourceTrail) *TokenSelectionView {
 		v.ProposedTokens = append(v.ProposedTokens, count)
 		if len(t.Lexical) > 0 {
 			v.Lexical = append(v.Lexical, TokenLexicalFact{Rank: len(v.CandidateIDs), BM25: t.Lexical[i].BM25})
+		}
+	}
+	if t.Associations != nil {
+		v.Associations = &TokenAssociationSelection{
+			AssociatedIDs:  append([]SegmentID{}, t.Associations.AssociatedIDs...),
+			ProposedTokens: make([]*uint64, len(t.Associations.ProposedTokens)),
+		}
+		for i, count := range t.Associations.ProposedTokens {
+			if count != nil {
+				n := *count
+				v.Associations.ProposedTokens[i] = &n
+			}
 		}
 	}
 	return v

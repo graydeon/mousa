@@ -20,7 +20,7 @@ type tokenEvidence struct {
 	Text    string        `json:"text"`
 }
 
-func tokenQueryCommand(ctx context.Context, storePath, external string, args []string, space, mode, policy string, budget uint64, packing string, tokenBudget mousa.TokenBudget, python, cache string, supersession bool) error {
+func tokenQueryCommand(ctx context.Context, storePath, external string, args []string, space, mode, policy string, budget uint64, packing string, tokenBudget mousa.TokenBudget, python, cache string, supersession bool, associationPath string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := tokenBudget.Available(); err != nil {
@@ -74,6 +74,17 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 			return usageError{"query expression exceeds byte limit"}
 		}
 	}
+	var declarations []mousa.AssociationDeclaration
+	if associationPath != "" {
+		raw, err := os.ReadFile(associationPath)
+		if err != nil {
+			return err
+		}
+		declarations, err = mousa.DecodeAssociationDeclarations(raw)
+		if err != nil {
+			return err
+		}
+	}
 	counter, err := startTokenCounter(ctx, python, cache)
 	if err != nil {
 		return err
@@ -88,7 +99,7 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 	if err != nil {
 		return err
 	}
-	options := sqlite.TokenQuery{Budget: tokenBudget, Counter: counter, Supersession: supersession}
+	options := sqlite.TokenQuery{Budget: tokenBudget, Counter: counter, Supersession: supersession, Associations: declarations}
 	var trail mousa.SourceTrail
 	var decision mousa.PolicyDecision
 	var rendered string
@@ -97,6 +108,14 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 		got, text, err := store.EvaluateAndTraceTokenLexical(ctx, request, query, policy, budget, packing, options)
 		if err != nil {
 			return err
+		}
+		if got.Trail.Schema == mousa.SourceTrailSchemaV11 {
+			projection, err := lexicalEvidenceProjection(ctx, store, source, request, got.Trail.Expression, policy, packing, got, declarations, false)
+			if err != nil {
+				return err
+			}
+			projection.Query, projection.Source = query, label
+			return emit(mcpLexicalResult{projection, &text, mousa.ReleasedTokenSelection(got.Trail)})
 		}
 		trail, decision, rendered = got.Trail, got.Decision, text
 		verified = got.Candidates

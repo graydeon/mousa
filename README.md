@@ -100,13 +100,15 @@ canonical v7/v8 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
-For caller-declared supporting notes, use inline `associations` on lexical
-`mousa_query`; the [stdio example](docs/USAGE.md#mcp-declared-supporting-context)
-shows ordinary evidence, an appended qualification and freshly authorized v3 history.
-This source change is pending PR review, not a released capability. After merge,
-build from the containing source revision and refresh cached tool schemas.
+For caller-declared supporting notes, use native `query --associations FILE` or
+inline `associations` on lexical `mousa_query`. Both accept measured token budgets:
+only primary passages that survive both budgets trigger supporting context.
+The [runnable example](docs/USAGE.md#mcp-declared-supporting-context) checks a
+whole-context exact fit and omission one token below it, without displacing the primary.
+Byte-only MCP associations are available in source builds containing merged PR95;
+token composition requires this change. No tagged release is claimed.
 Declarations assert relationships and attribution, not semantic sufficiency or access.
-Token, vector/hybrid and supersession combinations remain unsupported.
+Vector/hybrid associations and association-plus-supersession remain unsupported.
 
 ## What works today?
 

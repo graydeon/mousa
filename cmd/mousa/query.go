@@ -185,7 +185,7 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 				continue
 			}
 			switch row.Omission {
-			case "budget", "duplicate":
+			case "budget", "duplicate", "bytes", "tokens", "rendered_bytes":
 				result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
 					FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
 				})

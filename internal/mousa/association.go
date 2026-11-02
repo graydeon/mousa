@@ -299,6 +299,10 @@ func (trail SourceTrail) validateAssociated() error {
 			if row.TextBytes <= remaining {
 				return newValidationError(field+".text_bytes", ValidationCodeInvalidRange, "budget omission must not fit the remaining budget", nil)
 			}
+		case "bytes", "tokens", "rendered_bytes":
+			if trail.Schema != SourceTrailSchemaV11 || row.DuplicateOf != "" || repeated {
+				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires token association accounting", nil)
+			}
 		default:
 			return newValidationError(field+".omission", ValidationCodeInvalidValue, "unselected associated passage requires a packing omission", nil)
 		}

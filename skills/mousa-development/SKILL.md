@@ -21,13 +21,18 @@ Reuse the supplied SQLite transaction for candidate, administrative and provenan
 
 Historical trail reads verify recorded immutable evidence and current authorization without reinterpreting selection under today's activation projection. Preserve canonical candidate sizes and ranks when withholding; suppressed candidates consume no packing budget and cannot become retained duplicates. Keep unavailable historical text verification limits explicit.
 
-For declared context, lexical byte-only MCP `mousa_query` accepts the complete
-inline association_declarations.v1 document through DecodeAssociationDeclarations
-on the original nested bytes. Keep this input query-only; reject tokens,
-supersession true and vector/hybrid combinations before producing state.
-Reuse native associated selection and v3 history; omission/unfired declarations
-retain existing version and identity rules. Inspect current output schemas
-before adding fields: association provenance and omissions are already declared.
+For declared context, native directory/JSONL and lexical MCP queries accept byte
+or measured token budgets. MCP decodes the complete inline
+association_declarations.v1 document from its original nested bytes. Reject
+supersession true and vector/hybrid associations before producing state.
+Resolve only primary passages surviving both budgets in the same writer snapshot;
+append associated text using the one query counter, then confirm and Finish once.
+Byte-only stages retain v3 and its 256-target-passage consideration bound. Token
+composition uses v11 and packet v3, with at most100 total primary/associated rows
+and256KiB accepted text before duplicate/budget omissions. Unfired declarations
+retain ordinary history. Keep associated IDs/counts separately aligned from
+compacted accepted-primary lexical facts. Verify both stages against recorded
+ancestry, not today's targets; normal history needs no tokenizer.
 Caller author/basis strings are untrusted assertions, not authenticated identities.
 The runnable examples/mcp_associations.py checks selection/provenance, not
 semantic sufficiency. Fresh history authorization may append audit evidence.
@@ -94,9 +99,9 @@ full-selection wrapper, not released text alone. Project token ranking through
 suppression-aware v4 or v9 respectively. Historical reads rederive membership
 from recorded events/declarations, not current activation. Vector/hybrid full-source
 admission still precedes masking; survivor accounting cannot relax it.
-Association combinations remain unsupported. Byte-only vector/hybrid uses v9
-and packet v1's released-selection binding. Preserve valid v1–v9 bytes/identities;
-omitted/false token supersession uses v7, including native vector/hybrid flags.
+Association-plus-supersession remains unsupported. Byte-only vector/hybrid uses v9
+and packet v1's released-selection binding. Preserve valid v1–v10 bytes/identities;
+omitted/false token supersession uses v7 unless declared lexical context records v11.
 
 
 ## Prove and deliver the change
