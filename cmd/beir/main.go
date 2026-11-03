@@ -284,6 +284,7 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		}
 		sort.Ints(selectedDocs)
 		coverage.SelectedDocs = int(meanInts(selectedDocs))
+		report.Aggregate.PackCoverage = coverage
 	}
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

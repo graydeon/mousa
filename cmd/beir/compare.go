@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/graydeon/mousa/eval/beir"
 	"os"
-	"reflect"
 	"sort"
 )
 
@@ -100,13 +99,13 @@ func compareReportTo(out string, paths []string, axis string) error {
 	if err != nil {
 		return fmt.Errorf("invalid evidence %s: %w", paths[1], err)
 	}
-	if err := validateComparable(&baseline); err != nil {
+	if err := beir.ValidateComparable(&baseline); err != nil {
 		return fmt.Errorf("invalid evidence %s: %w", paths[0], err)
 	}
-	if err := validateComparable(&candidate); err != nil {
+	if err := beir.ValidateComparable(&candidate); err != nil {
 		return fmt.Errorf("invalid evidence %s: %w", paths[1], err)
 	}
-	if err := requireMatchingFields(baseline, candidate, axis); err != nil {
+	if err := beir.RequireMatchingFields(baseline, candidate, axis); err != nil {
 		return err
 	}
 
@@ -199,81 +198,5 @@ func compareReportTo(out string, paths []string, axis string) error {
 		compare.Latency.BaselineP50Micros, compare.Latency.CandidateP50Micros, compare.Latency.P50Ratio,
 		compare.Comparison.NDCGAt10Delta,
 		compare.Criteria.Identity.Passed, compare.Criteria.Latency.Passed)
-	return nil
-}
-
-// validateComparable rejects reports that are not valid evidence for any
-// comparison: no queries, duplicate query IDs, an aggregate inconsistent with
-// its own per-query rows, an invalid ranking, or a report written before
-// content identity existed.
-func validateComparable(report *beir.RunReport) error {
-	if len(report.Queries) == 0 {
-		return fmt.Errorf("report has no query results")
-	}
-	seen := map[string]struct{}{}
-	for _, query := range report.Queries {
-		if _, duplicate := seen[query.QueryID]; duplicate {
-			return fmt.Errorf("query %s appears twice", query.QueryID)
-		}
-		seen[query.QueryID] = struct{}{}
-		if err := beir.ValidateRanking(query.RankedDocIDs); err != nil {
-			return err
-		}
-	}
-	if report.Aggregate.Queries != len(report.Queries) {
-		return fmt.Errorf("aggregate claims %d queries but the report carries %d", report.Aggregate.Queries, len(report.Queries))
-	}
-	if report.Protocol.Name == "" {
-		return fmt.Errorf("report carries no evaluation protocol identity (legacy report)")
-	}
-	return nil
-}
-
-// requireMatchingFields enforces the declared comparison axis. The axis is the
-// one dimension the arms intentionally differ on (expression policy, mode, or
-// pack budget); dataset content identity, limit, query slice, corpus size, and
-// evaluation protocol must match regardless of axis. An unrecognized axis is
-// refused: comparing "whatever happens to match" is how the empty-report
-// defect slipped through.
-func requireMatchingFields(baseline, candidate beir.RunReport, axis string) error {
-	switch axis {
-	case "policy", "mode", "budget":
-	case "":
-		return fmt.Errorf("compare requires an explicitly declared axis (-axis policy|mode|budget); the axis is the one dimension the two arms intentionally differ on")
-	default:
-		return fmt.Errorf("unknown comparison axis %q (supported: policy, mode, budget)", axis)
-	}
-	if !reflect.DeepEqual(baseline.Protocol, candidate.Protocol) {
-		return fmt.Errorf("reports are not comparable: evaluation protocols differ (baseline %+v / candidate %+v)", baseline.Protocol, candidate.Protocol)
-	}
-	if baseline.Dataset != candidate.Dataset ||
-		baseline.Content != candidate.Content ||
-		baseline.CorpusDocuments != candidate.CorpusDocuments ||
-		baseline.QueryLimit != candidate.QueryLimit {
-		return fmt.Errorf("reports are not comparable on axis %s: dataset, content identity, corpus size, or query slice differs (baseline %+v / candidate %+v)", axis, baseline.Content, candidate.Content)
-	}
-	switch axis {
-	case "policy":
-		if baseline.ExpressionPolicy == candidate.ExpressionPolicy {
-			return fmt.Errorf("comparison axis is policy but both arms ran %q", baseline.ExpressionPolicy)
-		}
-		if baseline.Mode != candidate.Mode || baseline.Budget != candidate.Budget {
-			return fmt.Errorf("arms differ beyond the declared axis: mode %q/%q budget %d/%d", baseline.Mode, candidate.Mode, baseline.Budget, candidate.Budget)
-		}
-	case "mode":
-		if baseline.Mode == candidate.Mode {
-			return fmt.Errorf("comparison axis is mode but both arms ran %q", baseline.Mode)
-		}
-		if baseline.ExpressionPolicy != candidate.ExpressionPolicy || baseline.Budget != candidate.Budget {
-			return fmt.Errorf("arms differ beyond the declared axis: policy %q/%q budget %d/%d", baseline.ExpressionPolicy, candidate.ExpressionPolicy, baseline.Budget, candidate.Budget)
-		}
-	case "budget":
-		if baseline.Budget == candidate.Budget {
-			return fmt.Errorf("comparison axis is budget but both arms ran %d", baseline.Budget)
-		}
-		if baseline.Mode != candidate.Mode || baseline.ExpressionPolicy != candidate.ExpressionPolicy {
-			return fmt.Errorf("arms differ beyond the declared axis: mode %q/%q policy %q/%q", baseline.Mode, candidate.Mode, baseline.ExpressionPolicy, candidate.ExpressionPolicy)
-		}
-	}
 	return nil
 }

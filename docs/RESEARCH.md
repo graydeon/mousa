@@ -1518,3 +1518,19 @@ go test ./eval/beir/ ./internal/...   # scoring self-test + engine gates
 Per-query reports contain ranked document identifiers, metrics, and timing measurements.
 Run the commands above to generate reports for the selected dataset. Historical raw
 reports are retained separately and are not distributed in this repository.
+
+Traced reports include per-query coverage and `aggregate.pack_coverage`, including
+legitimate zero coverage. Gold coverage is the mean across queries; selected
+document counts and used bytes are integer per-query means, rounded down.
+Utilisation divides the mean used bytes by the configured byte budget. Non-traced
+reports omit coverage.
+
+The coverage command and `-report compare -axis budget` share comparability
+validation: corpus/query/qrel content identities, evaluation protocol, ordered
+nonempty unique query IDs, query slice, candidate limit and dataset must agree.
+Query and coverage counts must match the actual population. Curves also require
+traced mode, the same expression policy and one report per budget.
+Legacy reports without this provenance remain readable, but cannot be used to
+certify a comparison. Preserve their original bytes; rerun the original inputs
+when new comparable evidence is needed. Content hashes do not authenticate
+relevance labels or establish that judgments are complete.

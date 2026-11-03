@@ -45,9 +45,9 @@ type CoveragePoint struct {
 
 // CoverageCurve joins the traced reports of one experiment into the pack
 // byte-budget curve, ordered by ascending budget. Reports must be comparable:
-// same dataset, corpus, judged-query count, candidate limit, and expression
-// policy, and each must be a traced run carrying pack coverage. A report that
-// cannot be compared is refused rather than averaged into the curve, and two
+// same content identities, ordered query population, evaluation protocol, dataset,
+// candidate limit and expression policy. Each must carry traced pack coverage.
+// Reports that cannot be compared are refused rather than averaged, and two
 // reports for the same budget are refused because neither is privileged.
 func CoverageCurve(reports []RunReport) ([]CoveragePoint, error) {
 	if len(reports) == 0 {
@@ -62,12 +62,13 @@ func CoverageCurve(reports []RunReport) ([]CoveragePoint, error) {
 		if report.Mode != string(ModeTraced) || report.Aggregate.PackCoverage == nil {
 			return nil, fmt.Errorf("report for dataset %q budget %d is a %s run without pack coverage", report.Dataset, report.Budget, report.Mode)
 		}
-		if report.Dataset != head.Dataset || report.CorpusDocuments != head.CorpusDocuments ||
-			report.JudgedQueries != head.JudgedQueries || report.Limit != head.Limit ||
-			report.ExpressionPolicy != head.ExpressionPolicy {
-			return nil, fmt.Errorf("report for dataset %q budget %d is not comparable with dataset %q budget %d: corpus %d/%d, judged %d/%d, limit %d/%d, policy %q/%q",
-				report.Dataset, report.Budget, head.Dataset, head.Budget, report.CorpusDocuments, head.CorpusDocuments,
-				report.JudgedQueries, head.JudgedQueries, report.Limit, head.Limit, report.ExpressionPolicy, head.ExpressionPolicy)
+		if err := ValidateComparable(&report); err != nil {
+			return nil, fmt.Errorf("invalid coverage evidence for budget %d: %w", report.Budget, err)
+		}
+		if report.Budget != head.Budget {
+			if err := RequireMatchingFields(head, report, "budget"); err != nil {
+				return nil, err
+			}
 		}
 		coverage := report.Aggregate.PackCoverage
 		points = append(points, CoveragePoint{
