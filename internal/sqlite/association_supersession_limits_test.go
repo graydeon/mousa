@@ -9,6 +9,7 @@ import (
 )
 
 func TestAssociatedSupersessionNoHistoryTargetsAndLimits(t *testing.T) {
+	t.Parallel()
 	f := newV4Fixture(t)
 	ds := []mousa.AssociationDeclaration{{FromItem: "peer", ToItem: "missing", Basis: "qualification", Author: "test"}}
 	query := func(name, expression string, ds []mousa.AssociationDeclaration) TracedLexicalResult {

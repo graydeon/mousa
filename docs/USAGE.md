@@ -303,6 +303,11 @@ size-checks its expression before opening the store: a default or
 `--supersession=false` query keeps the established post-open expression error, and
 the store's own limit rejects an oversized expression after the store is opened.
 
+For byte-only lexical queries, an explicitly empty `--associations=` retains the
+no-association behavior when supersession is omitted or false. With true
+supersession it is a usage error before writable open; omitting the association
+flag entirely still permits an ordinary supersession query.
+
 `--associations <file>` opts a query into declared associated context:
 
 ```sh

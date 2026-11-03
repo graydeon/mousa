@@ -10,6 +10,7 @@ import (
 )
 
 func TestAssociatedSupersessionResolutionUsesSuppliedSnapshot(t *testing.T) {
+	t.Parallel()
 	f := newV4Fixture(t)
 	_, state := f.activate(t)
 	input := f.retrieve(t, "snapshot-primary")
@@ -55,6 +56,7 @@ func TestAssociatedSupersessionResolutionUsesSuppliedSnapshot(t *testing.T) {
 }
 
 func TestAssociatedSupersessionMissingParentAndStartup(t *testing.T) {
+	t.Parallel()
 	for _, parent := range []string{"segment", "representation"} {
 		t.Run(parent, func(t *testing.T) {
 			f := newV4Fixture(t)
@@ -101,6 +103,7 @@ func TestAssociatedSupersessionMissingParentAndStartup(t *testing.T) {
 }
 
 func TestAssociatedSupersessionWithdrawalSkipsDamagedConsultation(t *testing.T) {
+	t.Parallel()
 	f := newV4Fixture(t)
 	f.activate(t)
 	ds := []mousa.AssociationDeclaration{{FromItem: "peer", ToItem: "predecessor", Basis: "qualification", Author: "test"}}

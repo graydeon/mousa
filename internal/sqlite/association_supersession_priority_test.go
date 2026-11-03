@@ -6,6 +6,7 @@ import (
 )
 
 func TestAssociatedSupersessionFreedPrimaryFires(t *testing.T) {
+	t.Parallel()
 	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
 		t.Run(packing, func(t *testing.T) {
 			f := newV4Fixture(t)

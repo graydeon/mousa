@@ -332,7 +332,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			emptyAssociations = true
 		}
 	})
-	if emptyAssociations {
+	if *supersession && emptyAssociations {
 		return usageError{"associations requires a declaration file"}
 	}
 	var declarations []mousa.AssociationDeclaration

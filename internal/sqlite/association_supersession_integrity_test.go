@@ -11,6 +11,7 @@ import (
 )
 
 func TestAssociatedSupersessionBoundariesAndHistory(t *testing.T) {
+	t.Parallel()
 	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
 		t.Run(packing, func(t *testing.T) {
 			f := newV4Fixture(t)
@@ -92,6 +93,7 @@ func TestAssociatedSupersessionBoundariesAndHistory(t *testing.T) {
 }
 
 func TestAssociatedSupersessionResealedCorruption(t *testing.T) {
+	t.Parallel()
 	for _, mutation := range []string{"suppression", "attribution", "digest", "size", "activation"} {
 		t.Run(mutation, func(t *testing.T) {
 			f := newV4Fixture(t)
@@ -146,6 +148,7 @@ func TestAssociatedSupersessionResealedCorruption(t *testing.T) {
 }
 
 func TestAssociatedSupersessionStrictCodecAndRollback(t *testing.T) {
+	t.Parallel()
 	f := newV4Fixture(t)
 	f.activate(t)
 	ds := []mousa.AssociationDeclaration{{FromItem: "peer", ToItem: "predecessor", Basis: "qualification", Author: "test"}}
