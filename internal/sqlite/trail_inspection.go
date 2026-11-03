@@ -186,7 +186,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 			view.PackingPolicy = trail.PackingPolicy
 			view.Vector = trail.Vector
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 {
+		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV12 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 		}
@@ -240,7 +240,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 				Omission: candidate.Omission, DuplicateOf: candidate.DuplicateOf,
 			})
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV11 {
+		if trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12 {
 			for _, row := range trail.Associated {
 				var indexed bool
 				if err := conn.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`, row.SegmentID[:]).Scan(&indexed); err != nil {

@@ -47,7 +47,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 	exact := trail.PackingPolicy == mousa.PackingExactV1
 	// A v4 record names each canonical record this pass reads, which decides how a missing one is
 	// classified below.
-	v4 := trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV9 || trail.Schema == mousa.SourceTrailSchemaV10
+	v4 := trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV9 || trail.Schema == mousa.SourceTrailSchemaV10 || trail.Schema == mousa.SourceTrailSchemaV12
 	strict := v4 || trail.Schema == mousa.SourceTrailSchemaV11
 	// The candidates a v4 record names as withheld remain content-verified, but they are neither
 	// selected nor allowed to seed the retained byte-equal set, so the byte-aware duplicate check
@@ -97,7 +97,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 		if v4 {
 			verified[index].Paths = paths[segment.RepresentationID]
 		}
-		if candidate.Selected && candidate.Omission == "" && (len(trail.Associated) > 0 || trail.Schema == mousa.SourceTrailSchemaV11) {
+		if candidate.Selected && candidate.Omission == "" && (len(trail.Associated) > 0 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12) {
 			item, err := representationItem(ctx, q, sourceID, segment.RepresentationID, items)
 			if err != nil {
 				return err
@@ -235,7 +235,15 @@ func verifySourceTrailSupersession(ctx context.Context, q queryer, trail mousa.S
 // retained bytes. Item membership is derived from immutable representation ancestry, so a trail
 // stays readable after the target item is revised, deactivated or removed.
 func verifyAssociatedTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail, sourceID mousa.SourceID, representations map[mousa.RepresentationID]mousa.Representation, paths map[mousa.RepresentationID][]mousa.EvidencePath, items map[mousa.RepresentationID]string, primaryItems map[string]struct{}) error {
-	strict := trail.Schema == mousa.SourceTrailSchemaV11
+	strict := trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12
+	var declaration *mousa.SupersessionDeclaration
+	if trail.Schema == mousa.SourceTrailSchemaV12 && trail.Supersession.DeclarationID != nil {
+		value, err := readSupersessionDeclaration(ctx, q, *trail.Supersession.DeclarationID)
+		if err != nil {
+			return canonicalTrailParentError(true, "verify associated trail", "recorded declaration", err)
+		}
+		declaration = &value
+	}
 	retained := make(map[mousa.SHA256][]retainedText)
 	var target string
 	var revision mousa.RepresentationID
@@ -317,6 +325,15 @@ func verifyAssociatedTrailContent(ctx context.Context, q queryer, trail mousa.So
 		}
 		if available && uint64(len(text)) != row.TextBytes {
 			return integrity("verify associated trail", "indexed text length disagrees with associated row")
+		}
+		if trail.Schema == mousa.SourceTrailSchemaV12 {
+			suppressed := declaration != nil && segment.RepresentationID == declaration.PredecessorRepresentationID
+			if suppressed != (row.Omission == string(mousa.SupersessionSuperseded)) {
+				return integrity("verify associated trail", "associated suppression disagrees with recorded exact predecessor pin")
+			}
+			if suppressed {
+				continue
+			}
 		}
 		if strict {
 			for _, previous := range retained[row.ContentSHA256] {

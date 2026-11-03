@@ -222,6 +222,9 @@ func (trail SourceTrail) validateAssociated() error {
 	primaryUsed := uint64(0)
 	for _, candidate := range trail.Candidates {
 		if candidate.Selected {
+			if candidate.TextBytes > trail.BudgetBytes-primaryUsed {
+				return retrievalValidationError("associated", ValidationCodeInvalidRange, "primary selection exceeds the budget")
+			}
 			primaryUsed += candidate.TextBytes
 		}
 	}
@@ -281,6 +284,10 @@ func (trail SourceTrail) validateAssociated() error {
 			continue
 		}
 		switch row.Omission {
+		case string(SupersessionSuperseded):
+			if trail.Schema != SourceTrailSchemaV12 || trail.Supersession.DeclarationID == nil || row.DuplicateOf != "" {
+				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires recorded composed supersession", nil)
+			}
 		case "duplicate":
 			previous, exists := released[row.DuplicateOf]
 			if !exists || previous.digest != row.ContentSHA256 {
@@ -328,13 +335,40 @@ func (trail SourceTrail) validateAssociated() error {
 // passage is never selected ahead of primary evidence. With nothing considered and nothing
 // omitted, the trail is returned unchanged.
 func AppendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCandidate, associated []AssociatedPassage, omissions []AssociationOmission) (SourceTrail, error) {
+	if trail.Supersession != nil && (len(associated) != 0 || len(omissions) != 0) {
+		return SourceTrail{}, newValidationError("supersession", ValidationCodeInvalidValue, "requires the recorded supersession association constructor", nil)
+	}
+	return appendAssociatedPassages(trail, candidates, associated, omissions, nil)
+}
+
+// AppendSupersessionAssociatedPassages packs supporting passages using the primary
+// trail's recorded consultation. The store must verify same-source target ancestry
+// and the supplied declaration through the producing transaction.
+func AppendSupersessionAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCandidate, associated []AssociatedPassage, omissions []AssociationOmission, declaration *SupersessionDeclaration) (SourceTrail, error) {
+	if trail.Schema != SourceTrailSchemaV4 || trail.Supersession == nil {
+		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "requires a supersession primary trail", nil)
+	}
+	if declaration != nil {
+		if err := declaration.Validate(); err != nil {
+			return SourceTrail{}, err
+		}
+		if trail.Supersession.DeclarationID == nil || *trail.Supersession.DeclarationID != declaration.ID {
+			return SourceTrail{}, newValidationError("supersession", ValidationCodeInvalidID, "declaration disagrees with recorded consultation", nil)
+		}
+	} else if trail.Supersession.DeclarationID != nil {
+		return SourceTrail{}, newValidationError("supersession", ValidationCodeInvalidID, "recorded declaration is required", nil)
+	}
+	return appendAssociatedPassages(trail, candidates, associated, omissions, declaration)
+}
+
+func appendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCandidate, associated []AssociatedPassage, omissions []AssociationOmission, declaration *SupersessionDeclaration) (SourceTrail, error) {
 	if err := trail.Validate(); err != nil {
 		return SourceTrail{}, err
 	}
 	if len(associated) == 0 && len(omissions) == 0 {
 		return trail, nil
 	}
-	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 {
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 && trail.Schema != SourceTrailSchemaV4 {
 		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "association stage requires an original or exact-v1 trail", nil)
 	}
 	if trail.Outcome != string(PolicyOutcomeAllow) {
@@ -372,6 +406,10 @@ func AppendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCan
 		row.ToItem = passage.Declaration.ToItem
 		row.Basis = passage.Declaration.Basis
 		row.Author = passage.Declaration.Author
+		if declaration != nil && passage.Segment.RepresentationID == declaration.PredecessorRepresentationID {
+			row.Omission = string(SupersessionSuperseded)
+			continue
+		}
 		// A packet never releases one segment twice, whatever the packing policy: the second
 		// occurrence is an omission that names the released passage.
 		if previous, seen := bySegment[row.SegmentID.String()]; seen {
@@ -403,7 +441,11 @@ func AppendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCan
 	if trail.PackingPolicy == "" {
 		trail.PackingPolicy = PackingOriginal
 	}
-	trail.Schema = SourceTrailSchemaV3
+	if trail.Schema == SourceTrailSchemaV4 {
+		trail.Schema = SourceTrailSchemaV12
+	} else {
+		trail.Schema = SourceTrailSchemaV3
+	}
 	trail.UsedBytes = used
 	packetID, err := contextPacketIDV3(trail)
 	if err != nil {

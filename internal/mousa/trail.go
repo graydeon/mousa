@@ -17,6 +17,7 @@ const (
 	SourceTrailSchemaV2   = "mousa.source_trail.v2"
 	SourceTrailSchemaV3   = "mousa.source_trail.v3"
 	SourceTrailSchemaV4   = "mousa.source_trail.v4"
+	SourceTrailSchemaV12  = "mousa.source_trail.v12"
 	PackingOriginal       = "original"
 	PackingExactV1        = "exact-v1"
 )
@@ -24,7 +25,7 @@ const (
 // isSourceTrailSchema reports whether one schema literal is a supported Source Trail version.
 func isSourceTrailSchema(schema string) bool {
 	switch schema {
-	case SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV3, SourceTrailSchemaV4:
+	case SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV3, SourceTrailSchemaV4, SourceTrailSchemaV12:
 		return true
 	}
 	return false
@@ -126,6 +127,7 @@ type TrailCandidate struct {
 // records the association stage: considered associated passages and the declared relationships that
 // released nothing. A v4 trail records the consulted supersession evidence instead: an opt-in trail
 // always carries one closed Supersession member, and it carries no associated passages.
+// A v12 trail composes that consultation with a byte-only association stage.
 type SourceTrail struct {
 	Schema               string                 `json:"schema"`
 	ID                   SourceTrailID          `json:"id"`
@@ -367,6 +369,11 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV12 {
+		if err := trail.validateAssociatedSupersessionProfile(); err != nil {
+			return err
+		}
+	}
 	if trail.Schema == SourceTrailSchemaV9 {
 		return trail.validateRetrievalSupersessionTrail()
 	}
@@ -391,7 +398,7 @@ func (trail SourceTrail) Validate() error {
 	if !isSourceTrailSchema(trail.Schema) {
 		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
-	if trail.Schema == SourceTrailSchemaV4 {
+	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV12 {
 		if trail.Supersession == nil {
 			return newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
 		}
@@ -404,7 +411,7 @@ func (trail SourceTrail) Validate() error {
 	if err := trail.validatePacking(); err != nil {
 		return err
 	}
-	if trail.Schema == SourceTrailSchemaV3 {
+	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 {
 		if err := trail.validateAssociated(); err != nil {
 			return err
 		}
@@ -418,7 +425,7 @@ func (trail SourceTrail) Validate() error {
 	if trail.Outcome != string(PolicyOutcomeAllow) && trail.Outcome != string(PolicyOutcomeDeny) {
 		return newValidationError("outcome", ValidationCodeInvalidValue, "must be allow or deny", nil)
 	}
-	if trail.Schema == SourceTrailSchemaV4 && trail.Supersession.Consulted != (trail.Outcome == string(PolicyOutcomeAllow)) {
+	if (trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV12) && trail.Supersession.Consulted != (trail.Outcome == string(PolicyOutcomeAllow)) {
 		// The flag is recorded, never inferred: an allow consulted supersession and a deny did not.
 		return newValidationError("supersession.consulted", ValidationCodeInvalidValue, "must be true exactly when the decision allowed the source", nil)
 	}
@@ -456,11 +463,17 @@ func (trail SourceTrail) Validate() error {
 			return newValidationError(field+".selected", ValidationCodeInvalidValue, "only accepted candidates can be selected", nil)
 		}
 		if candidate.Selected {
+			if candidate.TextBytes > trail.BudgetBytes-used {
+				return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "selected bytes exceed the budget")
+			}
 			used += candidate.TextBytes
 		}
 	}
 	for _, row := range trail.Associated {
 		if row.Selected {
+			if row.TextBytes > trail.BudgetBytes-used {
+				return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "selected bytes exceed the budget")
+			}
 			used += row.TextBytes
 		}
 	}
@@ -491,7 +504,7 @@ func (trail SourceTrail) Validate() error {
 // packetIdentity re-derives the packet identity of a validated trail: the v1 domain for
 // v1/v2 records, and the v2 domain that also binds associated rows for v3.
 func (trail SourceTrail) packetIdentity() (ContextPacketID, error) {
-	if trail.Schema == SourceTrailSchemaV3 {
+	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 {
 		return contextPacketIDV3(trail)
 	}
 	selected := make([]bool, len(trail.Candidates))
@@ -507,6 +520,9 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
+	if trail.Schema == SourceTrailSchemaV12 {
+		return vectorTrailIdentity(trail)
+	}
 	if trail.Schema == SourceTrailSchemaV9 {
 		return vectorTrailIdentity(trail)
 	}
@@ -670,6 +686,8 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
+		case SourceTrailSchemaV12:
+			return decodeAssociatedSupersessionTrail(data)
 		case SourceTrailSchemaV9:
 			return decodeRetrievalSupersessionTrail(data)
 		case SourceTrailSchemaV7, SourceTrailSchemaV8, SourceTrailSchemaV10, SourceTrailSchemaV11:

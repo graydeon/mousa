@@ -293,14 +293,20 @@ For a directory or JSONL source with a separately stored and activated declarati
 Flags precede query text. Opted-in responses add `supersession_excluded`, including
 zero; defaults omit it. Suppression is distinct from lifecycle, budget and duplicate
 omissions, and an empty result reports budget omission before supersession exclusion,
-then lifecycle exclusion. An `--associations` combination is rejected before the store
-opens. Directory queries use their own source namespace, not the JSONL `--source`
-namespace; passing the directory path to `--source` queries a different source.
+then lifecycle exclusion. Byte-only lexical `--associations` can compose with this
+opt-in; token triples reject before writable open. Directory queries use their own
+source namespace, not JSONL `--source`; passing a directory path to `--source`
+queries a different source.
 A valid query uses writable open and can create or migrate a store before a later operation fails;
 rollback does not undo that open boundary. Only the opted-in query prepares and
 size-checks its expression before opening the store: a default or
 `--supersession=false` query keeps the established post-open expression error, and
 the store's own limit rejects an oversized expression after the store is opened.
+
+For byte-only lexical queries, an explicitly empty `--associations=` retains the
+no-association behavior when supersession is omitted or false. With true
+supersession it is a usage error before writable open; omitting the association
+flag entirely still permits an ordinary supersession query.
 
 `--associations <file>` opts a query into declared associated context:
 
@@ -995,8 +1001,9 @@ and reauthorizes history. Retrieval does not require `--ingest-source`; the
 example uses it only to prepare its fixture.
 
 Both term policies and both packers work with byte or measured token budgets.
-Omitted/false supersession works; true supersession and vector/hybrid associations
-reject. Supply an object, not null, a filename or URL. The
+Omitted/false supersession works with both budget modes; true supersession also
+works with byte-only lexical associations. Token triples and vector/hybrid
+associations reject. Supply an object, not null, a filename or URL. The
 [native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
 apply. Assertions check protocol, selection and attribution consistency, not
 authenticated authorship, semantic sufficiency, recall, completeness or truth.
@@ -1014,6 +1021,34 @@ packers. An independent official count/hash checks every complete returned rende
 An exact fit includes the primary and nonmatching qualification; one token less
 omits the qualification without displacing the primary. Tokenizer interpreter
 paths remain operator startup configuration, not MCP tool arguments.
+
+### Supersession-safe supporting context
+
+Build from source and run the complete synthetic example:
+
+```sh
+go build -o mousa ./cmd/mousa
+python3 examples/association_supersession.py --mousa ./mousa
+```
+
+The example creates fresh directory and JSONL sources, discovers exact revision
+pins and uses native declaration/activation administration. Both packers run
+native `query --supersession --associations FILE` and configured MCP `mousa_query`
+with `supersession: true` plus inline `associations`; history is inspected through
+native `trail` and opted-in MCP `mousa_trail`.
+
+Selected primary evidence triggers nonmatching supporting notes. The pinned old
+target is recorded as `superseded`; an unsuppressed byte-equal twin and a separate
+qualification survive. Withheld bytes spend no retained budget and do not seed
+exact-content deduplication. Supporting notes retain their own pins and caller
+attribution; they do not establish semantic sufficiency. Replacement is explicit
+administration, not truth inference. This mode needs no tokenizer.
+
+Recorded supporting stages use v12; non-firing stages retain supersession-only
+v4. Primary suppression is reported by `supersession_excluded`; associated
+suppression is reported in `association_omissions` as `superseded`. A suppressed
+target never causes successor retrieval or recursively fires a declaration.
+Token-plus-association-plus-supersession remains unsupported.
 
 For native JSONL, reuse the same strict declaration file:
 

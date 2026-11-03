@@ -55,6 +55,12 @@ func (store *Store) EvaluateAndTraceAssociatedLexical(ctx context.Context, reque
 	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, associations, false)
 }
 
+// EvaluateAndTraceAssociatedSupersessionLexical composes byte-only supporting
+// context and exact supersession in the same authorization/selection transaction.
+func (store *Store) EvaluateAndTraceAssociatedSupersessionLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string, associations []mousa.AssociationDeclaration) (TracedLexicalResult, error) {
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, associations, true)
+}
+
 func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool, packingPolicy string, associations []mousa.AssociationDeclaration, supersession bool) (TracedLexicalResult, error) {
 	if packingPolicy != mousa.PackingOriginal && packingPolicy != mousa.PackingExactV1 {
 		return TracedLexicalResult{}, wrap(CodeInvalidQuery, "trace enforced lexical", errors.New("packing policy must be original or exact-v1"))
@@ -91,8 +97,8 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 			return err
 		}
 		var trail mousa.SourceTrail
+		var consultation supersessionConsultation
 		if supersession {
-			var consultation supersessionConsultation
 			if enforced.Decision.Outcome == mousa.PolicyOutcomeAllow {
 				consultation, err = readSupersessionConsultation(ctx, conn, request.SourceID)
 				if err != nil {
@@ -113,7 +119,11 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 				return err
 			}
 			associated = considered
-			trail, err = mousa.AppendAssociatedPassages(trail, enforced.Candidates, associated, omissions)
+			if supersession {
+				trail, err = mousa.AppendSupersessionAssociatedPassages(trail, enforced.Candidates, associated, omissions, consultation.declaration)
+			} else {
+				trail, err = mousa.AppendAssociatedPassages(trail, enforced.Candidates, associated, omissions)
+			}
 			if err != nil {
 				return wrap(CodeInvalidRecord, "trace enforced lexical", err)
 			}
@@ -141,6 +151,11 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 					candidates[index].Text = ""
 					withheld++
 				}
+			}
+		}
+		for i, row := range written.Associated {
+			if row.Omission == string(mousa.SupersessionSuperseded) {
+				associated[i].Text = ""
 			}
 		}
 		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates, Associated: associated}
@@ -350,7 +365,7 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 			return mousa.SourceTrail{}, lexicalStructuralError("verify vector trail content", err)
 		}
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 {
+	if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV4 || trail.Schema == mousa.SourceTrailSchemaV12 {
 		if err := verifyTrailContent(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}

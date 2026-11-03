@@ -30,7 +30,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
-| Declared associated context | Yes | Native directory/JSONL `query --associations <file>`; inline `associations` on lexical MCP `mousa_query`, with byte or measured token budgets | Same-source authorization, measured-selected-primary trigger, primary priority, bounded consideration, omissions and v3/v11 history | [Caller-reviewed backup example](../examples/backup/README.md) and [synthetic stdio example](USAGE.md#mcp-declared-supporting-context); no general retrieval-quality claim |
+| Declared associated context | Yes | Native directory/JSONL `query --associations <file>`; inline `associations` on lexical MCP `mousa_query`; optional supersession in byte mode | Same-source authorization, selected-primary trigger, primary priority, bounded consideration, omissions and v3/v11/v12 history | [Caller-reviewed backup example](../examples/backup/README.md) and [supersession composition example](USAGE.md#supersession-safe-supporting-context); no general retrieval-quality claim |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
@@ -141,7 +141,7 @@ after exact suppression, before budget or duplicate omissions. Withheld bytes
 do not consume that capacity; their content, ancestry, sizes and ranks are
 still verified on construction and canonical readback.
 Vector/hybrid composition uses v10 and retains full-source admission before masking,
-as specified [below](#byte-only-vectorhybrid-supersession). Association-plus-supersession rejects.
+as specified [below](#byte-only-vectorhybrid-supersession). Token-plus-association-plus-supersession rejects.
 
 The composition writes `mousa.source_trail.v8`, binding the token facts and the
 closed recorded consultation. Omitted/false lexical supersession retains v7;
@@ -192,7 +192,7 @@ Mixed accepted/rejected lists follow the accepted selection or budget outcome,
 without releasing rejected positional details.
 
 Caps, process/work limits, reservation arithmetic, errors and unsupported explicit
-association-plus-supersession combinations are specified in the usage guide. Window
+token-plus-association-plus-supersession combinations are specified in the usage guide. Window
 and reservation values are caller declarations, not authenticated provider/model
 facts. Only the returned context is counted; unknown final prompts and JSON/tool
 framing outside it are not. MCP exposes the same packing through explicit
@@ -445,7 +445,7 @@ ancestor pins and successor availability do not. The local stdio MCP query tool
 implements the same explicit opt-in as an optional `supersession` boolean, and its trail
 tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
 boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP
-administration and association-plus-supersession combinations are unsupported.
+administration remains unsupported. Byte-only lexical associations can compose as v12.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
 Historical
@@ -766,7 +766,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
-| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`); inline `associations` document for lexical byte/token queries without supersession | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds `supersession_excluded`, associations append independently attributed evidence and any omissions |
+| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`); inline `associations` for lexical byte/token queries, with supersession only in byte mode | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds primary `supersession_excluded`, associations append independently attributed evidence and any omissions |
 | `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10/v11 token view that exists |
 | `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields below | Selected evidence, cosine/ranks, space/query-vector IDs, coverage, packing and producing IDs; opted-in withheld count |
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession and token options | Selected evidence and actual lexical/vector branch ranks, BM25/cosine and equal-weight RRF(k60), with coverage and producing IDs |
@@ -1489,11 +1489,13 @@ use the length of `evidence` for the selected count. The old misleading
 For directory and JSONL item sources, `--supersession` explicitly enables exact pinned-predecessor
 withholding after authorization and lifecycle verification and before packing.
 The opted-in store transaction reads the verified activation and declaration and
-always writes v4. Withheld text is not released, its recorded rank and canonical size
+records v4, or v12 when a supporting stage is recorded. Withheld text is not released, its rank and canonical size
 stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
-`--associations` combinations are rejected before writable open. Directory source and
-revision pin preparation is shown in the [native example](USAGE.md#directory-supersession-example).
+Byte-only lexical `--associations` composition uses the same consultation for target
+passages; token triples still reject before writable open. See the
+[complete supporting-context example](USAGE.md#supersession-safe-supporting-context)
+and [directory pin preparation](USAGE.md#directory-supersession-example).
 MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
 boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
 the same optional boolean. MCP administration remains unavailable.
@@ -1662,7 +1664,7 @@ and basis remain attached to every passage the declaration releases.
 MCP `mousa_query` accepts the complete document as optional inline `associations`,
 decoded from its original nested JSON bytes by the same native codec. This
 input is available in source builds containing merged PR95, not a tagged release.
-Measured token composition requires this change. Refresh cached closed tool schemas.
+Measured token composition is accepted through PR98. Refresh cached closed tool schemas.
 Omission preserves exact default response properties. Supplied null, wrong
 shape/schema, empty lists, unknown/repeated keys at any depth, invalid or repeated
 declarations and more than 32 declarations return `invalid_arguments` before
@@ -1671,7 +1673,8 @@ basis to 512 and author to 128; schema character bounds do not replace byte chec
 The existing transport frame bound still applies. No path, URL or additional
 source selector is accepted. Both term policies and both packers work with byte or
 measured token budgets; omitted or false `supersession` works. True supersession
-and vector/hybrid association requests reject during argument validation.
+also works with byte-only lexical associations. Token triples and vector/hybrid
+association requests reject during argument validation.
 The existing tools and `mousa.mcp_result.v1` envelope remain.
 Source text and declaration strings are untrusted data; `author` is not an
 authenticated identity. No ingestion permission is needed for retrieval.
@@ -1721,7 +1724,17 @@ rank or BM25 score. A passage that does not fit is omitted with reason
 the released passage under exact-v1 packing. Small budgets therefore expose
 omission without claiming completeness.
 
-A byte-only trail that records an association stage is a `mousa.source_trail.v3` record
+With explicit supersession, selected surviving primaries alone trigger expansion.
+The same recorded exact predecessor pin withholds associated targets before budget
+and duplicate retention. These rows carry `omission: "superseded"` and no text
+release; `association_omissions` reports that reason independently of the primary
+`supersession_excluded` count. A withheld equal-body predecessor cannot disqualify
+a surviving twin. No successor retrieval or inferred replacement is added.
+The [v12 contract](SUPERSESSION_ENFORCEMENT.md#byte-only-lexical-supporting-context)
+specifies producing-history verification and retired-text limits.
+
+A byte-only trail that records an association stage is a `mousa.source_trail.v3` record,
+or v12 when explicit supersession is enabled,
 with `associated` rows and `association_omissions`, and its packet identity
 uses a v2 domain that binds every released byte. Its inspected view adds
 `associated` and `association_omissions`. V1 and v2 encoding, decoding and

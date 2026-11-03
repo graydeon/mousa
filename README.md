@@ -110,7 +110,10 @@ including omitted associated rows; oversized sizes cannot wrap the 256 KiB total
 Byte-only MCP associations and token composition are available in source builds
 containing those capabilities. No tagged release is claimed.
 Declarations assert relationships and attribution, not semantic sufficiency or access.
-Vector/hybrid associations and association-plus-supersession remain unsupported.
+Byte-only lexical queries can combine associations and explicit supersession:
+the [complete example](docs/USAGE.md#supersession-safe-supporting-context) runs native
+directory/JSONL and configured MCP queries with verified v12 history.
+Token-plus-association-plus-supersession and vector/hybrid associations remain unsupported.
 
 ## What works today?
 
@@ -129,7 +132,7 @@ Revision-pinned supersession declarations and activation administration are avai
 together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
 JSONL (`query --source ID --supersession TEXT`) query opt-ins, and the same opt-in on
 the local stdio MCP `mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
-`mousa.source_trail.v4`, v8, v9 or v10 record recorded. Default and opted-out queries remain
+`mousa.source_trail.v4`, v8, v9, v10 or v12 record recorded. Default and opted-out queries remain
 uncurated; inspections preserve recorded selection and omit the member unless requested.
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Native-created v1–v3 history remains inspectable without a
@@ -148,7 +151,7 @@ directory/JSONL and configured MCP aliases: byte-only selection records v9;
 measured token composition records v10. Neither reranks nor relaxes full-source
 admission. The [runnable vector/hybrid example](docs/USAGE.md#vector-and-hybrid-supersession)
 supports an optional independently counted token run and a Python-independent
-byte-only run. Association-plus-supersession remains unsupported.
+byte-only run. Byte-only lexical supporting context uses the shared supersession consultation.
 The [lexical token example](docs/USAGE.md#lexical-supersession-with-token-budgets)
 keeps its separate v8 contract.
 Automatic embedding generation and secret filtering remain pending.
@@ -176,6 +179,7 @@ retrieval quality and performance.
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
 | [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
+| [Supporting-context example](examples/association_supersession.py) | Native/MCP byte-only explicit replacement and caller-declared qualifications. |
 
 ## Contributing
 

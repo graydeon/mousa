@@ -28,9 +28,6 @@ func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa
 }
 
 func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration, supersession bool) (*evidenceResult, error) {
-	if supersession && declarations != nil {
-		return nil, fmt.Errorf("supersession cannot be combined with associations")
-	}
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -45,7 +42,7 @@ func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Sto
 	expression := strings.Join(terms, " OR ")
 	var traced sqlite.TracedLexicalResult
 	if supersession {
-		traced, err = store.EvaluateAndTraceSupersessionLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
+		traced, err = store.EvaluateAndTraceAssociatedSupersessionLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
 	} else {
 		traced, err = store.EvaluateAndTraceAssociatedLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
 	}
@@ -185,7 +182,7 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 				continue
 			}
 			switch row.Omission {
-			case "budget", "duplicate", "bytes", "tokens", "rendered_bytes":
+			case "budget", "duplicate", "bytes", "tokens", "rendered_bytes", string(mousa.SupersessionSuperseded):
 				result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
 					FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
 				})
