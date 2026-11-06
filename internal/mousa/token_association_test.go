@@ -54,7 +54,7 @@ func TestTokenAssociatedPackingBoundaries(t *testing.T) {
 			reference.Close()
 			for _, delta := range []uint64{0, 1} {
 				c := associationCounter(t)
-				trail, text, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: cap - delta}, c, func(selected SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) {
+				trail, text, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: cap - delta}, c, nil, func(selected SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) {
 					if !selected.Candidates[0].Selected {
 						t.Fatal("primary lost priority")
 					}
@@ -81,7 +81,7 @@ func TestTokenAssociatedPackingBoundaries(t *testing.T) {
 			duplicatePrimary := AssociatedPassage{Segment: primary[0].Segment, Item: "qualification", Text: primary[0].Text, Declaration: associated[0].Declaration}
 			equal := exactCandidates(t, "different", "amber")[1]
 			duplicateText := AssociatedPassage{Segment: equal.Segment, Item: "qualification", Text: equal.Text, Declaration: associated[0].Declaration}
-			trail, _, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: 1000}, associationCounter(t), func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) {
+			trail, _, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: 1000}, associationCounter(t), nil, func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) {
 				return []AssociatedPassage{duplicatePrimary, duplicateText}, nil, nil
 			})
 			if err != nil {
@@ -115,7 +115,7 @@ func TestTokenAssociatedCombinedAdmission(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			trail, _, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: 1000}, associationCounter(t), func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) { return associated, nil, nil })
+			trail, _, err := PackAssociatedTokenContext(base, request.SourceID, primary, TokenBudget{Cap: 1000}, associationCounter(t), nil, func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error) { return associated, nil, nil })
 			if tc.fail != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.fail) {
 					t.Fatalf("wrong admission failure: %v", err)

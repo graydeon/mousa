@@ -16,6 +16,7 @@ const SourceTrailSchemaV7 = "mousa.source_trail.v7"
 const SourceTrailSchemaV8 = "mousa.source_trail.v8"
 const SourceTrailSchemaV10 = "mousa.source_trail.v10"
 const SourceTrailSchemaV11 = "mousa.source_trail.v11"
+const SourceTrailSchemaV13 = "mousa.source_trail.v13"
 const ContextRenderingV1 = "mousa.context_text.v1"
 const TokenBackend = "tiktoken/0.12.0/o200k_base/ordinary"
 
@@ -53,10 +54,10 @@ func contextHeaderBytes() uint64 { return uint64(len("[source= segment= sha256=]
 // PackTokenContext replaces only packing, preserving the actual producing ranking facts.
 // It finishes and reaps the counter before returning a record eligible for persistence.
 func PackTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLexicalCandidate, budget TokenBudget, counter *tokenizer.Counter) (SourceTrail, string, error) {
-	return packTokenContext(base, source, candidates, budget, counter, nil)
+	return packTokenContext(base, source, candidates, budget, counter, nil, nil)
 }
 
-func packTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLexicalCandidate, budget TokenBudget, counter *tokenizer.Counter, expand func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error)) (SourceTrail, string, error) {
+func packTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLexicalCandidate, budget TokenBudget, counter *tokenizer.Counter, declaration *SupersessionDeclaration, expand func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error)) (SourceTrail, string, error) {
 	if err := base.Validate(); err != nil {
 		return SourceTrail{}, "", err
 	}
@@ -88,6 +89,19 @@ func packTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 		return SourceTrail{}, "", errors.New("unsupported token retrieval record")
 	}
 	t := base
+	if base.Supersession != nil {
+		selection := *base.Supersession
+		selection.Dispositions = slices.Clone(base.Supersession.Dispositions)
+		if selection.ActivationID != nil {
+			id := *selection.ActivationID
+			selection.ActivationID = &id
+		}
+		if selection.DeclarationID != nil {
+			id := *selection.DeclarationID
+			selection.DeclarationID = &id
+		}
+		t.Supersession = &selection
+	}
 	t.Schema = SourceTrailSchemaV7
 	t.Candidates = trailCandidatesFromVerified(candidates)
 	if base.Schema == SourceTrailSchemaV4 {
@@ -125,10 +139,10 @@ func packTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 		if len(suppressed) > 0 && suppressed[i] {
 			continue
 		}
-		total += row.TextBytes
-		if total > MaxVectorTextBytes {
+		if row.TextBytes > MaxVectorTextBytes-total {
 			return SourceTrail{}, "", errors.New("token candidate bytes exceed bound")
 		}
+		total += row.TextBytes
 		if t.PackingPolicy == PackingExactV1 {
 			for _, prev := range retained[row.ContentSHA256] {
 				if c.Text == candidates[prev].Text {
@@ -174,7 +188,7 @@ func packTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLe
 		if err != nil {
 			return SourceTrail{}, "", err
 		}
-		t, rendered, err = appendTokenAssociations(t, candidates, associated, omissions, rendered, counter)
+		t, rendered, err = appendTokenAssociations(t, candidates, associated, omissions, rendered, counter, declaration)
 		if err != nil {
 			return SourceTrail{}, "", err
 		}
@@ -231,6 +245,9 @@ func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, err
 		r.DuplicateOf = ""
 		r.Selected = r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i])
 		if r.Selected {
+			if r.TextBytes > MaxVectorTextBytes-p.UsedBytes {
+				return SourceTrail{}, errors.New("token candidate bytes exceed bound")
+			}
 			p.UsedBytes += r.TextBytes
 		}
 	}
@@ -238,7 +255,7 @@ func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, err
 	case "lexical":
 		p.Schema = SourceTrailSchema
 		p.PackingPolicy = ""
-		if t.Schema == SourceTrailSchemaV8 {
+		if t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV13 {
 			p.Schema = SourceTrailSchemaV4
 			p.PackingPolicy = PackingOriginal
 		}
@@ -273,11 +290,11 @@ func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, err
 func (t SourceTrail) validateTokenTrail() error {
 	invalid := func() error { return errors.New("invalid v7 token selection bindings or accounting") }
 	s := t.Token
-	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || t.Schema != SourceTrailSchemaV11 && (len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || s.Associations != nil || len(s.PrimaryIDs) > 0) || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
+	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || t.Schema != SourceTrailSchemaV11 && t.Schema != SourceTrailSchemaV13 && (len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || s.Associations != nil || len(s.PrimaryIDs) > 0) || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
 		return invalid()
 	}
-	if t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV10 {
-		if t.Supersession == nil || t.Schema == SourceTrailSchemaV8 && s.Mode != "lexical" {
+	if t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV10 || t.Schema == SourceTrailSchemaV13 {
+		if t.Supersession == nil || (t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV13) && s.Mode != "lexical" {
 			return invalid()
 		}
 		if t.Schema == SourceTrailSchemaV10 && ((t.Vector == nil) == (t.Hybrid == nil) || s.Mode == "vector" && t.Vector == nil || s.Mode == "hybrid" && t.Hybrid == nil || s.Mode != "vector" && s.Mode != "hybrid") {
@@ -292,7 +309,7 @@ func (t SourceTrail) validateTokenTrail() error {
 	} else if (t.Schema != SourceTrailSchemaV7 && t.Schema != SourceTrailSchemaV11) || t.Supersession != nil {
 		return invalid()
 	}
-	if t.Schema == SourceTrailSchemaV11 {
+	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 {
 		if err := t.validateTokenAssociationProfile(); err != nil {
 			return err
 		}
@@ -397,7 +414,7 @@ func (t SourceTrail) validateTokenTrail() error {
 		measured = *n
 		selected[r.SegmentID.String()] = r
 	}
-	if t.Schema == SourceTrailSchemaV11 {
+	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 {
 		if err := t.validateAssociatedTokenAccounting(&used, &rendered, &measured, selected); err != nil {
 			return err
 		}

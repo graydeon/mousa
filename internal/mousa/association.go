@@ -285,7 +285,7 @@ func (trail SourceTrail) validateAssociated() error {
 		}
 		switch row.Omission {
 		case string(SupersessionSuperseded):
-			if trail.Schema != SourceTrailSchemaV12 || trail.Supersession.DeclarationID == nil || row.DuplicateOf != "" {
+			if (trail.Schema != SourceTrailSchemaV12 && trail.Schema != SourceTrailSchemaV13) || trail.Supersession.DeclarationID == nil || row.DuplicateOf != "" {
 				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires recorded composed supersession", nil)
 			}
 		case "duplicate":
@@ -307,7 +307,7 @@ func (trail SourceTrail) validateAssociated() error {
 				return newValidationError(field+".text_bytes", ValidationCodeInvalidRange, "budget omission must not fit the remaining budget", nil)
 			}
 		case "bytes", "tokens", "rendered_bytes":
-			if trail.Schema != SourceTrailSchemaV11 || row.DuplicateOf != "" || repeated {
+			if (trail.Schema != SourceTrailSchemaV11 && trail.Schema != SourceTrailSchemaV13) || row.DuplicateOf != "" || repeated {
 				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires token association accounting", nil)
 			}
 		default:

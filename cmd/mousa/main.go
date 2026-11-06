@@ -137,7 +137,7 @@ query options (before positional arguments):
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
                             supports --policy; no vector-space/associations flags
   --supersession            withhold the exact active predecessor revision (directory or --source);
-                            supports byte-only lexical --associations; token triples reject
+                            supports lexical --associations with byte or token budgets
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
@@ -277,12 +277,15 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if tokenSpecific && !tokenMode {
 		return usageError{"tokenizer options require --context-tokens"}
 	}
+	if tokenIncompatible && *associations == "" && *supersession {
+		return usageError{"associations requires a declaration file"}
+	}
 	if tokenMode {
 		if vectorMode && hybridMode {
 			return usageError{"token mode cannot combine associations or both vector modes"}
 		}
-		if tokenIncompatible && (vectorMode || hybridMode || *supersession) {
-			return usageError{"token associations require lexical retrieval without supersession"}
+		if tokenIncompatible && (vectorMode || hybridMode) {
+			return usageError{"token associations require lexical retrieval"}
 		}
 		mode, space := "lexical", ""
 		if hybridMode {
@@ -325,15 +328,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			return usageError{"vector mode cannot be combined with policy or associations flags"}
 		}
 		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
-	}
-	emptyAssociations := false
-	flags.Visit(func(option *flag.Flag) {
-		if option.Name == "associations" && *associations == "" {
-			emptyAssociations = true
-		}
-	})
-	if *supersession && emptyAssociations {
-		return usageError{"associations requires a declaration file"}
 	}
 	var declarations []mousa.AssociationDeclaration
 	if *associations != "" {

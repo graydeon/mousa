@@ -162,3 +162,33 @@ func TestNativeEmptyAssociationFileErrorsAndExclusions(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeTokenEmptyAssociationCompatibility(t *testing.T) {
+	startup := mcpTokenStartup(t)
+	for _, directory := range []bool{false, true} {
+		run, root := setup(t)
+		selector := []string{"--source", "alpha"}
+		if directory {
+			writeFile(t, root, "note.txt", "needle evidence")
+			run.run(false, "sync", root)
+			selector = []string{root}
+		} else {
+			jsonlSync(t, run, "alpha", record("note.txt", "needle evidence"))
+		}
+		for _, supersession := range []string{"", "--supersession=false"} {
+			args := append([]string{"query", "--context-tokens", "4096"}, startup...)
+			if supersession != "" {
+				args = append(args, supersession)
+			}
+			absentArgs := append([]string{}, args...)
+			_, absent := run.run(false, append(append(absentArgs, selector...), "needle")...)
+			args = append(args, "--associations=")
+			_, empty := run.run(false, append(append(args, selector...), "needle")...)
+			for _, key := range []string{"packet_id", "context", "token", "evidence"} {
+				if !reflect.DeepEqual(absent[key], empty[key]) {
+					t.Fatalf("empty token association flag changed %s: %v / %v", key, absent, empty)
+				}
+			}
+		}
+	}
+}

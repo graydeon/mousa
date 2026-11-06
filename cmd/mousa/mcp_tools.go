@@ -284,9 +284,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, fmt.Errorf("missing argument %s", key)
 		}
 	}
-	if args.Associations != nil && args.Supersession && args.TokenBudget != nil {
-		return args, errors.New("token associations require lexical packing without supersession")
-	}
 	if args.TokenBudget != nil {
 		if !seen["context_tokens"] {
 			return args, errors.New("token window and reservations require context_tokens")
@@ -357,7 +354,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
 				"associations": map[string]any{
 					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
-					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte or measured token packing. Byte-only queries may opt into supersession; token triples reject. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
+					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte or measured token packing, optionally with exact pinned supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
 					"properties": map[string]any{
 						"schema": map[string]any{"const": mousa.AssociationDeclarationSchema},
 						"associations": map[string]any{

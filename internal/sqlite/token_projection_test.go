@@ -38,19 +38,50 @@ func TestTokenRejectedHistoryFacts(t *testing.T) {
 }
 
 func TestTokenHistoryProjectionPositionsAndRecount(t *testing.T) {
+	testTokenHistoryProjectionPositionsAndRecount(t, false)
+}
+
+func TestTokenAssociatedSupersessionHistoryProjectionPositionsAndRecount(t *testing.T) {
+	testTokenHistoryProjectionPositionsAndRecount(t, true)
+}
+
+func testTokenHistoryProjectionPositionsAndRecount(t *testing.T, triple bool) {
 	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
 		t.Run(packing, func(t *testing.T) {
 			ctx := context.Background()
 			store := openLexicalStore(t)
 			defer store.Close()
 			request, active := seedEnforcedRetrieval(t, store, "root passage")
+			input := mousa.NewRepresentationDerivationInput(active.representation.ID)
+			if triple {
+				source, representation, _ := prepareLocalRevision(t, store, "primary", "root passage")
+				request = testEvaluationRequest(t, source.ID, "request-composed-projection")
+				active.representation = representation
+				artifact, err := representationSourceArtifact(ctx, store.db, representation.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				input = mousa.NewArtifactDerivationInput(artifact.ID)
+			}
+			options := func() TokenQuery {
+				o := tokenOptions(t)
+				if triple {
+					item, err := localItemPathOfRepresentation(ctx, store.db, request.SourceID, active.representation.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					o.Supersession = true
+					o.Associations = []mousa.AssociationDeclaration{{FromItem: item, ToItem: "missing-qualification", Basis: "explicit support", Author: "test"}}
+				}
+				return o
+			}
 			ancestors := make(map[mousa.SegmentID]mousa.SourceID)
 			for i := range 5 {
 				other := addVerifiedLexicalDocument(t, store, fmt.Sprintf("ancestor-%d", i), "ancestor passage")
-				mixed := putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(active.representation.ID), mousa.NewRepresentationDerivationInput(other.representation.ID)}, fmt.Sprintf("token.merge.%d", i), []byte("sharedterm retained passage"), true)
+				mixed := putVerifiedRepresentation(t, store, []mousa.DerivationInput{input, mousa.NewRepresentationDerivationInput(other.representation.ID)}, fmt.Sprintf("token.merge.%d", i), []byte("sharedterm retained passage"), true)
 				ancestors[mixed.segments[0].ID] = other.source.ID
 			}
-			all, _, err := store.EvaluateAndTraceTokenLexical(ctx, request, "sharedterm", "original", 1024, packing, tokenOptions(t))
+			all, _, err := store.EvaluateAndTraceTokenLexical(ctx, request, "sharedterm", "original", 1024, packing, options())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,9 +95,12 @@ func TestTokenHistoryProjectionPositionsAndRecount(t *testing.T) {
 			for _, i := range []int{0, 2, 4} {
 				withdrawVerifiedSource(t, store, ancestors[all.Trail.Candidates[i].SegmentID], fmt.Sprintf("withdraw-%d", i), 200)
 			}
-			traced, text, err := store.EvaluateAndTraceTokenLexical(ctx, testEvaluationRequest(t, request.SourceID, "filtered-query"), "sharedterm", "original", 1024, packing, tokenOptions(t))
+			traced, text, err := store.EvaluateAndTraceTokenLexical(ctx, testEvaluationRequest(t, request.SourceID, "filtered-query"), "sharedterm", "original", 1024, packing, options())
 			if err != nil {
 				t.Fatal(err)
+			}
+			if triple && traced.Trail.Schema != mousa.SourceTrailSchemaV13 {
+				t.Fatal("mixed lifecycle fixture did not record triple composition")
 			}
 			for i, row := range traced.Trail.Candidates {
 				want := mousa.CandidateAccepted

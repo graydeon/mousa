@@ -210,7 +210,7 @@ func TestMCPAssociationArgumentFailuresDoNotProduceState(t *testing.T) {
 		raw := json.RawMessage(`{"source":"alpha","query":"backup","policy":"original","budget_bytes":8192,"associations":` + document + `}`)
 		client.call("mousa_query", raw, "invalid_arguments")
 	}
-	for _, extra := range []string{`"supersession":true,"context_tokens":4096`, `"window_tokens":0`, `"prompt_reserve_tokens":0`, `"output_reserve_tokens":0`, `"associations":` + valid} {
+	for _, extra := range []string{`"window_tokens":0`, `"prompt_reserve_tokens":0`, `"output_reserve_tokens":0`, `"associations":` + valid} {
 		client.call("mousa_query", json.RawMessage(`{"source":"alpha","query":"backup","policy":"original","budget_bytes":8192,"associations":`+valid+`,`+extra+`}`), "invalid_arguments")
 	}
 	for _, tool := range []string{"mousa_sync", "mousa_status", "mousa_trail", "mousa_vector_inputs", "mousa_vector_import", "mousa_vector_query", "mousa_hybrid_query"} {

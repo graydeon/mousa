@@ -1,6 +1,6 @@
 # Opt-in supersession enforcement
 
-For source-build versus release status and the proposed v10 composition boundary,
+For source-build versus release status and composition availability,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 **Status: implemented in the fresh store retrieval entry point, native directory and
@@ -8,8 +8,8 @@ JSONL query opt-ins and the local stdio MCP tools.** Use
 `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT`
 with flags before positional arguments, or MCP `mousa_query` with `supersession: true`.
 Defaults, legacy trail versions and every opted-out MCP response are unchanged.
-Byte-only lexical queries can combine declared supporting context with supersession.
-Token triples and vector/hybrid associations remain unsupported.
+Lexical queries can combine declared supporting context with supersession under
+byte or measured token budgets. Vector/hybrid associations remain unsupported.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md). The
@@ -118,6 +118,40 @@ the recorded consultation; associated history retains its established fields.
 Query `supersession_excluded` counts primary suppression; associated withholding
 appears as `superseded` in `association_omissions`. Denial releases neither history
 nor aligned rejected metadata. Omitted/false behavior and property sets remain unchanged.
+
+### Measured-token supporting context
+
+Source builds also accept `--context-tokens N` on the lexical composition above,
+or MCP `context_tokens` with an operator-configured tokenizer. This is a source
+capability, not a claim about tagged releases or independently accepted captures.
+Both packers suppress primaries before whole-render primary selection. Only selected
+primaries fire declarations. The same exact-pin consultation suppresses associated
+targets before admitted-text accounting, duplicate decisions or either budget,
+including targets that would otherwise be oversized or duplicates.
+
+One query-scoped official counter measures primary proposals and appended support,
+confirms the exact final rendering and finishes before insertion. Body-byte and
+whole-render token limits remain independent; headers and separators count as tokens.
+The existing 100-row, 256 KiB admitted-text and tokenizer work/rendering bounds
+remain. Suppressed targets have no proposed token count. Reservation fields retain
+their caller-declared meaning; framing outside the rendering is not measured.
+
+Only recorded token association facts with supersession use closed SourceTrail v13.
+It reuses the typed v11 counts and v12 consultation/association dispositions; packet
+v3 binds the full producing selection. No firing facts retains v8, while omitted
+or false supersession retains the established v7/v11 behavior. Valid v1–v12 bytes,
+IDs and decoding remain unchanged.
+
+Construction, decoding, persisted readback and startup verification must agree.
+History verifies recorded ancestry rather than current activation. Normal history
+needs no tokenizer; explicit native recount requires every originally selected byte.
+Lifecycle-safe query and history projections compact accepted primary identities,
+ranks, BM25 and proposed counts together and separately align associated counts.
+Rejected rows disclose no slots, gaps or placeholders; accepted budget/duplicate
+omissions retain their measured facts. Canonical producing records remain immutable.
+Fresh authorization can deny history. Failure, cancellation or tokenizer refusal
+rolls back the owning transaction and closes its one counter.
+
 
 ## What exists today
 

@@ -55,8 +55,10 @@ func TestNativeAndMCPAssociatedSupersession(t *testing.T) {
 				t.Fatal("default history exposed consultation")
 			}
 			args["context_tokens"] = 4096
+			args["tokenizer_python"] = "/client/supplied/python"
 			client.call("mousa_query", args, "invalid_arguments")
 			delete(args, "context_tokens")
+			delete(args, "tokenizer_python")
 			run.run(false, "access", "--source", "alpha", "deny")
 			denied := client.call("mousa_query", args, "")
 			if denied["decision_outcome"] != "deny" || len(hits(denied)) != 0 || denied["association_omissions"] != nil {
