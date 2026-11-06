@@ -109,8 +109,8 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 		if err != nil {
 			return err
 		}
-		if got.Trail.Schema == mousa.SourceTrailSchemaV11 {
-			projection, err := lexicalEvidenceProjection(ctx, store, source, request, got.Trail.Expression, policy, packing, got, declarations, false)
+		if got.Trail.Schema == mousa.SourceTrailSchemaV11 || got.Trail.Schema == mousa.SourceTrailSchemaV13 {
+			projection, err := lexicalEvidenceProjection(ctx, store, source, request, got.Trail.Expression, policy, packing, got, declarations, supersession)
 			if err != nil {
 				return err
 			}

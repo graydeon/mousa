@@ -45,7 +45,14 @@ func TestMCPTokenAssociationsAndIndependentHistory(t *testing.T) {
 				t.Fatal("unselected primary triggered association", omitted)
 			}
 			args["supersession"] = true
-			client.call("mousa_query", args, "invalid_arguments")
+			suppressed := client.call("mousa_query", args, "")
+			if suppressed["context"] != "" || suppressed["association_omissions"] != nil {
+				t.Fatal("unselected triple primary triggered association", suppressed)
+			}
+			history := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": suppressed["trail_id"], "supersession": true, "token_details": true}, "")["historical"].(map[string]any)
+			if history["schema"] != "mousa.source_trail.v8" || history["supersession"] == nil || !reflect.DeepEqual(history["token"], suppressed["token"]) {
+				t.Fatal("non-firing triple did not preserve v8", history)
+			}
 		}
 	}
 }

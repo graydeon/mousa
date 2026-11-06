@@ -676,8 +676,8 @@ Each slice is independently reviewable and changes no native code path.
   resource template call `queryItemsForRequest` with fixed options
   (`cmd/mousa/mcp_openai.go`) and stay unchanged.
 - MCP does not import directories; native directory queries support enforcement through
-  the CLI. Byte-only lexical association composition records v12; token triples and
-  vector/hybrid associations remain unsupported. No transitive or automatic supersession,
+  the CLI. Lexical association composition records v12 in byte mode or v13 with
+  measured tokens; vector/hybrid associations remain unsupported. No transitive or automatic supersession,
   or change to ranking, authorization or item pointers is implemented.
 - No new envelope version, no new tool, and no new output field on any existing opt-out
   response.

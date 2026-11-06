@@ -33,6 +33,14 @@ func TestTokenAssociationsCancellationRollsBack(t *testing.T) {
 	testTokenSupersessionWriterHeldThroughCounting(t, "association-cancel")
 }
 
+func TestTokenAssociatedSupersessionWriterSnapshot(t *testing.T) {
+	testTokenSupersessionWriterHeldThroughCounting(t, "triple")
+}
+
+func TestTokenAssociatedSupersessionCancellationRollsBack(t *testing.T) {
+	testTokenSupersessionWriterHeldThroughCounting(t, "triple-cancel")
+}
+
 func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
@@ -40,7 +48,8 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	}
 	f := newV4Fixture(t)
 	defer f.store.Close()
-	associations := mode == "associations" || mode == "association-cancel"
+	triple := mode == "triple" || mode == "triple-cancel"
+	associations := mode == "associations" || mode == "association-cancel" || triple
 	var space mousa.SHA256
 	if mode != "lexical" && !associations {
 		space = importSupersessionVectors(t, f)
@@ -104,6 +113,10 @@ while True:
 		if associations {
 			options.Supersession = false
 			options.Associations = []mousa.AssociationDeclaration{{FromItem: "predecessor", ToItem: "qualification", Basis: "explicit cleanup", Author: "example.operator"}}
+			if triple {
+				options.Supersession = true
+				options.Associations[0].FromItem = "successor"
+			}
 		}
 		if mode == "lexical" || associations {
 			r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, options)
@@ -143,7 +156,7 @@ while True:
 		t.Fatalf("unexpected competing writer error: %v", lockErr)
 	}
 	conn.Close()
-	if mode == "association-cancel" {
+	if mode == "association-cancel" || mode == "triple-cancel" {
 		cancel()
 		gate.Close()
 		got := <-done
@@ -157,8 +170,12 @@ while True:
 	if got.err != nil {
 		t.Fatal(got.err)
 	}
-	if mode == "associations" {
-		if got.trail.Schema != mousa.SourceTrailSchemaV11 || len(got.trail.Associated) != 1 || !got.trail.Associated[0].Selected {
+	if mode == "associations" || triple {
+		schema := mousa.SourceTrailSchemaV11
+		if triple {
+			schema = mousa.SourceTrailSchemaV13
+		}
+		if got.trail.Schema != schema || len(got.trail.Associated) != 1 || !got.trail.Associated[0].Selected {
 			t.Fatal("association did not share measured snapshot")
 		}
 		seedLocalItem(t, other, f.source, "qualification", "Replacement qualification.")
@@ -166,7 +183,9 @@ while True:
 		if err != nil || historical.Associated[0] != got.trail.Associated[0] {
 			t.Fatal("later target revision reinterpreted selection", err)
 		}
-		return
+		if !triple {
+			return
+		}
 	}
 	if got.trail.Supersession.ActivationID == nil || *got.trail.Supersession.ActivationID != state.CurrentActivationID || len(got.trail.Supersession.Dispositions) != 1 {
 		t.Fatal("mixed consultation")

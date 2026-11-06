@@ -215,9 +215,10 @@ deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
 Token-specific options without `--context-tokens` reject. Lexical token mode
-accepts declared associations without supersession; vector/hybrid associations
+accepts declared associations with or without supersession; vector/hybrid associations
 still reject. Supersession true writes lexical v8 or vector/hybrid v10;
-omission and explicit false keep v7 unless an association stage records v11.
+recorded lexical association facts use v13 with supersession or v11 without it.
+An unfired stage preserves v8, or v7 when supersession is omitted or false.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
@@ -260,8 +261,8 @@ adds `"supersession": true` to its existing token arguments. Query results add
 `budget_omitted`. Withheld candidates remain accepted metadata with positive
 size/rank and null proposed count, not rejected slots or replacement passages.
 
-Vector/hybrid composition is also supported as v10; association queries still
-reject supersession. Normal/recount native history uses the recorded selection,
+Vector/hybrid composition is also supported as v10, without associations.
+Lexical token associations support supersession as v13. Normal/recount native history uses the recorded selection,
 not today's activation. MCP history independently
 accepts `supersession: true` and `token_details: true`, returning producing
 observations without recounting. Retired selected text cannot be reconstructed;
@@ -293,8 +294,8 @@ For a directory or JSONL source with a separately stored and activated declarati
 Flags precede query text. Opted-in responses add `supersession_excluded`, including
 zero; defaults omit it. Suppression is distinct from lifecycle, budget and duplicate
 omissions, and an empty result reports budget omission before supersession exclusion,
-then lifecycle exclusion. Byte-only lexical `--associations` can compose with this
-opt-in; token triples reject before writable open. Directory queries use their own
+then lifecycle exclusion. Lexical `--associations` can compose with this
+opt-in under byte or measured token budgets. Directory queries use their own
 source namespace, not JSONL `--source`; passing a directory path to `--source`
 queries a different source.
 A valid query uses writable open and can create or migrate a store before a later operation fails;
@@ -1001,8 +1002,8 @@ and reauthorizes history. Retrieval does not require `--ingest-source`; the
 example uses it only to prepare its fixture.
 
 Both term policies and both packers work with byte or measured token budgets.
-Omitted/false supersession works with both budget modes; true supersession also
-works with byte-only lexical associations. Token triples and vector/hybrid
+Omitted, false and true supersession work with both budget modes in source builds
+containing token association/supersession composition. Vector/hybrid
 associations reject. Supply an object, not null, a filename or URL. The
 [native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
 apply. Assertions check protocol, selection and attribution consistency, not
@@ -1028,7 +1029,8 @@ Build from source and run the complete synthetic example:
 
 ```sh
 go build -o mousa ./cmd/mousa
-python3 examples/association_supersession.py --mousa ./mousa
+python3 examples/association_supersession.py --mousa ./mousa \
+  --python /path/to/venv/bin/python --cache /path/to/prepared-cache
 ```
 
 The example creates fresh directory and JSONL sources, discovers exact revision
@@ -1042,18 +1044,35 @@ target is recorded as `superseded`; an unsuppressed byte-equal twin and a separa
 qualification survive. Withheld bytes spend no retained budget and do not seed
 exact-content deduplication. Supporting notes retain their own pins and caller
 attribution; they do not establish semantic sufficiency. Replacement is explicit
-administration, not truth inference. This mode needs no tokenizer.
+administration, not truth inference. Byte-only compatibility queries need no tokenizer.
+The example also runs token triples, independently counts the complete returned
+rendering with official tiktoken, tests exact fit and one-token-short admission,
+and inspects normal history and retained-text recount.
 
-Recorded supporting stages use v12; non-firing stages retain supersession-only
-v4. Primary suppression is reported by `supersession_excluded`; associated
+The duplicate fixture keeps identical old and twin bytes. Without supersession,
+`original` retains both; `exact-v1` retains the first byte-equivalent candidate,
+which can be either item depending on the source identity. With supersession,
+the exact old revision is excluded and the unsuppressed twin remains eligible.
+Run the deterministic regression for both tie orders, both packers, and omitted,
+false, and true supersession with the same prepared backend:
+
+```sh
+python3 examples/association_supersession_test.py --mousa ./mousa \
+  --python /path/to/venv/bin/python --cache /path/to/prepared-cache
+```
+
+Recorded supporting stages use v12 in byte mode and v13 in token mode;
+non-firing stages retain supersession-only v4 and v8 respectively.
+Primary suppression is reported by `supersession_excluded`; associated
 suppression is reported in `association_omissions` as `superseded`. A suppressed
 target never causes successor retrieval or recursively fires a declaration.
-Token-plus-association-plus-supersession remains unsupported.
+This describes the source-build capability, not a tagged release or independently
+accepted capture of this revision.
 
 For native JSONL, reuse the same strict declaration file:
 
 ```sh
-./mousa -store notes.sqlite query --source notes --associations associations.json \
+./mousa -store notes.sqlite query --source notes --supersession --associations associations.json \
   --budget-bytes 8192 --context-tokens 512 \
   --tokenizer-python /path/to/venv/bin/python --tokenizer-cache /path/to/prepared-cache backup
 ```
@@ -1064,12 +1083,13 @@ only after primary byte/token selection, using the remaining body-byte and whole
 rendering token budgets. The combination rejects above 100 total primary-plus-
 associated consideration rows or 256 KiB aggregate accepted passage text before
 duplicate/budget omissions. It never silently truncates to this new profile.
-Canonical validation applies the byte cap before adding each accepted-primary or
-associated size, including omitted rows, so extreme declared sizes cannot wrap the total.
+Canonical validation applies the byte cap before adding each admitted-primary or
+associated size, including budget/duplicate omissions but excluding suppressed targets.
 Ordinary byte/token bounds and the byte-only 256-target-passage bound are unchanged.
 The one counter retains its 512 KiB rendering, 32 MiB work, 102-call and 15-second
-ceilings and must finish before persistence. V11 records the measured associated
-stage; unfired declarations retain v7. Native retained-text `trail --verify-tokens`
+ceilings and must finish before persistence. V13 records measured association facts
+with supersession; unfired declarations retain v8. Without supersession the existing
+v11/v7 paths remain unchanged. Native retained-text `trail --verify-tokens`
 recounts both stages; MCP `token_details` only projects recorded facts.
 
 `--caller cli` uses the existing CLI retrieval policy, including source-scoped

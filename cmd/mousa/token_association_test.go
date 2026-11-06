@@ -75,6 +75,15 @@ func TestNativeTokenAssociations(t *testing.T) {
 					if h["schema"] != "mousa.source_trail.v11" || !reflect.DeepEqual(h["token"], exact["token"]) {
 						t.Fatal("producing/recount binding", h)
 					}
+					consulted := query(4096, "--supersession")
+					if consulted["context"] != full["context"] || consulted["supersession_excluded"] != float64(0) {
+						t.Fatal("no-history consultation changed support", consulted)
+					}
+					_, history = run.run(false, append(append([]string{"trail"}, selector...), consulted["trail_id"].(string))...)
+					h = history["historical"].(map[string]any)
+					if h["schema"] != "mousa.source_trail.v13" || h["supersession"] == nil || !reflect.DeepEqual(h["token"], consulted["token"]) {
+						t.Fatal("no-history triple producing facts", h)
+					}
 				}
 			}
 		})

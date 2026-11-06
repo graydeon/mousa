@@ -129,6 +129,14 @@ func TestTokenAssociatedRetiredHistoryAndDenial(t *testing.T) {
 }
 
 func TestTokenAssociatedCounterFailureRollsBack(t *testing.T) {
+	testTokenAssociatedCounterFailureRollsBack(t, false)
+}
+
+func TestTokenAssociatedSupersessionCounterFailureRollsBack(t *testing.T) {
+	testTokenAssociatedCounterFailureRollsBack(t, true)
+}
+
+func testTokenAssociatedCounterFailureRollsBack(t *testing.T, supersession bool) {
 	t.Parallel()
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
@@ -136,6 +144,9 @@ func TestTokenAssociatedCounterFailureRollsBack(t *testing.T) {
 	}
 	f := newV4Fixture(t)
 	defer f.store.Close()
+	if supersession {
+		f.activate(t)
+	}
 	seedLocalItem(t, f.store, f.source, "qualification", "Close idle sockets explicitly.")
 	executable := filepath.Join(t.TempDir(), "fault-counter")
 	marker := filepath.Join(t.TempDir(), "associated-count")
@@ -165,6 +176,7 @@ while True:
 	defer counter.Close()
 	before := freshAuditCounts(t, f.store)
 	options := TokenQuery{Budget: mousa.TokenBudget{Cap: 1000}, Counter: counter, Associations: []mousa.AssociationDeclaration{{FromItem: "successor", ToItem: "qualification", Basis: "cleanup", Author: "example.operator"}}}
+	options.Supersession = supersession
 	got, text, err := f.store.EvaluateAndTraceTokenLexical(context.Background(), testEvaluationRequest(t, f.source.ID, "associated-counter-fault"), "successor", "original", 8192, mousa.PackingOriginal, options)
 	if err == nil || text != "" || got.Trail.ID != (mousa.SourceTrailID{}) || !reflect.DeepEqual(before, freshAuditCounts(t, f.store)) {
 		t.Fatal("associated counting failure committed or released", err)

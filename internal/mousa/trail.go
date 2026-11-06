@@ -377,7 +377,7 @@ func (trail SourceTrail) Validate() error {
 	if trail.Schema == SourceTrailSchemaV9 {
 		return trail.validateRetrievalSupersessionTrail()
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 {
 		return trail.validateTokenTrail()
 	}
 	if trail.Token != nil {
@@ -526,7 +526,7 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 	if trail.Schema == SourceTrailSchemaV9 {
 		return vectorTrailIdentity(trail)
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 {
 		return vectorTrailIdentity(trail)
 	}
 	if trail.Schema == SourceTrailSchemaV6 {
@@ -686,7 +686,7 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
-		case SourceTrailSchemaV12:
+		case SourceTrailSchemaV12, SourceTrailSchemaV13:
 			return decodeAssociatedSupersessionTrail(data)
 		case SourceTrailSchemaV9:
 			return decodeRetrievalSupersessionTrail(data)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Run explicit byte-only replacement and caller-declared support; no truth inference."""
+"""Run explicit replacement and declared support with byte and exact token budgets."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -19,11 +20,49 @@ FIXTURE = {
 }
 
 
+def check_duplicates(result, packing, pins, old, twin, supersession=False):
+    duplicate_ids = {pins[item]["segment_id"] for item in (old, twin)}
+    retained = [p for p in result["evidence"] if p["segment_id"] in duplicate_ids]
+    assert pins[old]["text"].encode() == pins[twin]["text"].encode()
+    for passage in retained:
+        assert passage["text"].encode() == pins[old]["text"].encode()
+        assert passage["representation_id"] == pins[passage["item"]]["representation_id"]
+    if supersession:
+        assert all(p["representation_id"] != pins[old]["representation_id"] for p in result["evidence"])
+        assert [p["segment_id"] for p in retained] == [pins[twin]["segment_id"]]
+        assert result["supersession_excluded"] == 1
+    else:
+        candidates = [sid for sid in result["token"]["candidate_ids"] if sid in duplicate_ids]
+        assert len(candidates) == 2 and set(candidates) == duplicate_ids
+        expected = candidates if packing == "original" else candidates[:1]
+        assert [p["segment_id"] for p in retained] == expected
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mousa", type=Path, required=True)
+    parser.add_argument("--python", type=Path, required=True)
+    parser.add_argument("--cache", type=Path, required=True)
     args = parser.parse_args()
     binary = args.mousa.absolute()
+    python, cache = args.python.absolute(), args.cache.absolute()
+    token_flags = ["--tokenizer-python", python, "--tokenizer-cache", cache]
+
+    def reference(result):
+        counted = subprocess.run([str(python), "-I", "-c",
+            "import sys,tiktoken,tiktoken.load\n"
+            "assert tiktoken.__version__ == '0.12.0'\n"
+            "def offline(*args):\n"
+            "    raise RuntimeError('prepare tokenizer cache before running this example')\n"
+            "tiktoken.load.read_file = offline\n"
+            "print(len(tiktoken.get_encoding('o200k_base').encode_ordinary(sys.stdin.read())))"],
+            input=result["context"], text=True, capture_output=True, check=True, timeout=30,
+            env={"TIKTOKEN_CACHE_DIR": str(cache)})
+        count = int(counted.stdout)
+        assert result["token"]["measured_tokens"] == count <= result["token"]["limit"]
+        assert result["token"]["rendered_sha256"] == hashlib.sha256(result["context"].encode()).hexdigest()
+        assert result["token"]["rendered_bytes"] == len(result["context"].encode())
+        return count
     with tempfile.TemporaryDirectory(prefix="mousa-composed-") as temporary:
         root = Path(temporary)
         store = root / "evidence.sqlite"
@@ -88,9 +127,50 @@ def main():
                 assert h["associated"][0]["omission"] == "superseded"
                 assert h["supersession"]["activation_id"] == activation["id"]
                 print(json.dumps(dict(surface="native-" + form, packing=packing, result=result, history=history)))
+                flags = ["--associations", path, "--packing-policy", packing, *token_flags]
+                plain = command("query", *flags, "--context-tokens", "4096", *selector, "needle")
+                disabled = command("query", *flags, "--supersession=false",
+                                   "--context-tokens", "4096", *selector, "needle")
+                suppressed = command("query", *flags, "--supersession",
+                                     "--context-tokens", "4096", *selector, "needle")
+                reference(plain)
+                reference(suppressed)
+                reference(disabled)
+                assert disabled["evidence"] == plain["evidence"]
+                assert disabled["context"] == plain["context"]
+                check_duplicates(plain, packing, pins, old, "twin" + suffix)
+                check_duplicates(suppressed, packing, pins, old, "twin" + suffix, True)
+                check_duplicates(disabled, packing, pins, old, "twin" + suffix)
+                h = command("trail", *selector, suppressed["trail_id"])["historical"]
+                assert h["token"] == suppressed["token"]
+                assert h["supersession"]["activation_id"] == activation["id"]
+                assert h["supersession"]["declaration_id"] == declaration["id"]
+                full = command("query", *flags, "--supersession",
+                               "--context-tokens", "4096", *selector, "instruction")
+                check(full)
+                count = reference(full)
+                exact = command("query", *flags, "--supersession",
+                                "--context-tokens", count, *selector, "instruction")
+                assert exact["context"] == full["context"]
+                reference(exact)
+                short = command("query", *flags, "--supersession",
+                                "--context-tokens", count - 1, *selector, "instruction")
+                reference(short)
+                assert len(short["evidence"]) < len(full["evidence"])
+                for recount in (False, True):
+                    history = command("trail", *(["--verify-tokens", *token_flags] if recount else []),
+                                      *selector, exact["trail_id"])
+                    h = history["historical"]
+                    assert h["schema"] == "mousa.source_trail.v13"
+                    assert h["token"] == exact["token"]
+                    assert h["associated"][0]["omission"] == "superseded"
+                    assert h["token_verification"] == ("official_recount_verified" if recount else
+                                                       "retained_digest_verified_count_recorded")
+                    print(json.dumps(dict(surface="native-" + form, packing=packing,
+                        reference_tokens=count, recount=recount, result=exact, history=history)))
             if form == "jsonl":
                 with (root / "stdio.jsonl").open("w", encoding="utf-8") as receipts:
-                    client = Client(binary, store, receipts, False, 30, source)
+                    client = Client(binary, store, receipts, False, 30, source, python, cache)
                     try:
                         client.initialize()
                         for packing in ("original", "exact-v1"):
@@ -101,6 +181,21 @@ def main():
                             assert history["historical"]["schema"] == "mousa.source_trail.v12"
                             assert history["historical"]["associated"][0]["omission"] == "superseded"
                             print(json.dumps(dict(surface="mcp-jsonl", packing=packing, result=result, history=history)))
+                            query = dict(source=source, query="instruction", policy="original",
+                                budget_bytes=8192, packing_policy=packing, supersession=True,
+                                associations=associations, context_tokens=4096)
+                            full, _ = client.call("mousa_query", query)
+                            check(full)
+                            count = reference(full)
+                            exact, _ = client.call("mousa_query", dict(query, context_tokens=count))
+                            assert exact["context"] == full["context"]
+                            reference(exact)
+                            history, _ = client.call("mousa_trail", dict(source=source,
+                                trail_id=exact["trail_id"], supersession=True, token_details=True))
+                            assert history["historical"]["schema"] == "mousa.source_trail.v13"
+                            assert history["historical"]["token"] == exact["token"]
+                            print(json.dumps(dict(surface="mcp-jsonl", packing=packing,
+                                reference_tokens=count, result=exact, history=history)))
                     finally:
                         cleanup = client.close()
                         if cleanup["exit_code"] != 0 or cleanup["forced"] or cleanup["cleanup_errors"]:

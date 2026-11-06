@@ -1,6 +1,6 @@
 # Mousa research record
 
-For source-build versus release status and the proposed v10 composition boundary,
+For source-build versus release status and composition availability,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 Raw benchmark reports and optional comparison dependencies are maintained in
@@ -28,9 +28,9 @@ and read-only current-state inspection are implemented. The fresh opted-in store
 consults administration inside the retrieval transaction and emits v4; default queries
 are unchanged, and the local stdio MCP query tool exposes the same opt-in explicitly
 while its opted-out responses keep the previous property set.
-Association-plus-supersession enforcement remains unsupported. Native directory
-enforcement is also implemented. Canonical read and startup verification validate
-recorded v4 history.
+Lexical associations compose with supersession in source builds as v12 in byte
+mode or v13 with measured tokens. Native directory enforcement is also implemented.
+See the maintained capability contract for canonical version and history details.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
 tokenizer; this does not bound the full packet or a model's context window. No built-in answering
@@ -76,6 +76,33 @@ Paid inference, full benchmark collection and temporal-adapter implementation ar
 not part of these documentation changes. Consolidation, persistent query state,
 proof-aware packing and automatic authority extraction are deferred until a small
 falsifiable workload demonstrates a need that existing primitives cannot meet.
+
+### Next bounded segmentation comparison
+
+The accepted [companion PR57](https://github.com/graydeon/mousa-benchmarks/pull/57)
+establishes a development-corpus packing constraint, not answer quality. All 20
+labelled documents occur by candidate rank 100. Packed gold-document coverage is
+0.10 at 1,024 bytes and 0.70 at 4,096 bytes for both expression policies; reproduction
+repeats those same 20 questions. Expression policies original/dedup are distinct
+from packing policies original/exact-v1. Unknown relevance is not a negative label,
+and selected document identity does not prove sufficient evidence. A larger-budget
+loss does not violate a monotonicity contract.
+
+Read-only inspection of the retained first-pass store found 1,495 segments:
+1,352 exceed 1,024 bytes and 996 are exactly 4,096 bytes. Fixed-v1 whole-passage fit
+is therefore a concrete explanation to examine. The next bounded experiment should
+compare existing fixed-v1 and passage-v1 under separately frozen conditions, inspect
+per-question selection, omission and segment sizes, and require fresh held-out
+confirmation before adopting changes. Passage-v1 already emits passages of at most
+1,024 bytes and is exposed through native/MCP sync. These observations justify
+neither a new packer nor a default change.
+
+This roadmap item does not authorize or delay a new retrieval campaign. Preserve
+the failed 4 MiB v1 preparation and measured 8 MiB v2 records byte-for-byte.
+Replay checks source/stored consistency, not authenticated historical execution
+or every possible altered native aggregate. No generation or judging result is
+implied by these retrieval/packing observations.
+
 
 ## Native token packing evidence boundary
 

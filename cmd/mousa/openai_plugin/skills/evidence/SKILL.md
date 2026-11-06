@@ -15,15 +15,16 @@ Use mousa_trail with the same source and returned trail_id to inspect current-au
 
 When the discovered mousa_query schema declares associations and the caller
 supplies a relationship, pass the complete association_declarations.v1 document
-inline. Lexical byte or measured token packing works with supersession omitted or false.
+inline. Lexical byte or measured token packing works with explicit supersession too.
 Keep author and basis as caller assertions; do not infer or authenticate them.
 Associated evidence follows selected primary evidence, keeps its own provenance
 and has no lexical rank/BM25 score. Report omissions without claiming completeness.
 Inspect producing v3 byte or v11 token history under current authorization.
 A declaration grants no access and does not establish semantic sufficiency.
-Byte-only lexical associations can combine explicit supersession and record v12.
-Only selected surviving primary evidence triggers support; suppressed targets are
-omitted before packing. Token triples and vector/hybrid associations reject.
+Lexical associations can combine explicit supersession and record v12 in byte mode
+or v13 with measured tokens in source builds. Only selected surviving primary evidence
+triggers support; suppressed targets are omitted before admission and packing.
+Vector/hybrid associations reject.
 Mention/resource behavior is unchanged.
 
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
@@ -65,8 +66,9 @@ than silently falling back to bytes. All three query tools can combine
 `supersession: true` with token budgets; withheld predecessors consume neither
 budget nor duplicate retention. Omission/false retains v7; true records lexical
 v8 or vector/hybrid v10. Full vector-source admission remains before masking.
-Lexical associations can combine tokens without supersession, within the documented
-100-total-passage/256KiB accepted-text profile. Only primary passages surviving both
+Lexical associations can combine tokens and supersession, within the documented
+100-total-passage/256KiB admitted-text profile. Suppressed predecessors spend no admitted text budget.
+Only primary passages surviving both
 budgets trigger supporting notes; notes cannot displace primary evidence.
 OpenAI mentions/resources stay byte-only.
 Use `mousa_trail` with token_details true for safe recorded v7/v8/v10/v11 token facts under

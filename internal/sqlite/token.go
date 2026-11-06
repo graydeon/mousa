@@ -24,9 +24,6 @@ func (options TokenQuery) validate() error {
 	if options.Counter == nil {
 		return errors.New("token query requires a ready local tokenizer")
 	}
-	if options.Supersession && len(options.Associations) > 0 {
-		return errors.New("associations cannot combine supersession")
-	}
 	if len(options.Associations) > mousa.MaxAssociationDeclarations {
 		return errors.New("too many association declarations")
 	}
@@ -88,8 +85,8 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 			return err
 		}
 		var base mousa.SourceTrail
+		var consultation supersessionConsultation
 		if options.Supersession {
-			var consultation supersessionConsultation
 			if enforced.Decision.Outcome == mousa.PolicyOutcomeAllow {
 				consultation, err = readSupersessionConsultation(ctx, conn, request.SourceID)
 				if err != nil {
@@ -109,7 +106,7 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 		if len(options.Associations) == 0 {
 			trail, text, err = mousa.PackTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter)
 		} else {
-			trail, text, err = mousa.PackAssociatedTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter, func(primary mousa.SourceTrail) ([]mousa.AssociatedPassage, []mousa.AssociationOmission, error) {
+			trail, text, err = mousa.PackAssociatedTokenContext(base, request.SourceID, enforced.Candidates, options.Budget, options.Counter, consultation.declaration, func(primary mousa.SourceTrail) ([]mousa.AssociatedPassage, []mousa.AssociationOmission, error) {
 				var omissions []mousa.AssociationOmission
 				var resolveErr error
 				associated, omissions, resolveErr = resolveAssociatedPassages(ctx, conn, request.SourceID, options.Associations, enforced.Candidates, primary)
@@ -134,6 +131,11 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 				if _, ok := withheld[candidates[i].Segment.ID]; ok {
 					candidates[i].Text = ""
 				}
+			}
+		}
+		for i, row := range written.Associated {
+			if row.Omission == string(mousa.SupersessionSuperseded) {
+				associated[i].Text = ""
 			}
 		}
 		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates, Associated: associated}

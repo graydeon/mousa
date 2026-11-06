@@ -11,11 +11,13 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source through PR100 includes native attributed classification administration,
+Accepted source through PR105 includes native attributed classification administration,
 measured token budgets with declared lexical supporting context and closed v11
 history, alongside native/MCP lexical/vector/hybrid supersession.
-Source builds containing byte-only lexical association/supersession composition
-also record v12 supporting-stage history; this is not a tagged-release claim.
+Accepted source also includes byte-only lexical association/supersession history
+as v12. This change adds v13 measured-token supporting-stage history and awaits
+independent acceptance; use a source build containing the change. Unfired token
+declarations retain v8. No tagged release is claimed.
 
 Source builds containing native `classification put|get` also record immutable
 attributed assertions against existing evidence. The commands reuse canonical
@@ -73,9 +75,9 @@ with unchanged full-source admission before withholding. See the
 [runnable example](USAGE.md#vector-and-hybrid-supersession).
 
 Defaults are unchanged: recording an activation alone does not filter a default
-query, reinterpret a recorded member or move item pointers. Byte-only lexical
-queries can combine declared supporting context with supersession in v12.
-Token triples, vector/hybrid associations and MCP administration remain unsupported.
+query, reinterpret a recorded member or move item pointers. Lexical
+queries can combine declared supporting context with supersession in v12 byte mode
+or v13 token mode. Vector/hybrid associations and MCP administration remain unsupported.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 A query prepares and size-checks its expression before opening the store only when it
@@ -159,8 +161,8 @@ survivors. Omitted/false token supersession stays v7; byte-only enforcement
 stays lexical v4 or vector/hybrid v9. Full vector-source admission precedes
 masking. Packet v3 binds the complete producing selection: equal returned text
 does not establish equal v7/v8/v10 packet identities. Declared lexical token
-context writes v11 only when its association stage has something to record;
-unfired declarations retain v7. See the
+context writes v11, or v13 with supersession, only when its association stage has
+facts to record; unfired declarations retain v7 or v8 respectively. See the
 [source status](#source-and-release-status).
 
 Canonical read and startup verification check the recorded administration and candidate
