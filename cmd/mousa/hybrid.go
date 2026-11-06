@@ -17,7 +17,7 @@ type hybridEvidence struct {
 	Vector  *mousa.HybridVectorContribution  `json:"vector,omitempty"`
 }
 
-func hybridQueryCommand(ctx context.Context, storePath, external string, args []string, space, policy string, budget uint64, packing string, supersession bool) error {
+func hybridQueryCommand(ctx context.Context, storePath, external string, args []string, space, policy string, budget uint64, packing string, supersession bool, declarations []mousa.AssociationDeclaration) error {
 	if len(args) == 0 {
 		return usageError{"hybrid query requires query text"}
 	}
@@ -63,12 +63,11 @@ func hybridQueryCommand(ctx context.Context, storePath, external string, args []
 	if err != nil {
 		return err
 	}
-	var traced sqlite.TracedVectorResult
-	if supersession {
-		traced, err = store.EvaluateAndTraceSupersessionHybrid(ctx, request, queryText, policy, id, query.Values, budget, packing)
-	} else {
-		traced, err = store.EvaluateAndTraceHybrid(ctx, request, queryText, policy, id, query.Values, budget, packing)
+	traced, err := store.EvaluateAndTraceAssociatedHybrid(ctx, request, queryText, policy, id, query.Values, budget, packing, declarations, supersession)
+	if err != nil {
+		return err
 	}
+	associated, omissions, err := associatedEvidenceProjection(ctx, store, traced.Trail, traced.Associated)
 	if err != nil {
 		return err
 	}
@@ -90,7 +89,10 @@ func hybridQueryCommand(ctx context.Context, storePath, external string, args []
 		UsedBytes            uint64                       `json:"used_bytes"`
 		Evidence             []hybridEvidence             `json:"evidence"`
 		SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
+		AssociatedEvidence   []evidenceHit                `json:"associated_evidence,omitempty"`
+		AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
 	}{Schema: "mousa.hybrid_result.v1", Mode: "hybrid", Source: label, DecisionID: traced.Decision.ID, DecisionOutcome: traced.Decision.Outcome, DecisionReasons: traced.Decision.ReasonCodes, TrailID: traced.Trail.ID, PacketID: traced.Trail.PacketID, Selection: h, Missing: h.Eligible - h.Indexed, PackingPolicy: packing, BudgetBytes: budget, UsedBytes: traced.Trail.UsedBytes, Evidence: []hybridEvidence{}}
+	result.AssociatedEvidence, result.AssociationOmissions = associated, omissions
 	if traced.Trail.Supersession != nil {
 		result.SupersessionExcluded = new(int)
 		*result.SupersessionExcluded = len(traced.Trail.Supersession.Dispositions)

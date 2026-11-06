@@ -115,7 +115,9 @@ the [complete example](docs/USAGE.md#supersession-safe-supporting-context) runs 
 directory/JSONL and configured MCP queries with verified v12 byte-mode history.
 Source builds also compose measured token budgets with associations and supersession
 as v13, including independent whole-render counting and retained-text recount in
-the example. This is not a tagged-release claim. Vector/hybrid associations remain unsupported.
+the example. This is not a tagged-release claim. The proposed source change adds
+vector/hybrid declared support with v14 byte and v15 token history; see the
+[runnable retrieval workflow](docs/USAGE.md#mcp-vector-and-hybrid-example).
 
 ## What works today?
 

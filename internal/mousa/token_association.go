@@ -22,8 +22,8 @@ type TokenAssociationSelection struct {
 // Recorded association facts with supersession use v13; unfired declarations retain v8.
 // One counter serves both stages and is completed before this function returns.
 func PackAssociatedTokenContext(base SourceTrail, source SourceID, candidates []VerifiedLexicalCandidate, budget TokenBudget, counter *tokenizer.Counter, declaration *SupersessionDeclaration, resolve func(SourceTrail) ([]AssociatedPassage, []AssociationOmission, error)) (SourceTrail, string, error) {
-	if resolve == nil || base.Vector != nil || base.Hybrid != nil {
-		return SourceTrail{}, "", errors.New("token associations require lexical retrieval")
+	if resolve == nil {
+		return SourceTrail{}, "", errors.New("token associations require a resolver")
 	}
 	if declaration != nil {
 		if err := declaration.Validate(); err != nil {
@@ -56,7 +56,7 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 	}
 	retained := make([]retainedPassage, 0, len(candidates)+len(associated))
 	for i, r := range t.Candidates {
-		if r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i]) {
+		if t.Vector == nil && t.Hybrid == nil && r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i]) {
 			if r.TextBytes > MaxVectorTextBytes-total {
 				return SourceTrail{}, "", errors.New("combined token association passage bytes exceed bound")
 			}
@@ -73,7 +73,7 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 		if declaration != nil && p.Segment.RepresentationID == declaration.PredecessorRepresentationID {
 			continue
 		}
-		if uint64(len(p.Text)) > MaxVectorTextBytes-total {
+		if t.Vector == nil && t.Hybrid == nil && uint64(len(p.Text)) > MaxVectorTextBytes-total {
 			return SourceTrail{}, "", errors.New("combined token association passage bytes exceed bound")
 		}
 		total += uint64(len(p.Text))
@@ -81,6 +81,9 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 	t.Schema = SourceTrailSchemaV11
 	if t.Supersession != nil {
 		t.Schema = SourceTrailSchemaV13
+	}
+	if t.Vector != nil || t.Hybrid != nil {
+		t.Schema = SourceTrailSchemaV15
 	}
 	t.AssociationOmissions = slices.Clone(omissions)
 	t.Associated = make([]TrailAssociated, len(associated))
@@ -142,7 +145,15 @@ func appendTokenAssociations(t SourceTrail, candidates []VerifiedLexicalCandidat
 func (t SourceTrail) validateTokenAssociationProfile() error {
 	invalid := func() error { return errors.New("invalid v11 token association profile or alignment") }
 	s := t.Token.Associations
-	if t.Token.Mode != "lexical" || t.Vector != nil || t.Hybrid != nil || (t.Supersession != nil) != (t.Schema == SourceTrailSchemaV13) || t.Outcome != string(PolicyOutcomeAllow) || s == nil || s.AssociatedIDs == nil || s.ProposedTokens == nil || len(s.AssociatedIDs) != len(t.Associated) || len(s.ProposedTokens) != len(t.Associated) || len(t.Token.PrimaryIDs) != len(t.Candidates) || len(t.Candidates) == 0 || len(t.Associated)+len(t.AssociationOmissions) == 0 || len(t.Candidates)+len(t.Associated) > MaxVectorPassages || len(t.AssociationOmissions) > MaxAssociationDeclarations {
+	retrieval := t.Schema == SourceTrailSchemaV15
+	if retrieval {
+		if err := t.validateRetrievalAssociations(); err != nil {
+			return err
+		}
+	} else if t.Token.Mode != "lexical" || t.Vector != nil || t.Hybrid != nil || (t.Supersession != nil) != (t.Schema == SourceTrailSchemaV13) {
+		return invalid()
+	}
+	if t.Outcome != string(PolicyOutcomeAllow) || s == nil || s.AssociatedIDs == nil || s.ProposedTokens == nil || len(s.AssociatedIDs) != len(t.Associated) || len(s.ProposedTokens) != len(t.Associated) || len(t.Token.PrimaryIDs) != len(t.Candidates) || len(t.Candidates) == 0 || len(t.Associated)+len(t.AssociationOmissions) == 0 || len(t.Candidates)+len(t.Associated) > MaxVectorPassages || len(t.AssociationOmissions) > MaxAssociationDeclarations {
 		return invalid()
 	}
 	var total uint64
@@ -160,7 +171,7 @@ func (t SourceTrail) validateTokenAssociationProfile() error {
 			return invalid()
 		}
 		hasPrimary = hasPrimary || r.Selected
-		if r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i]) {
+		if !retrieval && r.Disposition == CandidateAccepted && !(len(suppressed) > 0 && suppressed[i]) {
 			if r.TextBytes > MaxVectorTextBytes-total {
 				return invalid()
 			}
@@ -182,7 +193,7 @@ func (t SourceTrail) validateTokenAssociationProfile() error {
 			return invalid()
 		}
 		seen[r.SegmentID] = true
-		if r.Omission != string(SupersessionSuperseded) {
+		if !retrieval && r.Omission != string(SupersessionSuperseded) {
 			if r.TextBytes > MaxVectorTextBytes-total {
 				return invalid()
 			}
@@ -215,7 +226,7 @@ func (t SourceTrail) validateAssociatedTokenAccounting(used, rendered, measured 
 	for i, r := range t.Associated {
 		n := t.Token.Associations.ProposedTokens[i]
 		if r.Omission == string(SupersessionSuperseded) {
-			if t.Schema != SourceTrailSchemaV13 || r.Selected || r.DuplicateOf != "" || n != nil {
+			if (t.Schema != SourceTrailSchemaV13 && t.Schema != SourceTrailSchemaV15) || t.Supersession == nil || r.Selected || r.DuplicateOf != "" || n != nil {
 				return invalid()
 			}
 			continue

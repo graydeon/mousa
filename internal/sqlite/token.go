@@ -150,24 +150,18 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 
 // EvaluateAndTraceTokenVector keeps token packing inside the existing cosine snapshot.
 func (store *Store) EvaluateAndTraceTokenVector(ctx context.Context, request mousa.PolicyEvaluationRequest, space mousa.SHA256, values []float64, budget uint64, packing string, options TokenQuery) (TracedVectorResult, error) {
-	if len(options.Associations) > 0 {
-		return TracedVectorResult{}, errors.New("vector associations are unsupported")
-	}
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	return store.traceVector(ctx, request, space, values, budget, packing, &options, options.Supersession)
+	return store.traceVector(ctx, request, space, values, budget, packing, &options, options.Supersession, options.Associations)
 }
 
 // EvaluateAndTraceTokenHybrid keeps token packing inside the existing fused snapshot.
 func (store *Store) EvaluateAndTraceTokenHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, policy string, space mousa.SHA256, values []float64, budget uint64, packing string, options TokenQuery) (TracedVectorResult, error) {
-	if len(options.Associations) > 0 {
-		return TracedVectorResult{}, errors.New("hybrid associations are unsupported")
-	}
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options, options.Supersession)
+	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options, options.Supersession, options.Associations)
 }
 
 func verifyTokenTrail(ctx context.Context, q queryer, t mousa.SourceTrail, source mousa.SourceID) error {

@@ -35,7 +35,8 @@ token v10 with original ranking/coverage and survivor packing; omission/false
 preserves v5/v6 bytes or v7 tokens and response properties. Full-source vector
 admission precedes masking. Trail `supersession`, `retrieval_details` and
 `token_details` independently expose their respective verified recorded members
-under fresh authorization, without recounting. Associations remain unsupported.
+under fresh authorization, without recounting. Proposed association composition
+uses v14/v15; the initial v9/v10 profiles remain association-free.
 See [vector/hybrid usage](USAGE.md#vector-and-hybrid-supersession).
 
 ## Recommendation
@@ -677,7 +678,7 @@ Each slice is independently reviewable and changes no native code path.
   (`cmd/mousa/mcp_openai.go`) and stay unchanged.
 - MCP does not import directories; native directory queries support enforcement through
   the CLI. Lexical association composition records v12 in byte mode or v13 with
-  measured tokens; vector/hybrid associations remain unsupported. No transitive or automatic supersession,
+  measured tokens; proposed vector/hybrid composition records v14/v15. No transitive or automatic supersession,
   or change to ranking, authorization or item pointers is implemented.
 - No new envelope version, no new tool, and no new output field on any existing opt-out
   response.

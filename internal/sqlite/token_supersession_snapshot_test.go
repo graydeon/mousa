@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,12 @@ func TestTokenAssociatedSupersessionCancellationRollsBack(t *testing.T) {
 	testTokenSupersessionWriterHeldThroughCounting(t, "triple-cancel")
 }
 
+func TestTokenRetrievalAssociationsWriterSnapshot(t *testing.T) {
+	for _, mode := range []string{"vector-associations", "hybrid-associations", "vector-associations-cancel", "hybrid-associations-cancel", "vector-associations-supersession", "hybrid-associations-supersession", "vector-associations-supersession-cancel", "hybrid-associations-supersession-cancel"} {
+		t.Run(mode, func(t *testing.T) { testTokenSupersessionWriterHeldThroughCounting(t, mode) })
+	}
+}
+
 func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
@@ -49,9 +56,10 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	f := newV4Fixture(t)
 	defer f.store.Close()
 	triple := mode == "triple" || mode == "triple-cancel"
-	associations := mode == "associations" || mode == "association-cancel" || triple
+	retrievalAssociations := strings.Contains(mode, "-associations")
+	associations := mode == "associations" || mode == "association-cancel" || triple || retrievalAssociations
 	var space mousa.SHA256
-	if mode != "lexical" && !associations {
+	if mode != "lexical" && (!associations || retrievalAssociations) {
 		space = importSupersessionVectors(t, f)
 	}
 	_, state := f.activate(t)
@@ -117,12 +125,17 @@ while True:
 				options.Supersession = true
 				options.Associations[0].FromItem = "successor"
 			}
+			if retrievalAssociations {
+				options.Supersession = strings.Contains(mode, "-supersession")
+				options.Associations[0].FromItem = "peer"
+			}
 		}
-		if mode == "lexical" || associations {
+		if mode == "lexical" || associations && !retrievalAssociations {
 			r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, options)
 			done <- result{r.Trail, err}
 		} else {
-			r, err := queryTokenRetrieval(t, f, space, mode, mousa.PackingExactV1, "gated-query", 1024, options)
+			retrievalMode := strings.Split(mode, "-")[0]
+			r, err := queryTokenRetrieval(t, f, space, retrievalMode, mousa.PackingExactV1, "gated-query", 1024, options)
 			done <- result{r.Trail, err}
 		}
 	}()
@@ -156,7 +169,7 @@ while True:
 		t.Fatalf("unexpected competing writer error: %v", lockErr)
 	}
 	conn.Close()
-	if mode == "association-cancel" || mode == "triple-cancel" {
+	if strings.HasSuffix(mode, "-cancel") {
 		cancel()
 		gate.Close()
 		got := <-done
@@ -170,10 +183,13 @@ while True:
 	if got.err != nil {
 		t.Fatal(got.err)
 	}
-	if mode == "associations" || triple {
+	if mode == "associations" || triple || retrievalAssociations {
 		schema := mousa.SourceTrailSchemaV11
 		if triple {
 			schema = mousa.SourceTrailSchemaV13
+		}
+		if retrievalAssociations {
+			schema = mousa.SourceTrailSchemaV15
 		}
 		if got.trail.Schema != schema || len(got.trail.Associated) != 1 || !got.trail.Associated[0].Selected {
 			t.Fatal("association did not share measured snapshot")
@@ -183,7 +199,7 @@ while True:
 		if err != nil || historical.Associated[0] != got.trail.Associated[0] {
 			t.Fatal("later target revision reinterpreted selection", err)
 		}
-		if !triple {
+		if !triple && !strings.Contains(mode, "-supersession") {
 			return
 		}
 	}

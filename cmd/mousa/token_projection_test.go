@@ -77,7 +77,7 @@ func TestNativeTokenProjectionRejectsParallelMetadata(t *testing.T) {
 				}
 				before, _ := json.Marshal(trail)
 				query := captureTokenProjection(t, func() error {
-					return emitTokenQuery("lexical", "source", 1024, packing, trail, mousa.PolicyDecision{Outcome: mousa.PolicyOutcomeAllow}, "context", verified)
+					return emitTokenQuery("lexical", "source", 1024, packing, trail, mousa.PolicyDecision{Outcome: mousa.PolicyOutcomeAllow}, "context", verified, nil, nil)
 				})
 				history.Token = mousa.ReleasedTokenSelection(trail)
 				inspection := sqlite.TrailInspection{Historical: history}
@@ -185,7 +185,7 @@ func TestNativeTokenQueryOutcomes(t *testing.T) {
 				}
 				before, _ := json.Marshal(trail)
 				result := captureTokenProjection(t, func() error {
-					return emitTokenQuery("lexical", "source", 1, packing, trail, decision, context, verified)
+					return emitTokenQuery("lexical", "source", 1, packing, trail, decision, context, verified, nil, nil)
 				})
 				if result["outcome"] != tc.want {
 					t.Errorf("outcome=%v want %s", result["outcome"], tc.want)

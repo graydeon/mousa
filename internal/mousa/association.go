@@ -285,7 +285,7 @@ func (trail SourceTrail) validateAssociated() error {
 		}
 		switch row.Omission {
 		case string(SupersessionSuperseded):
-			if (trail.Schema != SourceTrailSchemaV12 && trail.Schema != SourceTrailSchemaV13) || trail.Supersession.DeclarationID == nil || row.DuplicateOf != "" {
+			if (trail.Schema != SourceTrailSchemaV12 && trail.Schema != SourceTrailSchemaV13 && trail.Schema != SourceTrailSchemaV14 && trail.Schema != SourceTrailSchemaV15) || trail.Supersession == nil || trail.Supersession.DeclarationID == nil || row.DuplicateOf != "" {
 				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires recorded composed supersession", nil)
 			}
 		case "duplicate":
@@ -307,7 +307,7 @@ func (trail SourceTrail) validateAssociated() error {
 				return newValidationError(field+".text_bytes", ValidationCodeInvalidRange, "budget omission must not fit the remaining budget", nil)
 			}
 		case "bytes", "tokens", "rendered_bytes":
-			if (trail.Schema != SourceTrailSchemaV11 && trail.Schema != SourceTrailSchemaV13) || row.DuplicateOf != "" || repeated {
+			if (trail.Schema != SourceTrailSchemaV11 && trail.Schema != SourceTrailSchemaV13 && trail.Schema != SourceTrailSchemaV15) || row.DuplicateOf != "" || repeated {
 				return newValidationError(field+".omission", ValidationCodeInvalidValue, "requires token association accounting", nil)
 			}
 		default:
@@ -345,7 +345,7 @@ func AppendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCan
 // trail's recorded consultation. The store must verify same-source target ancestry
 // and the supplied declaration through the producing transaction.
 func AppendSupersessionAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCandidate, associated []AssociatedPassage, omissions []AssociationOmission, declaration *SupersessionDeclaration) (SourceTrail, error) {
-	if trail.Schema != SourceTrailSchemaV4 || trail.Supersession == nil {
+	if (trail.Schema != SourceTrailSchemaV4 && trail.Schema != SourceTrailSchemaV9) || trail.Supersession == nil {
 		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "requires a supersession primary trail", nil)
 	}
 	if declaration != nil {
@@ -368,7 +368,7 @@ func appendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCan
 	if len(associated) == 0 && len(omissions) == 0 {
 		return trail, nil
 	}
-	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 && trail.Schema != SourceTrailSchemaV4 {
+	if trail.Schema != SourceTrailSchema && trail.Schema != SourceTrailSchemaV2 && trail.Schema != SourceTrailSchemaV4 && trail.Schema != SourceTrailSchemaV5 && trail.Schema != SourceTrailSchemaV6 && trail.Schema != SourceTrailSchemaV9 {
 		return SourceTrail{}, newValidationError("schema", ValidationCodeInvalidSchema, "association stage requires an original or exact-v1 trail", nil)
 	}
 	if trail.Outcome != string(PolicyOutcomeAllow) {
@@ -441,7 +441,9 @@ func appendAssociatedPassages(trail SourceTrail, candidates []VerifiedLexicalCan
 	if trail.PackingPolicy == "" {
 		trail.PackingPolicy = PackingOriginal
 	}
-	if trail.Schema == SourceTrailSchemaV4 {
+	if trail.Vector != nil || trail.Hybrid != nil {
+		trail.Schema = SourceTrailSchemaV14
+	} else if trail.Schema == SourceTrailSchemaV4 {
 		trail.Schema = SourceTrailSchemaV12
 	} else {
 		trail.Schema = SourceTrailSchemaV3

@@ -119,6 +119,16 @@ func TestRetrievalSupersessionSourceAdmissionPrecedesMask(t *testing.T) {
 			if !IsCode(err, CodeResourceLimit) {
 				t.Fatalf("masked source bypassed bound: %v", err)
 			}
+			declarations := []mousa.AssociationDeclaration{{FromItem: "peer", ToItem: "predecessor", Basis: "unembedded oversized target", Author: "test"}}
+			request := testEvaluationRequest(t, f.source.ID, "oversized-association")
+			if mode == "vector" {
+				_, err = f.store.EvaluateAndTraceAssociatedVector(ctx, request, space, []float64{1, 0}, 31, mousa.PackingOriginal, declarations, true)
+			} else {
+				_, err = f.store.EvaluateAndTraceAssociatedHybrid(ctx, request, "peer", "original", space, []float64{1, 0}, 31, mousa.PackingOriginal, declarations, true)
+			}
+			if !IsCode(err, CodeResourceLimit) {
+				t.Fatalf("unembedded support bypassed source admission: %v", err)
+			}
 			if err := f.store.db.QueryRowContext(ctx, `SELECT count(*) FROM source_trails`).Scan(&after); err != nil {
 				t.Fatal(err)
 			}

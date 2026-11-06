@@ -15,16 +15,19 @@ import (
 // vector in one source/space. Authorization, both branches, packing and readback
 // share the immediate writer snapshot; a denied request enumerates neither branch.
 func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, false)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, false, nil)
 }
 
 // EvaluateAndTraceSupersessionHybrid withholds exact predecessor pins after fusion
 // without changing branch ranks, coverage or the full source admission limits.
 func (store *Store) EvaluateAndTraceSupersessionHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, true)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, true, nil)
 }
 
-func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool) (TracedVectorResult, error) {
+func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool, declarations []mousa.AssociationDeclaration) (TracedVectorResult, error) {
+	if err := validateRetrievalDeclarations(declarations); err != nil {
+		return TracedVectorResult{}, err
+	}
 	if err := store.requireWritable("query hybrid"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -168,8 +171,9 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 			result.Passages[i] = p
 		}
 		var trail mousa.SourceTrail
+		var consultation supersessionConsultation
 		if supersession {
-			consultation, err := consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
+			consultation, err = consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
 			if err != nil {
 				return err
 			}
@@ -180,12 +184,9 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build hybrid trail", err)
 		}
-		if token != nil {
-			result.Verified = candidates
-			trail, result.Context, err = mousa.PackTokenContext(trail, request.SourceID, candidates, token.Budget, token.Counter)
-			if err != nil {
-				return err
-			}
+		trail, err = packRetrievalAssociations(ctx, conn, request.SourceID, trail, candidates, passages, declarations, consultation.declaration, token, &result)
+		if err != nil {
+			return err
 		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err

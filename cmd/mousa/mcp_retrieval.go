@@ -79,6 +79,8 @@ type mcpRetrievalResult struct {
 	Context              *string                      `json:"context,omitempty"`
 	Token                *mousa.TokenSelectionView    `json:"token,omitempty"`
 	SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
+	AssociatedEvidence   []evidenceHit                `json:"associated_evidence,omitempty"`
+	AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
 }
 
 type mcpLexicalResult struct {

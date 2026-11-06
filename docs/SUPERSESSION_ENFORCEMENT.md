@@ -9,7 +9,8 @@ JSONL query opt-ins and the local stdio MCP tools.** Use
 with flags before positional arguments, or MCP `mousa_query` with `supersession: true`.
 Defaults, legacy trail versions and every opted-out MCP response are unchanged.
 Lexical queries can combine declared supporting context with supersession under
-byte or measured token budgets. Vector/hybrid associations remain unsupported.
+byte or measured token budgets. The proposed source change extends declared support
+to vector/hybrid queries, with v14 byte or v15 token history.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md). The
@@ -41,8 +42,8 @@ Byte-only vector/hybrid enforcement writes v9, retaining the existing producing
 ranking facts and this consultation contract. Its full source admission occurs
 before masking, including when combined with token budgets as v10. Both modes
 reuse token packet v3's full producing-selection binding and complete survivor
-rendering, with null proposed counts for withheld candidates. Token-plus-association-
-plus-supersession and vector/hybrid associations remain unsupported. See
+rendering, with null proposed counts for withheld candidates. Lexical token
+association/supersession uses v13; proposed vector/hybrid composition uses v14/v15. See
 [retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
 and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
@@ -316,6 +317,11 @@ recorded as a consulted activation event with a null declaration.
 
 ## 4. Associations and packing modes
 
+This section records the initial v4 enforcement boundary, not current association
+availability. Accepted lexical composition uses v12/v13; the proposed vector/hybrid
+composition uses v14/v15. Their supporting stages apply exact-pin suppression
+before duplicate and budget accounting, as described in the capability contract.
+
 **Decision for first enforcement.** Both packing policies are supported. An opt-in
 enforcement request **must not** carry association declarations: the combination is rejected
 as an invalid query before the retrieval transaction begins, so no part of the request is
@@ -360,7 +366,7 @@ or item pointers.
   `mousa_query` reports the withheld count, and `mousa_trail` returns the recorded member
   of a v4 record. Opted-out responses keep today's property set, so ordinary inspection
   stays filtered, text-free and unchanged for a legacy record.
-  Association combinations remain unsupported.
+  The initial v4 profile carries no association facts; composed profiles use separate versions.
 - A store that contains v4 trails requires a binary that knows v4, exactly as v2 and v3
   records already do; no store schema version changes, because no object set changes.
 

@@ -136,63 +136,12 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 		})
 	}
 	if declarations != nil {
-		// Associated evidence is rendered after the primary evidence, in trail row order, so the
-		// caller sees the declaration behind every additional passage and every non-delivery.
-		for index, row := range traced.Trail.Associated {
-			if row.Selected {
-				passage := traced.Associated[index]
-				segment := passage.Segment
-				location, exists := locations[segment.RepresentationID]
-				if !exists {
-					representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
-					if err != nil {
-						return nil, err
-					}
-					if representation.ProcessorID != mousa.UTF8TextProcessorID {
-						return nil, fmt.Errorf("selected associated evidence is not normalized UTF-8 text")
-					}
-					segmentPolicy, err := mousa.TextSegmentationPolicy(representation)
-					if err != nil {
-						return nil, err
-					}
-					location = representationLocation{record: representation, item: passage.Item, policy: segmentPolicy}
-					locations[segment.RepresentationID] = location
-				}
-				if err := segment.ValidateAgainst(location.record); err != nil {
-					return nil, err
-				}
-				byteRange, ok := segment.Selector.TextByteRange()
-				if !ok || byteRange.End-byteRange.Start != uint64(len(passage.Text)) {
-					return nil, fmt.Errorf("selected associated range disagrees with released text")
-				}
-				declaration := row
-				result.Evidence = append(result.Evidence, evidenceHit{
-					Item: location.item, SegmentID: segment.ID.String(),
-					RepresentationID:     segment.RepresentationID.String(),
-					RepresentationSHA256: location.record.ContentSHA256.String(),
-					ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: location.policy,
-					ContentSHA256: segment.ContentSHA256.String(),
-					ByteLength:    len(passage.Text), Text: passage.Text,
-					Origin: "association",
-					Association: &associationReason{
-						FromItem: declaration.FromItem, ToItem: declaration.ToItem,
-						Basis: declaration.Basis, Author: declaration.Author,
-					},
-				})
-				continue
-			}
-			switch row.Omission {
-			case "budget", "duplicate", "bytes", "tokens", "rendered_bytes", string(mousa.SupersessionSuperseded):
-				result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
-					FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
-				})
-			}
+		evidence, omissions, err := associatedEvidenceProjection(ctx, store, traced.Trail, traced.Associated)
+		if err != nil {
+			return nil, err
 		}
-		for _, omission := range traced.Trail.AssociationOmissions {
-			result.AssociationOmissions = append(result.AssociationOmissions, associationOmission{
-				FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason,
-			})
-		}
+		result.Evidence = append(result.Evidence, evidence...)
+		result.AssociationOmissions = omissions
 	}
 	switch {
 	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:
@@ -212,6 +161,55 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 		result.Outcome = "no_matches"
 	}
 	return result, nil
+}
+
+func associatedEvidenceProjection(ctx context.Context, store *sqlite.Store, trail mousa.SourceTrail, passages []mousa.AssociatedPassage) ([]evidenceHit, []associationOmission, error) {
+	var evidence []evidenceHit
+	var omissions []associationOmission
+	for index, row := range trail.Associated {
+		if row.Selected {
+			passage := passages[index]
+			segment := passage.Segment
+			representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if representation.ProcessorID != mousa.UTF8TextProcessorID {
+				return nil, nil, fmt.Errorf("selected associated evidence is not normalized UTF-8 text")
+			}
+			policy, err := mousa.TextSegmentationPolicy(representation)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := segment.ValidateAgainst(representation); err != nil {
+				return nil, nil, err
+			}
+			byteRange, ok := segment.Selector.TextByteRange()
+			if !ok || byteRange.End-byteRange.Start != uint64(len(passage.Text)) {
+				return nil, nil, fmt.Errorf("selected associated range disagrees with released text")
+			}
+			evidence = append(evidence, evidenceHit{
+				Item: passage.Item, SegmentID: segment.ID.String(),
+				RepresentationID:     segment.RepresentationID.String(),
+				RepresentationSHA256: representation.ContentSHA256.String(),
+				ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: policy,
+				ContentSHA256: segment.ContentSHA256.String(), ByteLength: len(passage.Text),
+				Text: passage.Text, Origin: "association",
+				Association: &associationReason{FromItem: row.FromItem, ToItem: row.ToItem, Basis: row.Basis, Author: row.Author},
+			})
+			continue
+		}
+		switch row.Omission {
+		case "budget", "duplicate", "bytes", "tokens", "rendered_bytes", string(mousa.SupersessionSuperseded):
+			omissions = append(omissions, associationOmission{
+				FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
+			})
+		}
+	}
+	for _, omission := range trail.AssociationOmissions {
+		omissions = append(omissions, associationOmission{FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason})
+	}
+	return evidence, omissions, nil
 }
 
 const queryCandidateLimit = 100

@@ -307,26 +307,30 @@ func verifyEmbeddingPins(ctx context.Context, q queryer, pin mousa.EmbeddingInpu
 }
 
 type TracedVectorResult struct {
-	Decision mousa.PolicyDecision
-	Trail    mousa.SourceTrail
-	Passages []VectorPassage
-	Context  string
-	Verified []mousa.VerifiedLexicalCandidate
+	Decision   mousa.PolicyDecision
+	Trail      mousa.SourceTrail
+	Passages   []VectorPassage
+	Context    string
+	Verified   []mousa.VerifiedLexicalCandidate
+	Associated []mousa.AssociatedPassage
 }
 
 // EvaluateAndTraceVector uses fresh policy and current source pins in the same
 // immediate transaction as the immutable cosine selection and packet record.
 func (store *Store) EvaluateAndTraceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, false)
+	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, false, nil)
 }
 
 // EvaluateAndTraceSupersessionVector withholds exact predecessor pins after ranking
 // and full source admission, using the same writer snapshot as authorization.
 func (store *Store) EvaluateAndTraceSupersessionVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, true)
+	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, true, nil)
 }
 
-func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool) (TracedVectorResult, error) {
+func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool, declarations []mousa.AssociationDeclaration) (TracedVectorResult, error) {
+	if err := validateRetrievalDeclarations(declarations); err != nil {
+		return TracedVectorResult{}, err
+	}
 	if err := store.requireWritable("query vector"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -362,8 +366,9 @@ func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluat
 			candidate mousa.VectorCandidate
 		}
 		var rankedRows []ranked
+		var passages []VectorPassage
 		if decision.Outcome == mousa.PolicyOutcomeAllow {
-			passages, err := currentVectorPassages(ctx, conn, request.SourceID)
+			passages, err = currentVectorPassages(ctx, conn, request.SourceID)
 			if err != nil {
 				return err
 			}
@@ -418,8 +423,9 @@ func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluat
 		}
 		selection.Indexed = len(rankedRows)
 		var trail mousa.SourceTrail
+		var consultation supersessionConsultation
 		if supersession {
-			consultation, err := consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
+			consultation, err = consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
 			if err != nil {
 				return err
 			}
@@ -430,12 +436,9 @@ func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluat
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build vector trail", err)
 		}
-		if token != nil {
-			result.Verified = candidates
-			trail, result.Context, err = mousa.PackTokenContext(trail, request.SourceID, candidates, token.Budget, token.Counter)
-			if err != nil {
-				return err
-			}
+		trail, err = packRetrievalAssociations(ctx, conn, request.SourceID, trail, candidates, passages, declarations, consultation.declaration, token, &result)
+		if err != nil {
+			return err
 		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err

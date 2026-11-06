@@ -215,8 +215,9 @@ deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
 Token-specific options without `--context-tokens` reject. Lexical token mode
-accepts declared associations with or without supersession; vector/hybrid associations
-still reject. Supersession true writes lexical v8 or vector/hybrid v10;
+accepts declared associations with or without supersession. The proposed source
+change also accepts vector/hybrid associations as v15. Without association facts,
+supersession true writes lexical v8 or vector/hybrid v10;
 recorded lexical association facts use v13 with supersession or v11 without it.
 An unfired stage preserves v8, or v7 when supersession is omitted or false.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
@@ -261,7 +262,7 @@ adds `"supersession": true` to its existing token arguments. Query results add
 `budget_omitted`. Withheld candidates remain accepted metadata with positive
 size/rank and null proposed count, not rejected slots or replacement passages.
 
-Vector/hybrid composition is also supported as v10, without associations.
+Vector/hybrid composition without association facts uses v10; recorded support uses v15.
 Lexical token associations support supersession as v13. Normal/recount native history uses the recorded selection,
 not today's activation. MCP history independently
 accepts `supersession: true` and `token_details: true`, returning producing
@@ -421,7 +422,7 @@ Each call reopens the persistent store. Source revisions/deletions deactivate ol
 vectors without rewriting them; re-export and import vectors for the new passage
 pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
 triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
-with vector queries. Explicit query-term policy and associations reject.
+with vector queries. Explicit query-term policy rejects; declared associations are supported.
 Supersession with byte or token budgets is an opt-in described below. MCP has a separate
 `mousa_vector_query` tool and recorded retrieval-details inspection; resource search stays lexical.
 
@@ -439,7 +440,7 @@ After importing embeddings, combine text and a supplied vector explicitly:
 `query-vector.json` uses the existing `mousa.vector_query.v1` object. Query text
 does not attest which text generated that vector. Unknown/mismatched spaces and
 invalid input reject; zero current vectors is reported as hybrid coverage, not a fallback.
-Associations and vector-only flags cannot be combined with hybrid mode;
+Vector-only flags cannot be combined with hybrid mode; declared associations and
 supersession with byte or token budgets is supported. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
 defines candidate bounds, rank domains, errors and historical verification limits.
 
@@ -1003,8 +1004,8 @@ example uses it only to prepare its fixture.
 
 Both term policies and both packers work with byte or measured token budgets.
 Omitted, false and true supersession work with both budget modes in source builds
-containing token association/supersession composition. Vector/hybrid
-associations reject. Supply an object, not null, a filename or URL. The
+containing token association/supersession composition. The proposed source change
+extends this to vector/hybrid queries. Supply an object, not null, a filename or URL. The
 [native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
 apply. Assertions check protocol, selection and attribution consistency, not
 authenticated authorship, semantic sufficiency, recall, completeness or truth.
@@ -1133,14 +1134,27 @@ CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 python3 examples/mcp_retrieval.py --mousa ./mousa
 ```
 
-The example creates a fresh temporary store and uses only MCP tools to sync three
-JSONL items, export current normalized passage bytes/pins, import hand-assigned
-two-coordinate vectors, retry that exact import, query and inspect history.
-The vector-only hit is `vector.md`; the overlapping `overlap.md` wins hybrid
-equal-weight RRF(k60) despite ranking second in each branch. Printed JSON includes
-selected evidence and matching history identities. Temporary data and receipts
-are removed on exit. The vectors are arithmetic-only: no semantic quality, model
-integration, performance or model-window safety is established.
+The proposed source-build example creates separate fresh stores for native directory,
+native JSONL and configured MCP JSONL workflows. Each syncs five items, exports
+normalized passage pins, imports two hand-assigned vectors, and queries vector
+and hybrid retrieval with both packers. Declared nonmatching support has no
+embedding. Assertions compare primary evidence and retrieval facts against an
+association-free query, then inspect v14 byte or v15 token history.
+Supporting rows appear in `associated_evidence`, not primary `evidence`.
+Add `--supersession` to suppress the exact obsolete supporting pin; the example
+administers declarations through the native CLI, not a new MCP tool.
+Temporary stores and wire receipts are removed on exit; printed results remain
+available for inspection. Synthetic vectors establish protocol/arithmetic only,
+not semantic quality, model integration, performance or model-window safety.
+
+```sh
+python3 examples/mcp_retrieval.py --mousa ./mousa --supersession
+```
+
+For an existing native source, add `--associations associations.json` to
+`query --vector-space SPACE_ID` or `query --hybrid-space SPACE_ID SOURCE TEXT`.
+Continue supplying `mousa.vector_query.v1` on stdin. The declaration file uses
+the existing strict `mousa.association_declarations.v1` contract.
 
 For real use:
 
@@ -1196,8 +1210,8 @@ Native v7 vector/hybrid facts can also be inspected. The independent
 Only exact configured JSONL aliases are permitted, including when a label looks
 like a path. No directory read permission follows. Native bounds and precise
 space/dimension/current-coverage errors apply, without lexical fallback.
-Supersession/association combinations on these query tools reject rather than
-being ignored. Refresh cached closed schemas through `tools/list`.
+The proposed source change accepts associations with optional supersession on both
+query tools. Refresh cached closed schemas through `tools/list`.
 OpenAI mentions/resources retain their lexical contract.
 
 
@@ -1216,9 +1230,10 @@ python3 examples/mcp_retrieval.py --mousa ./mousa \
   --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
 ```
 
-It exercises lexical, vector and hybrid queries, independently counts the exact
-returned context with official `encode_ordinary`, checks its SHA256 and the exact
-fit/one-token-short boundary, and reads matching producing token history.
+It exercises vector and hybrid declared support, independently counts the exact
+returned whole context with official `encode_ordinary`, checks its SHA256 and
+byte length, and checks native retained-text recount and producing history.
+Add `--supersession` to combine measured support with explicit target suppression.
 No model or embedding service is called. For your own client, add the following
 to any query tool's existing required arguments:
 
@@ -1240,7 +1255,8 @@ up to 524288; declarations are integers 0..1000000000. Nonzero reservations
 require a positive window and cannot exceed it together. Null, booleans,
 fractional/overflow numbers, duplicate and unknown fields reject before mutation.
 All three token modes accept supersession: true records lexical v8 or
-vector/hybrid v10; byte-only vector/hybrid remains v9. Associations are unsupported.
+vector/hybrid v10; byte-only vector/hybrid remains v9. Recorded vector/hybrid
+association facts instead use v14 in byte mode or v15 with measured tokens.
 Tool inputs cannot set interpreter, cache, store or caller paths/identity.
 
 Without a configured usable backend, token mode returns `tokenizer_unavailable`;

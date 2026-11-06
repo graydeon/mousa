@@ -247,12 +247,21 @@ func TestMCPAssociationDiscoveryIsAdditive(t *testing.T) {
 		if err := json.Unmarshal(encoded, &wire); err != nil {
 			t.Fatal(err)
 		}
-		if tool.Name == "mousa_query" {
+		if tool.Name == "mousa_query" || tool.Name == "mousa_vector_query" || tool.Name == "mousa_hybrid_query" {
 			properties := wire["inputSchema"].(map[string]any)["properties"].(map[string]any)
 			if properties["associations"] == nil {
 				t.Fatal("missing inline declaration schema")
 			}
 			delete(properties, "associations")
+		}
+		if tool.Name == "mousa_vector_query" || tool.Name == "mousa_hybrid_query" {
+			properties := wire["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
+			for _, key := range []string{"associated_evidence", "association_omissions"} {
+				if properties[key] == nil {
+					t.Fatalf("missing supporting result property %s", key)
+				}
+				delete(properties, key)
+			}
 		}
 		current[tool.Name] = wire
 	}
