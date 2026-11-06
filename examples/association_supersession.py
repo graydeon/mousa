@@ -20,6 +20,24 @@ FIXTURE = {
 }
 
 
+def check_duplicates(result, packing, pins, old, twin, supersession=False):
+    duplicate_ids = {pins[item]["segment_id"] for item in (old, twin)}
+    retained = [p for p in result["evidence"] if p["segment_id"] in duplicate_ids]
+    assert pins[old]["text"].encode() == pins[twin]["text"].encode()
+    for passage in retained:
+        assert passage["text"].encode() == pins[old]["text"].encode()
+        assert passage["representation_id"] == pins[passage["item"]]["representation_id"]
+    if supersession:
+        assert all(p["representation_id"] != pins[old]["representation_id"] for p in result["evidence"])
+        assert [p["segment_id"] for p in retained] == [pins[twin]["segment_id"]]
+        assert result["supersession_excluded"] == 1
+    else:
+        candidates = [sid for sid in result["token"]["candidate_ids"] if sid in duplicate_ids]
+        assert len(candidates) == 2 and set(candidates) == duplicate_ids
+        expected = candidates if packing == "original" else candidates[:1]
+        assert [p["segment_id"] for p in retained] == expected
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mousa", type=Path, required=True)
@@ -111,13 +129,22 @@ def main():
                 print(json.dumps(dict(surface="native-" + form, packing=packing, result=result, history=history)))
                 flags = ["--associations", path, "--packing-policy", packing, *token_flags]
                 plain = command("query", *flags, "--context-tokens", "4096", *selector, "needle")
+                disabled = command("query", *flags, "--supersession=false",
+                                   "--context-tokens", "4096", *selector, "needle")
                 suppressed = command("query", *flags, "--supersession",
                                      "--context-tokens", "4096", *selector, "needle")
                 reference(plain)
                 reference(suppressed)
-                assert any(p["item"] == old for p in plain["evidence"])
-                assert all(p["item"] != old for p in suppressed["evidence"])
-                assert suppressed["supersession_excluded"] == 1
+                reference(disabled)
+                assert disabled["evidence"] == plain["evidence"]
+                assert disabled["context"] == plain["context"]
+                check_duplicates(plain, packing, pins, old, "twin" + suffix)
+                check_duplicates(suppressed, packing, pins, old, "twin" + suffix, True)
+                check_duplicates(disabled, packing, pins, old, "twin" + suffix)
+                h = command("trail", *selector, suppressed["trail_id"])["historical"]
+                assert h["token"] == suppressed["token"]
+                assert h["supersession"]["activation_id"] == activation["id"]
+                assert h["supersession"]["declaration_id"] == declaration["id"]
                 full = command("query", *flags, "--supersession",
                                "--context-tokens", "4096", *selector, "instruction")
                 check(full)

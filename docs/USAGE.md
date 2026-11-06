@@ -1049,6 +1049,18 @@ The example also runs token triples, independently counts the complete returned
 rendering with official tiktoken, tests exact fit and one-token-short admission,
 and inspects normal history and retained-text recount.
 
+The duplicate fixture keeps identical old and twin bytes. Without supersession,
+`original` retains both; `exact-v1` retains the first byte-equivalent candidate,
+which can be either item depending on the source identity. With supersession,
+the exact old revision is excluded and the unsuppressed twin remains eligible.
+Run the deterministic regression for both tie orders, both packers, and omitted,
+false, and true supersession with the same prepared backend:
+
+```sh
+python3 examples/association_supersession_test.py --mousa ./mousa \
+  --python /path/to/venv/bin/python --cache /path/to/prepared-cache
+```
+
 Recorded supporting stages use v12 in byte mode and v13 in token mode;
 non-firing stages retain supersession-only v4 and v8 respectively.
 Primary suppression is reported by `supersession_excluded`; associated
