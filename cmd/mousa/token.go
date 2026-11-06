@@ -104,6 +104,8 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 	var decision mousa.PolicyDecision
 	var rendered string
 	var verified []mousa.VerifiedLexicalCandidate
+	var associated []evidenceHit
+	var omissions []associationOmission
 	if mode == "lexical" {
 		got, text, err := store.EvaluateAndTraceTokenLexical(ctx, request, query, policy, budget, packing, options)
 		if err != nil {
@@ -131,11 +133,15 @@ func tokenQueryCommand(ctx context.Context, storePath, external string, args []s
 		}
 		trail, decision, rendered = got.Trail, got.Decision, got.Context
 		verified = got.Verified
+		associated, omissions, err = associatedEvidenceProjection(ctx, store, got.Trail, got.Associated)
+		if err != nil {
+			return err
+		}
 	}
-	return emitTokenQuery(mode, label, budget, packing, trail, decision, rendered, verified)
+	return emitTokenQuery(mode, label, budget, packing, trail, decision, rendered, verified, associated, omissions)
 }
 
-func emitTokenQuery(mode, label string, budget uint64, packing string, trail mousa.SourceTrail, decision mousa.PolicyDecision, rendered string, verified []mousa.VerifiedLexicalCandidate) error {
+func emitTokenQuery(mode, label string, budget uint64, packing string, trail mousa.SourceTrail, decision mousa.PolicyDecision, rendered string, verified []mousa.VerifiedLexicalCandidate, associated []evidenceHit, omissions []associationOmission) error {
 	if trail.Token == nil {
 		return errors.New("missing token selection record")
 	}
@@ -186,7 +192,9 @@ func emitTokenQuery(mode, label string, budget uint64, packing string, trail mou
 		Vector               *mousa.VectorSelection       `json:"vector,omitempty"`
 		Hybrid               *mousa.HybridSelection       `json:"hybrid,omitempty"`
 		SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
-	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, mousa.ReleasedTokenSelection(trail), rendered, evidence, trail.Vector, trail.Hybrid, excluded})
+		AssociatedEvidence   []evidenceHit                `json:"associated_evidence,omitempty"`
+		AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
+	}{"mousa.token_result.v1", mode, label, decision.ID, decision.Outcome, decision.ReasonCodes, trail.ID, trail.PacketID, outcome, budget, trail.UsedBytes, packing, mousa.ReleasedTokenSelection(trail), rendered, evidence, trail.Vector, trail.Hybrid, excluded, associated, omissions})
 }
 
 func startTokenCounter(ctx context.Context, python, cache string) (*tokenizer.Counter, error) {

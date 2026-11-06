@@ -347,17 +347,17 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 	if err := rows.Close(); err != nil {
 		return mousa.SourceTrail{}, classify("get source trail candidates", err)
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV7 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV10 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV13 {
+	if trail.Token != nil {
 		if err := verifyTokenTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV6 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Hybrid != nil {
+	if trail.Token == nil && trail.Hybrid != nil {
 		if err := verifyHybridTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV5 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Vector != nil {
+	if trail.Token == nil && trail.Vector != nil {
 		if err := verifyVectorTrail(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}

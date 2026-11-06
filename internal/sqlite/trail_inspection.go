@@ -142,7 +142,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV7 || trail.Schema == mousa.SourceTrailSchemaV8 || trail.Schema == mousa.SourceTrailSchemaV10 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV13 {
+		if trail.Token != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Token, view.Vector, view.Hybrid = mousa.ReleasedTokenSelection(trail), trail.Vector, trail.Hybrid
@@ -176,12 +176,12 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 				view.TokenVerification = "official_recount_verified"
 			}
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV6 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Hybrid != nil {
+		if trail.Token == nil && trail.Hybrid != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Hybrid = trail.Hybrid
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV5 || trail.Schema == mousa.SourceTrailSchemaV9 && trail.Vector != nil {
+		if trail.Token == nil && trail.Vector != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Vector = trail.Vector
@@ -240,7 +240,7 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 				Omission: candidate.Omission, DuplicateOf: candidate.DuplicateOf,
 			})
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12 || trail.Schema == mousa.SourceTrailSchemaV13 {
+		if trail.Schema == mousa.SourceTrailSchemaV3 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12 || trail.Schema == mousa.SourceTrailSchemaV13 || trail.Schema == mousa.SourceTrailSchemaV14 || trail.Schema == mousa.SourceTrailSchemaV15 {
 			for _, row := range trail.Associated {
 				var indexed bool
 				if err := conn.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`, row.SegmentID[:]).Scan(&indexed); err != nil {

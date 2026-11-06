@@ -269,7 +269,7 @@ func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, err
 	default:
 		return SourceTrail{}, errors.New("unknown token retrieval mode")
 	}
-	if t.Schema == SourceTrailSchemaV10 {
+	if t.Schema == SourceTrailSchemaV10 || t.Schema == SourceTrailSchemaV15 && t.Supersession != nil {
 		p.Schema = SourceTrailSchemaV9
 	}
 	if p.UsedBytes > MaxVectorTextBytes {
@@ -290,14 +290,14 @@ func (t SourceTrail) tokenRankingProjection(suppressed []bool) (SourceTrail, err
 func (t SourceTrail) validateTokenTrail() error {
 	invalid := func() error { return errors.New("invalid v7 token selection bindings or accounting") }
 	s := t.Token
-	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || t.Schema != SourceTrailSchemaV11 && t.Schema != SourceTrailSchemaV13 && (len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || s.Associations != nil || len(s.PrimaryIDs) > 0) || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
+	if s == nil || s.SourceID == (SourceID{}) || s.Backend != TokenBackend || s.Rendering != ContextRenderingV1 || s.Limit > tokenizer.MaxBytes || s.MeasuredTokens > s.Limit || s.RenderedBytes > tokenizer.MaxBytes || s.MeasuredTokens > s.RenderedBytes || s.RenderedSHA256 == (SHA256{}) || t.Schema != SourceTrailSchemaV11 && t.Schema != SourceTrailSchemaV13 && t.Schema != SourceTrailSchemaV15 && (len(t.Associated) > 0 || len(t.AssociationOmissions) > 0 || s.Associations != nil || len(s.PrimaryIDs) > 0) || t.Candidates == nil || len(t.Candidates) > MaxVectorPassages || len(s.ProposedTokens) != len(t.Candidates) || t.BudgetBytes == 0 || t.BudgetBytes > MaxVectorTextBytes || (t.PackingPolicy != PackingOriginal && t.PackingPolicy != PackingExactV1) {
 		return invalid()
 	}
-	if t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV10 || t.Schema == SourceTrailSchemaV13 {
+	if t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV10 || t.Schema == SourceTrailSchemaV13 || t.Schema == SourceTrailSchemaV15 && t.Supersession != nil {
 		if t.Supersession == nil || (t.Schema == SourceTrailSchemaV8 || t.Schema == SourceTrailSchemaV13) && s.Mode != "lexical" {
 			return invalid()
 		}
-		if t.Schema == SourceTrailSchemaV10 && ((t.Vector == nil) == (t.Hybrid == nil) || s.Mode == "vector" && t.Vector == nil || s.Mode == "hybrid" && t.Hybrid == nil || s.Mode != "vector" && s.Mode != "hybrid") {
+		if (t.Schema == SourceTrailSchemaV10 || t.Schema == SourceTrailSchemaV15) && ((t.Vector == nil) == (t.Hybrid == nil) || s.Mode == "vector" && t.Vector == nil || s.Mode == "hybrid" && t.Hybrid == nil || s.Mode != "vector" && s.Mode != "hybrid") {
 			return invalid()
 		}
 		if err := t.Supersession.Validate(); err != nil {
@@ -306,10 +306,10 @@ func (t SourceTrail) validateTokenTrail() error {
 		if t.Supersession.Consulted != (t.Outcome == string(PolicyOutcomeAllow)) {
 			return invalid()
 		}
-	} else if (t.Schema != SourceTrailSchemaV7 && t.Schema != SourceTrailSchemaV11) || t.Supersession != nil {
+	} else if (t.Schema != SourceTrailSchemaV7 && t.Schema != SourceTrailSchemaV11 && t.Schema != SourceTrailSchemaV15) || t.Supersession != nil {
 		return invalid()
 	}
-	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 {
+	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 || t.Schema == SourceTrailSchemaV15 {
 		if err := t.validateTokenAssociationProfile(); err != nil {
 			return err
 		}
@@ -414,7 +414,7 @@ func (t SourceTrail) validateTokenTrail() error {
 		measured = *n
 		selected[r.SegmentID.String()] = r
 	}
-	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 {
+	if t.Schema == SourceTrailSchemaV11 || t.Schema == SourceTrailSchemaV13 || t.Schema == SourceTrailSchemaV15 {
 		if err := t.validateAssociatedTokenAccounting(&used, &rendered, &measured, selected); err != nil {
 			return err
 		}

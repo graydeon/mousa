@@ -9,7 +9,7 @@ Read the current task, repository documentation and operator-supplied workflow b
 
 ## Find the affected contract
 
-Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in, including lexical associations as v12 in byte mode or v13 in token mode. Defaults remain uncurated; MCP administration and vector/hybrid associations remain unsupported.
+Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in, including lexical associations as v12/v13 and proposed vector/hybrid associations as v14/v15 for byte/token mode. Defaults remain uncurated; MCP administration remains unsupported.
 
 Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection, supersession selection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
 
@@ -21,10 +21,10 @@ Reuse the supplied SQLite transaction for candidate, administrative and provenan
 
 Historical trail reads verify recorded immutable evidence and current authorization without reinterpreting selection under today's activation projection. Preserve canonical candidate sizes and ranks when withholding; suppressed candidates consume no packing budget and cannot become retained duplicates. Keep unavailable historical text verification limits explicit.
 
-For declared context, native directory/JSONL and lexical MCP queries accept byte
+For declared context, native directory/JSONL and configured MCP queries accept byte
 or measured token budgets. MCP decodes the complete inline
-association_declarations.v1 document from its original nested bytes. Reject
-vector/hybrid associations before producing state.
+association_declarations.v1 document from its original nested bytes. Vector/hybrid
+support uses the same post-primary composition stages, not a second retrieval.
 Resolve only primary passages surviving both budgets in the same writer snapshot;
 append associated text using the one query counter, then confirm and Finish once.
 Byte-only stages retain v3, or v12 with supersession, and the 256-target-passage consideration bound. Token
@@ -53,7 +53,7 @@ The source/segment/space slot is immutable; vector identities bind supplied valu
 and canonical revision pins. Fresh authorization/current-pointer selection and v5
 trace persistence share one writer snapshot. Historical verification reads recorded
 producing embeddings rather than current vectors. Keep cosine separate from BM25,
-report coverage and reject vector policy/association flags. Byte-only explicit
+report coverage and reject explicit vector query-term policy. Byte-only explicit
 supersession uses v9 with the existing producing facts and consultation; source
 admission precedes masking and ranks/coverage stay unchanged. MCP
 `mousa_vector_query` reuses that native transaction for configured JSONL sources.
@@ -116,8 +116,16 @@ pins, not today's projection. Token triples use v13 only for recorded associatio
 facts; no firing facts retains v8. Apply target supersession before admission,
 deduplication and either budget, including oversized and duplicate targets.
 Byte-only vector/hybrid uses v9 and packet v1's released-selection binding.
-Preserve valid v1–v12 bytes/identities; omitted/false token supersession uses v7
-unless declared lexical context records v11.
+Vector/hybrid association facts use closed v14 byte or v15 token profiles with
+exactly one retrieval component and optional supersession. No-fire paths retain
+v5/v6/v7/v9/v10. Admit the entire current source (100 items, 100 passages, 256 KiB)
+before suppression, including unembedded rows. Resolve support in that same writer
+snapshot from the admitted universe; an embedding is not required for support.
+Keep support separate from primary evidence, rank arrays and coverage counts.
+Preserve v1–v13 identities. The retrieval example independently counts complete
+returned contexts; synthetic vectors establish protocol/arithmetic only.
+Omitted/false token supersession retains v7 unless producing association facts
+require lexical v11 or vector/hybrid v15.
 
 
 ## Prove and deliver the change

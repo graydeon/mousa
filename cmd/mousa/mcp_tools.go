@@ -126,7 +126,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession", "associations")
 		required = append(required, "query", "policy", "budget_bytes")
 	case "mousa_vector_query", "mousa_hybrid_query":
-		allowed = append(allowed, "space_id", "values", "budget_bytes", "packing_policy", "supersession")
+		allowed = append(allowed, "space_id", "values", "budget_bytes", "packing_policy", "supersession", "associations")
 		required = append(required, "space_id", "values", "budget_bytes")
 		if operation == "mousa_hybrid_query" {
 			allowed = append(allowed, "query", "policy")
@@ -354,7 +354,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
 				"associations": map[string]any{
 					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
-					"description": "Caller-declared same-source supporting context for selected primary evidence; lexical byte or measured token packing, optionally with exact pinned supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
+					"description": "Caller-declared same-source supporting context for selected primary evidence; byte or measured token packing, optionally with exact pinned supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
 					"properties": map[string]any{
 						"schema": map[string]any{"const": mousa.AssociationDeclarationSchema},
 						"associations": map[string]any{
@@ -430,6 +430,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			continue
 		}
 		properties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
+		properties["associations"] = definitions[2].InputSchema.(map[string]any)["properties"].(map[string]any)["associations"]
 		properties["context_tokens"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 524288, "description": "Opt into the exact returned context rendering token cap; requires an operator-configured offline tokenizer. Both byte and token constraints apply."}
 		for _, field := range []string{"window_tokens", "prompt_reserve_tokens", "output_reserve_tokens"} {
 			properties[field] = map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000000, "description": "Caller declaration requiring context_tokens; nonzero reservations require a positive window. Not proof of model-window safety."}

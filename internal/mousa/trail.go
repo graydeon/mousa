@@ -369,6 +369,9 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
+	if trail.Schema == SourceTrailSchemaV14 {
+		return trail.validateRetrievalAssociationTrail()
+	}
 	if trail.Schema == SourceTrailSchemaV12 {
 		if err := trail.validateAssociatedSupersessionProfile(); err != nil {
 			return err
@@ -377,7 +380,7 @@ func (trail SourceTrail) Validate() error {
 	if trail.Schema == SourceTrailSchemaV9 {
 		return trail.validateRetrievalSupersessionTrail()
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 || trail.Schema == SourceTrailSchemaV15 {
 		return trail.validateTokenTrail()
 	}
 	if trail.Token != nil {
@@ -504,7 +507,7 @@ func (trail SourceTrail) Validate() error {
 // packetIdentity re-derives the packet identity of a validated trail: the v1 domain for
 // v1/v2 records, and the v2 domain that also binds associated rows for v3.
 func (trail SourceTrail) packetIdentity() (ContextPacketID, error) {
-	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 {
+	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 || trail.Schema == SourceTrailSchemaV14 {
 		return contextPacketIDV3(trail)
 	}
 	selected := make([]bool, len(trail.Candidates))
@@ -520,7 +523,7 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema == SourceTrailSchemaV12 {
+	if trail.Schema == SourceTrailSchemaV12 || trail.Schema == SourceTrailSchemaV14 || trail.Schema == SourceTrailSchemaV15 {
 		return vectorTrailIdentity(trail)
 	}
 	if trail.Schema == SourceTrailSchemaV9 {
@@ -686,7 +689,7 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
-		case SourceTrailSchemaV12, SourceTrailSchemaV13:
+		case SourceTrailSchemaV12, SourceTrailSchemaV13, SourceTrailSchemaV14, SourceTrailSchemaV15:
 			return decodeAssociatedSupersessionTrail(data)
 		case SourceTrailSchemaV9:
 			return decodeRetrievalSupersessionTrail(data)

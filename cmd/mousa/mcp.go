@@ -359,23 +359,21 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var traced sqlite.TracedVectorResult
 			if args.TokenBudget != nil {
-				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession}
+				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession, Associations: args.Associations}
 				if operation == "mousa_vector_query" {
 					traced, err = a.store.EvaluateAndTraceTokenVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				} else {
 					traced, err = a.store.EvaluateAndTraceTokenHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				}
-			} else if operation == "mousa_vector_query" && args.Supersession {
-				traced, err = a.store.EvaluateAndTraceSupersessionVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
-			} else if operation == "mousa_hybrid_query" && args.Supersession {
-				traced, err = a.store.EvaluateAndTraceSupersessionHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			} else if operation == "mousa_vector_query" {
-				traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+				traced, err = a.store.EvaluateAndTraceAssociatedVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
 			} else {
-				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+				traced, err = a.store.EvaluateAndTraceAssociatedHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
 			}
 			if err == nil {
-				result = mcpRetrievalProjection(args.Source, traced)
+				projection := mcpRetrievalProjection(args.Source, traced)
+				projection.AssociatedEvidence, projection.AssociationOmissions, err = associatedEvidenceProjection(ctx, a.store, traced.Trail, traced.Associated)
+				result = projection
 			}
 		}
 	case "mousa_trail":

@@ -74,7 +74,7 @@ type vectorEvidence struct {
 	EmbeddingID mousa.SHA256 `json:"embedding_id"`
 }
 
-func vectorQueryCommand(ctx context.Context, storePath, external string, args []string, space string, budget uint64, packing string, supersession bool) error {
+func vectorQueryCommand(ctx context.Context, storePath, external string, args []string, space string, budget uint64, packing string, supersession bool, declarations []mousa.AssociationDeclaration) error {
 	source, label, err := selectSource(external, args, "vector query")
 	if err != nil {
 		return err
@@ -106,12 +106,11 @@ func vectorQueryCommand(ctx context.Context, storePath, external string, args []
 	if err != nil {
 		return err
 	}
-	var traced sqlite.TracedVectorResult
-	if supersession {
-		traced, err = store.EvaluateAndTraceSupersessionVector(ctx, request, id, query.Values, budget, packing)
-	} else {
-		traced, err = store.EvaluateAndTraceVector(ctx, request, id, query.Values, budget, packing)
+	traced, err := store.EvaluateAndTraceAssociatedVector(ctx, request, id, query.Values, budget, packing, declarations, supersession)
+	if err != nil {
+		return err
 	}
+	associated, omissions, err := associatedEvidenceProjection(ctx, store, traced.Trail, traced.Associated)
 	if err != nil {
 		return err
 	}
@@ -136,11 +135,14 @@ func vectorQueryCommand(ctx context.Context, storePath, external string, args []
 		UsedBytes            uint64                       `json:"used_bytes"`
 		Evidence             []vectorEvidence             `json:"evidence"`
 		SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
+		AssociatedEvidence   []evidenceHit                `json:"associated_evidence,omitempty"`
+		AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
 	}{
 		Schema: "mousa.vector_result.v1", Mode: "vector", Source: label, SpaceID: id, QueryVectorID: selection.QueryVectorID,
 		DecisionID: traced.Decision.ID, DecisionOutcome: traced.Decision.Outcome, DecisionReasons: traced.Decision.ReasonCodes,
 		TrailID: traced.Trail.ID, PacketID: traced.Trail.PacketID, Eligible: selection.Eligible, Indexed: selection.Indexed, Missing: selection.Eligible - selection.Indexed,
 		PackingPolicy: packing, BudgetBytes: budget, UsedBytes: traced.Trail.UsedBytes, Evidence: []vectorEvidence{},
+		AssociatedEvidence: associated, AssociationOmissions: omissions,
 	}
 	if traced.Trail.Supersession != nil {
 		result.SupersessionExcluded = new(int)

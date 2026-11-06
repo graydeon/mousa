@@ -130,14 +130,14 @@ query options (before positional arguments):
   --context-window <W>       optional caller-declared window, at most 1000000000
   --prompt-reserve <P>       caller-declared prompt/tool overhead; requires a window
   --output-reserve <O>       caller-declared output tokens; requires a window
-                            lexical token mode supports declared associations;
+                            supports declared associations in every retrieval mode;
                             all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
-                            cannot combine with policy or associations flags
+                            cannot combine with an explicit policy flag
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
-                            supports --policy; no vector-space/associations flags
+                            supports --policy and --associations; no vector-space flag
   --supersession            withhold the exact active predecessor revision (directory or --source);
-                            supports lexical --associations with byte or token budgets
+                            supports --associations with byte or token budgets
   --associations <file>      opt-in declared-association JSON file
                             (schema mousa.association_declarations.v1); honors author-declared
                             item relationships within the queried source; depth 1, at most 4
@@ -277,15 +277,12 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if tokenSpecific && !tokenMode {
 		return usageError{"tokenizer options require --context-tokens"}
 	}
-	if tokenIncompatible && *associations == "" && *supersession {
+	if tokenIncompatible && *associations == "" && (*supersession || vectorMode || hybridMode) {
 		return usageError{"associations requires a declaration file"}
 	}
 	if tokenMode {
 		if vectorMode && hybridMode {
-			return usageError{"token mode cannot combine associations or both vector modes"}
-		}
-		if tokenIncompatible && (vectorMode || hybridMode) {
-			return usageError{"token associations require lexical retrieval"}
+			return usageError{"token mode cannot combine both vector modes"}
 		}
 		mode, space := "lexical", ""
 		if hybridMode {
@@ -304,31 +301,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		}
 		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession, *associations)
 	}
-	if hybridMode {
-		incompatible := vectorMode
-		flags.Visit(func(option *flag.Flag) {
-			if option.Name == "associations" {
-				incompatible = true
-			}
-		})
-		if incompatible {
-			return usageError{"hybrid mode cannot be combined with vector-space or associations flags"}
-		}
-		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession)
-	}
-	if vectorMode {
-		incompatible := false
-		flags.Visit(func(option *flag.Flag) {
-			switch option.Name {
-			case "policy", "associations":
-				incompatible = true
-			}
-		})
-		if incompatible {
-			return usageError{"vector mode cannot be combined with policy or associations flags"}
-		}
-		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
-	}
 	var declarations []mousa.AssociationDeclaration
 	if *associations != "" {
 		raw, err := os.ReadFile(*associations)
@@ -339,6 +311,25 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		if err != nil {
 			return err
 		}
+	}
+	if hybridMode {
+		if vectorMode {
+			return usageError{"hybrid mode cannot be combined with vector-space"}
+		}
+		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession, declarations)
+	}
+	if vectorMode {
+		incompatible := false
+		flags.Visit(func(option *flag.Flag) {
+			switch option.Name {
+			case "policy":
+				incompatible = true
+			}
+		})
+		if incompatible {
+			return usageError{"vector mode cannot be combined with an explicit policy"}
+		}
+		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession, declarations)
 	}
 	if *policy != "original" && *policy != "dedup" {
 		return usageError{"query policy must be original or dedup"}

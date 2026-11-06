@@ -24,7 +24,12 @@ A declaration grants no access and does not establish semantic sufficiency.
 Lexical associations can combine explicit supersession and record v12 in byte mode
 or v13 with measured tokens in source builds. Only selected surviving primary evidence
 triggers support; suppressed targets are omitted before admission and packing.
-Vector/hybrid associations reject.
+When discovery exposes associations on vector/hybrid tools, those queries accept
+the same declared support, both packers and optional token/supersession modes.
+This proposed source capability records v14 byte or v15 token history; it is not
+a tagged-release claim. Report `associated_evidence` separately from primary
+`evidence`: support has attribution, not a cosine/BM25/fusion rank, and may lack
+an embedding without changing the reported retrieval coverage.
 Mention/resource behavior is unchanged.
 
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
@@ -46,12 +51,13 @@ Then supply source, space_id, values and budget_bytes to `mousa_vector_query`.
 query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
 uses the same byte packers; optional `supersession: true` withholds only the
 exact declared predecessor and reports `supersession_excluded`, including zero.
-Omission/false retains ordinary retrieval. Associations reject.
+Omission/false retains ordinary retrieval. Caller-supplied associations can append
+separately attributed support when the discovered schema exposes that field.
 No embedding service is bundled. Query text does not attest how values were
 generated; declared labels and synthetic vectors establish no semantic truth.
 Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6/v9 or safe
-v7/v10 vector/hybrid facts under fresh authorization. Independently opt into
-supersession to see v9/v10 recorded consultation. Default history omits those members.
+v7/v10/v14/v15 vector/hybrid facts under fresh authorization. Independently opt into
+supersession to see recorded consultation. Default history omits those members.
 OpenAI mention/resource search stays lexical.
 
 When discovery declares `context_tokens`, any of the three query tools can opt
@@ -71,6 +77,6 @@ Lexical associations can combine tokens and supersession, within the documented
 Only primary passages surviving both
 budgets trigger supporting notes; notes cannot displace primary evidence.
 OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7/v8/v10/v11 token facts under
+Use `mousa_trail` with token_details true for safe recorded v7/v8/v10/v11/v13/v15 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.
