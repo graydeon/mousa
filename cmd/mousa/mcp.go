@@ -29,9 +29,10 @@ const (
 )
 
 type mcpSource struct {
-	source            mousa.Source
-	write             bool
-	supersessionAdmin bool
+	source              mousa.Source
+	write               bool
+	supersessionAdmin   bool
+	classificationAdmin bool
 }
 
 type mcpApplication struct {
@@ -54,10 +55,14 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	httpConfigPath := flags.String("http-config", "", "OAuth-protected loopback HTTP configuration; stdio when omitted")
 	tokenPython := flags.String("tokenizer-python", "", "operator-prepared local tiktoken==0.12.0 interpreter; token mode disabled when omitted")
 	tokenCache := flags.String("tokenizer-cache", "", "operator-prepared offline o200k_base cache")
-	var allowed, writable, administrators []string
+	var allowed, writable, administrators, classificationAdministrators []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })
 	flags.Func("ingest-source", "permit item ingestion and embedding import into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
 	flags.Func("supersession-admin-source", "permit supersession declarations and activations for an already permitted source; repeatable", func(value string) error { administrators = append(administrators, value); return nil })
+	flags.Func("classification-admin-source", "permit classification assertions for an already permitted source; repeatable", func(value string) error {
+		classificationAdministrators = append(classificationAdministrators, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -92,6 +97,14 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 			return usageError{"each --supersession-admin-source must name a distinct permitted --source"}
 		}
 		source.supersessionAdmin = true
+		sources[label] = source
+	}
+	for _, label := range classificationAdministrators {
+		source, ok := sources[label]
+		if !ok || source.classificationAdmin {
+			return usageError{"each --classification-admin-source must name a distinct permitted --source"}
+		}
+		source.classificationAdmin = true
 		sources[label] = source
 	}
 	// Validate the trusted identity before opening or creating a store.
@@ -216,6 +229,10 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Select Mousa replacement state"
 		case "mousa_supersession_status":
 			definition.Title = "Inspect Mousa replacement state"
+		case "mousa_classification_put":
+			definition.Title = "Record Mousa classification"
+		case "mousa_classification_get":
+			definition.Title = "Inspect Mousa classification"
 		}
 		closed := false
 		destructive := mcpWriteTool(definition.Name)
@@ -265,6 +282,9 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	if mcpSupersessionWriteTool(operation) && !configured.supersessionAdmin {
 		return mcpFailure(operation, args.Source, "supersession_admin_not_permitted", errors.New("supersession administration is disabled for this source"), 0, 0)
 	}
+	if operation == "mousa_classification_put" && !configured.classificationAdmin {
+		return mcpFailure(operation, args.Source, "classification_admin_not_permitted", errors.New("classification administration is disabled for this source"), 0, 0)
+	}
 	// Serialize complete application calls, not just individual SQLite writes.
 	select {
 	case a.gate <- struct{}{}:
@@ -293,6 +313,22 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	source := configured.source
 	var result any
 	switch operation {
+	case "mousa_classification_put":
+		var accepted mousa.Classification
+		accepted, err = a.store.PutSourceClassification(ctx, source.ID, args.Classification)
+		if err == nil {
+			result = mcpClassificationPutResult{Classification: accepted}
+		}
+	case "mousa_classification_get":
+		var request mousa.PolicyEvaluationRequest
+		request, err = callerRetrievalRequest(source.ID, a.caller)
+		if err == nil {
+			var inspection sqlite.ClassificationInspection
+			inspection, err = a.store.InspectClassification(ctx, request, args.ClassificationID)
+			if err == nil {
+				result = mcpClassificationGetResult{DecisionID: inspection.Decision.ID, DecisionOutcome: inspection.Decision.Outcome, DecisionReasons: inspection.Decision.ReasonCodes, Classification: inspection.Classification}
+			}
+		}
 	case "mousa_supersession_declare":
 		err = a.store.PutSupersessionDeclaration(ctx, args.Declaration)
 		if err == nil {

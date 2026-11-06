@@ -31,8 +31,17 @@ ingestion nor retrieval; `--ingest-source` alone cannot authorize these writes.
 An existing source needs no ingestion permission for admin-only operation.
 Status needs fresh retrieval authorization, not an admin flag or write scope,
 and denial omits current state entirely. Do not infer state from a denied result.
-Policy, lifecycle, raw historical declaration/event-by-ID and classification
-administration remain native-only. Do not enable an admin allowlist implicitly.
+Policy, lifecycle and raw historical declaration/event-by-ID administration
+remain native-only. Do not enable an admin allowlist implicitly.
+
+For explicit attributed labels, discover `mousa_classification_put` and
+`mousa_classification_get`. Put requires the separate repeatable
+`--classification-admin-source` allowlist of distinct configured JSONL aliases,
+off by default, plus HTTP `mousa:write`. It grants neither ingestion,
+supersession administration nor retrieval. Get requires fresh retrieval
+authorization, not an admin flag. Subject and every ordered basis entry must
+have all canonical ancestry roots in the selected source; native cross-source
+storage remains outside this MCP slice.
 
 Caller-supplied vector and hybrid MCP tools use external embeddings. Discover
 mousa_vector_inputs / mousa_vector_import for client export/import: export needs

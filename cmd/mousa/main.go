@@ -115,6 +115,7 @@ commands:
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; --ingest-source <id> permits ingestion/import
                             --supersession-admin-source <id> separately permits declarations/activations
+                            --classification-admin-source <id> separately permits classifications
                             --tokenizer-python <path> --tokenizer-cache <dir> enables
                             optional whole-rendering token budgets; prepared offline backend only
   plugin --out <new-dir> --source <id> --consent-to-share

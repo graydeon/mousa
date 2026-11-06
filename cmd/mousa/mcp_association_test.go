@@ -237,8 +237,8 @@ func TestMCPAssociationDiscoveryIsAdditive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 11 {
-		t.Fatalf("tool count = %d, want original eight plus three", len(listed.Tools))
+	if len(listed.Tools) != 13 {
+		t.Fatalf("tool count = %d, want original eleven plus two", len(listed.Tools))
 	}
 	current := make(map[string]any)
 	for _, tool := range listed.Tools {

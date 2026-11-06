@@ -99,6 +99,13 @@ func (store *Store) PutClassification(ctx context.Context, record mousa.Classifi
 	if len(record.Basis) > maxClassificationBases {
 		return wrap(CodeResourceLimit, "put classification", fmt.Errorf("basis count %d exceeds %d", len(record.Basis), maxClassificationBases))
 	}
+	return store.writeImmediate(ctx, "put classification", func(conn *sql.Conn) error {
+		return putClassification(ctx, conn, record, data)
+	})
+}
+
+// putClassification appends and verifies through the caller's owning transaction.
+func putClassification(ctx context.Context, conn *sql.Conn, record mousa.Classification, data []byte) error {
 	subject, err := projectClassificationSubject(record.Subject)
 	if err != nil {
 		return wrap(CodeInvalidRecord, "put classification", err)
@@ -110,50 +117,49 @@ func (store *Store) PutClassification(ctx context.Context, record mousa.Classifi
 			return wrap(CodeInvalidRecord, "put classification", err)
 		}
 	}
-	return store.writeImmediate(ctx, "put classification", func(conn *sql.Conn) error {
-		if err := requireClassificationParent(ctx, conn, subject); err != nil {
+	if err := requireClassificationParent(ctx, conn, subject); err != nil {
+		return err
+	}
+	for _, entry := range basis {
+		if err := requireClassificationParent(ctx, conn, entry); err != nil {
 			return err
 		}
-		for _, entry := range basis {
-			if err := requireClassificationParent(ctx, conn, entry); err != nil {
-				return err
-			}
+	}
+	values := append([]any{record.ID[:]}, subject.values()...)
+	values = append(values, data)
+	result, err := conn.ExecContext(ctx, `INSERT INTO classifications(id, subject_kind, subject_source_id, subject_observation_id, subject_artifact_id, subject_representation_id, subject_segment_id, record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, values...)
+	if err != nil {
+		if !sqliteConstraint(err) {
+			return classify("put classification", err)
 		}
-		values := append([]any{record.ID[:]}, subject.values()...)
-		values = append(values, data)
-		result, err := conn.ExecContext(ctx, `INSERT INTO classifications(id, subject_kind, subject_source_id, subject_observation_id, subject_artifact_id, subject_representation_id, subject_segment_id, record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, values...)
-		if err != nil {
-			if !sqliteConstraint(err) {
-				return classify("put classification", err)
-			}
-			var kind string
-			var sourceID, observationID, artifactID, representationID, segmentID, existing []byte
-			queryErr := conn.QueryRowContext(ctx, `SELECT subject_kind, subject_source_id, subject_observation_id, subject_artifact_id, subject_representation_id, subject_segment_id, record_json FROM classifications WHERE id = ?`, record.ID[:]).Scan(&kind, &sourceID, &observationID, &artifactID, &representationID, &segmentID, &existing)
-			if queryErr != nil {
-				return classify("put classification", err)
-			}
-			if !bytes.Equal(existing, data) || !subject.equal(kind, sourceID, observationID, artifactID, representationID, segmentID) {
-				return wrap(CodeConflict, "put classification", err)
-			}
-			if verifyErr := verifyClassification(ctx, conn, record, data); verifyErr != nil {
-				if IsCode(verifyErr, CodeIntegrity) {
-					return wrap(CodeConflict, "put classification", verifyErr)
-				}
-				return verifyErr
-			}
-			return nil
+		var kind string
+		var sourceID, observationID, artifactID, representationID, segmentID, existing []byte
+		queryErr := conn.QueryRowContext(ctx, `SELECT subject_kind, subject_source_id, subject_observation_id, subject_artifact_id, subject_representation_id, subject_segment_id, record_json FROM classifications WHERE id = ?`, record.ID[:]).Scan(&kind, &sourceID, &observationID, &artifactID, &representationID, &segmentID, &existing)
+		if queryErr != nil {
+			return classify("put classification", err)
 		}
-		if err := oneRow(result); err != nil {
-			return wrap(CodeIntegrity, "put classification", err)
+		if !bytes.Equal(existing, data) || !subject.equal(kind, sourceID, observationID, artifactID, representationID, segmentID) {
+			return wrap(CodeConflict, "put classification", err)
 		}
-		for ordinal, entry := range basis {
-			values := append([]any{record.ID[:], ordinal}, entry.values()...)
-			if _, err := conn.ExecContext(ctx, `INSERT INTO classification_bases(classification_id, ordinal, basis_kind, basis_source_id, basis_observation_id, basis_artifact_id, basis_representation_id, basis_segment_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, values...); err != nil {
-				return classify("put classification basis", err)
+		if verifyErr := verifyClassification(ctx, conn, record, data); verifyErr != nil {
+			if IsCode(verifyErr, CodeIntegrity) {
+				return wrap(CodeConflict, "put classification", verifyErr)
 			}
+			return verifyErr
 		}
-		return verifyClassification(ctx, conn, record, data)
-	})
+		return nil
+	}
+	if err := oneRow(result); err != nil {
+		return wrap(CodeIntegrity, "put classification", err)
+	}
+	for ordinal, entry := range basis {
+		values := append([]any{record.ID[:], ordinal}, entry.values()...)
+		if _, err := conn.ExecContext(ctx, `INSERT INTO classification_bases(classification_id, ordinal, basis_kind, basis_source_id, basis_observation_id, basis_artifact_id, basis_representation_id, basis_segment_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, values...); err != nil {
+			return classify("put classification basis", err)
+		}
+	}
+	return verifyClassification(ctx, conn, record, data)
+
 }
 
 func (store *Store) GetClassification(ctx context.Context, id mousa.ClassificationID) (mousa.Classification, error) {

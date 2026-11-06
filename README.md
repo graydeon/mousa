@@ -131,6 +131,13 @@ immutable attributed labels against existing evidence. The
 demonstrates exact retry, coexisting conflicting labels and revision-pinned readback.
 Labels do not change indexing, ranking, retrieval permission or supersession;
 caller attribution is not authenticated authorship or factual verification.
+Source builds containing the MCP classification addition also expose
+`mousa_classification_put` and `mousa_classification_get`, limited to subjects and
+basis whose complete ancestry belongs to one configured source. Writes require
+`--classification-admin-source`; reads require fresh retrieval authorization.
+The [MCP-only example](examples/mcp_classifications.py) uses sync/export pins,
+exact retry and separately versioned assertions without changing retrieval.
+This source addition is not a tagged-release or public-capture acceptance claim.
 
 Revision-pinned supersession declarations and activation administration are available,
 together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
@@ -170,8 +177,9 @@ Source builds containing the MCP administration change also expose
 `mousa_supersession_status` for configured JSONL aliases. Mutations require the
 separate startup `--supersession-admin-source` allowlist; status requires fresh
 retrieval authorization. See the [drafts and permission contract](docs/MCP_SUPERSESSION.md#source-scoped-administration)
-and the MCP-only lifecycle in `examples/mcp_retrieval.py`. Historical record-by-ID,
-policy and classification administration remain native-only.
+and the MCP-only lifecycle in `examples/mcp_retrieval.py`. Historical record-by-ID
+and policy administration remain native-only. Classification administration has a
+separate [same-source MCP interface](docs/USAGE.md#mcp-classification-administration).
 
 The [2026-10-13 independent MCP inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
 record synthetic native/stdio behavior, not retrieval quality or performance.
@@ -197,6 +205,7 @@ reports remain readable but cannot certify a comparison. See the
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
 | [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
+| [MCP classification example](examples/mcp_classifications.py) | Same-source attributed put/retry/get and coexisting asserted versions through MCP. |
 | [Supporting-context example](examples/association_supersession.py) | Native/MCP byte-only explicit replacement and caller-declared qualifications. |
 
 ## Contributing
