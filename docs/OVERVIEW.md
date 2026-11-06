@@ -15,9 +15,10 @@ Accepted source through PR105 includes native attributed classification administ
 measured token budgets with declared lexical supporting context and closed v11
 history, alongside native/MCP lexical/vector/hybrid supersession.
 Accepted source includes lexical association/supersession history as v12 in byte
-mode and v13 with measured tokens. This proposed change adds vector/hybrid
-declared support as v14/v15 and awaits independent acceptance. Use a source build
-containing the change; no tagged release or public capture is claimed here.
+mode and v13 with measured tokens, plus vector/hybrid declared support as v14/v15
+(accepted in PR108). The new MCP administration change adds source-scoped
+declare, activate and status tools. These source capabilities are not a claim
+about a tagged release; independent captures retain their own producing commits.
 
 Source builds containing native `classification put|get` also record immutable
 attributed assertions against existing evidence. The commands reuse canonical
@@ -77,8 +78,12 @@ with unchanged full-source admission before withholding. See the
 Defaults are unchanged: recording an activation alone does not filter a default
 query, reinterpret a recorded member or move item pointers. Lexical
 queries can combine declared supporting context with supersession in v12 byte mode
-or v13 token mode. This proposed source change also supports vector/hybrid
-associations as v14 byte or v15 token history. MCP administration remains unsupported.
+or v13 token mode. Accepted source also supports vector/hybrid
+associations as v14 byte or v15 token history. MCP declaration, activation and
+current-state inspection use configured JSONL aliases; mutations require the
+separate `--supersession-admin-source` startup allowlist. Status authorizes before
+consulting state and may persist an authorization receipt. Raw historical
+record-by-ID reads, policy and classification administration remain native-only.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 A query prepares and size-checks its expression before opening the store only when it

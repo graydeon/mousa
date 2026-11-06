@@ -115,7 +115,7 @@ the [complete example](docs/USAGE.md#supersession-safe-supporting-context) runs 
 directory/JSONL and configured MCP queries with verified v12 byte-mode history.
 Source builds also compose measured token budgets with associations and supersession
 as v13, including independent whole-render counting and retained-text recount in
-the example. This is not a tagged-release claim. The proposed source change adds
+the example. This is not a tagged-release claim. Accepted source includes
 vector/hybrid declared support with v14 byte and v15 token history; see the
 [runnable retrieval workflow](docs/USAGE.md#mcp-vector-and-hybrid-example).
 
@@ -164,6 +164,14 @@ Caller-declared reservations do not prove full model-window safety.
 The [directory supersession example](docs/USAGE.md#directory-supersession-example)
 shows how to discover revision pins, prepare declaration and activation records, and
 inspect the recorded reason for withholding a predecessor.
+
+Source builds containing the MCP administration change also expose
+`mousa_supersession_declare`, `mousa_supersession_activate` and
+`mousa_supersession_status` for configured JSONL aliases. Mutations require the
+separate startup `--supersession-admin-source` allowlist; status requires fresh
+retrieval authorization. See the [drafts and permission contract](docs/MCP_SUPERSESSION.md#source-scoped-administration)
+and the MCP-only lifecycle in `examples/mcp_retrieval.py`. Historical record-by-ID,
+policy and classification administration remain native-only.
 
 The [2026-10-13 independent MCP inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
 record synthetic native/stdio behavior, not retrieval quality or performance.

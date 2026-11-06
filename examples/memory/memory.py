@@ -19,7 +19,7 @@ from workflow import verify_evidence
 
 class Client:
     def __init__(self, binary, store, receipts, writable, timeout, source,
-                 tokenizer_python=None, tokenizer_cache=None):
+                 tokenizer_python=None, tokenizer_cache=None, supersession_admin=False):
         if (tokenizer_python is None) != (tokenizer_cache is None):
             raise ValueError("configure both tokenizer interpreter and cache")
         validate_source(source)
@@ -31,6 +31,8 @@ class Client:
                           "--tokenizer-cache", str(tokenizer_cache)]
         if writable:
             self.argv += ["--ingest-source", source]
+        if supersession_admin:
+            self.argv += ["--supersession-admin-source", source]
         try:
             self.process = subprocess.Popen(self.argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                             stderr=self.errors, bufsize=0)
@@ -139,9 +141,9 @@ class Client:
         self.request("notifications/initialized", {}, notification=True)
         tools, _ = self.request("tools/list", {})
         entries = tools.get("tools") if isinstance(tools, dict) else None
-        if not isinstance(entries, list) or len(entries) != 8 or any(
+        if not isinstance(entries, list) or len(entries) != 11 or any(
                 not isinstance(tool, dict) or not isinstance(tool.get("name"), str) for tool in entries) or {
-                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail", "mousa_vector_query", "mousa_hybrid_query", "mousa_vector_inputs", "mousa_vector_import"}:
+                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail", "mousa_vector_query", "mousa_hybrid_query", "mousa_vector_inputs", "mousa_vector_import", "mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status"}:
             raise ValueError("unexpected native MCP tools")
         return elapsed
 
@@ -167,7 +169,7 @@ class Client:
         vector_schemas = {"mousa_vector_inputs": "mousa.embedding_inputs.v1",
                           "mousa_vector_import": "mousa.vector_import_result.v1"}
         if (name in vector_schemas and result.get("schema") != vector_schemas[name]) or (
-                name not in vector_schemas and result.get("source") != self.source):
+                name not in vector_schemas and not name.startswith("mousa_supersession_") and result.get("source") != self.source):
             raise ValueError("invalid MCP operation result")
         if name == "mousa_query" and (
                 result.get("query") != arguments.get("query") or

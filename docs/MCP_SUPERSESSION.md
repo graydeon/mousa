@@ -1,6 +1,6 @@
-# MCP supersession opt-in
+# MCP supersession
 
-For source-build versus release status and the proposed v10 composition boundary,
+For source-build versus release status and composition availability,
 see [development status](OVERVIEW.md#source-and-release-status).
 
 **Status: the `mousa_query` and `mousa_trail` opt-ins are implemented; their
@@ -35,9 +35,147 @@ token v10 with original ranking/coverage and survivor packing; omission/false
 preserves v5/v6 bytes or v7 tokens and response properties. Full-source vector
 admission precedes masking. Trail `supersession`, `retrieval_details` and
 `token_details` independently expose their respective verified recorded members
-under fresh authorization, without recounting. Proposed association composition
+under fresh authorization, without recounting. Accepted association composition
 uses v14/v15; the initial v9/v10 profiles remain association-free.
 See [vector/hybrid usage](USAGE.md#vector-and-hybrid-supersession).
+
+## Source-scoped administration
+
+Source builds containing the MCP administration change expose three additional
+tools for configured JSONL aliases. They reuse existing canonical declarations
+and activation transactions, not a new storage format or policy system. Native
+directory administration remains separate. Raw declaration/event-by-ID reads,
+policy administration and classification administration remain native-only.
+
+### Startup permissions
+
+```sh
+./mousa -store local.sqlite mcp --caller cli --source notes \
+  --ingest-source notes --supersession-admin-source notes
+```
+
+`--supersession-admin-source` is repeatable, defaults off, and accepts distinct
+aliases already configured by `--source`. It permits only declaration/activation
+writes. Ingestion and vector import still require `--ingest-source`; ingestion
+alone does not permit supersession writes. An existing source can be administered
+with the admin flag and without ingestion permission. Neither flag grants
+retrieval permission. HTTP mutations additionally require the existing validated
+principal and `mousa:write` scope. The gates apply at dispatch, not just discovery.
+
+`mousa_supersession_status` requires neither the admin flag nor write scope, but
+does require fresh retrieval authorization for its configured alias. Authorization
+and verified current-state/chain inspection share one owning snapshot. Status may
+persist the ordinary authorization decision receipt; it does not mutate canonical
+supersession records, history or current state.
+
+### Strict draft inputs
+
+The following objects are tool arguments. Replace uppercase placeholders with
+existing lowercase 64-hex, nonzero canonical identities obtained from authorized
+passage pins or prior successful mutations. Clients supply aliases, never a
+filesystem path, canonical source ID or draft ID.
+
+```json
+{
+  "source": "notes",
+  "declaration": {
+    "schema": "mousa.supersession_declaration_input.v1",
+    "predecessor_item_id": "old",
+    "predecessor_representation_id": "PREDECESSOR_REPRESENTATION_ID",
+    "successor_item_id": "new",
+    "successor_representation_id": "SUCCESSOR_REPRESENTATION_ID",
+    "author": "example.operator",
+    "basis": "Explicit replacement, not inferred truth"
+  }
+}
+```
+
+Pass this to `mousa_supersession_declare`. Every field is required and non-null.
+The server resolves the source and computes the existing canonical identity.
+The accepted result inside `mousa.mcp_result.v1` is exactly
+`{"declaration": CANONICAL_DECLARATION}`. Existing historical pins with valid
+source/item ancestry are permitted, even if no longer current, withdrawn or never
+activated. Missing or foreign parents reject; nothing is created implicitly.
+Exact retries verify the immutable record without adding a row.
+
+```json
+{
+  "source": "notes",
+  "activation": {
+    "schema": "mousa.supersession_activation_input.v1",
+    "expected_previous_activation_id": null,
+    "declaration_id": "DECLARATION_ID",
+    "actor_id": "example.operator",
+    "actor_version": "1",
+    "occurred_at_usec": 1,
+    "reason": null
+  }
+}
+```
+
+Pass this to `mousa_supersession_activate`. Every field is required, including
+the three nullable fields shown: `expected_previous_activation_id`,
+`declaration_id` and `reason`. The timestamp is a positive signed 64-bit integer
+in microseconds. The server computes the existing activation identity without
+inferring a predecessor, replacing the timestamp or choosing a latest revision.
+The result is exactly `{"activation": CANONICAL_ACTIVATION}`.
+
+Initial activation expects null and selects a declaration. Replacement names the
+exact current event and a different declaration. Deactivation names the exact
+current event and sets `declaration_id` to null; reactivation expects that
+deactivation event. Redundant selections and stale/competing expectations conflict.
+An exact activation retry succeeds only while that event remains current. Retrying
+an older event after state advances conflicts. Reusing an activation identity
+with changed actor/time/reason conflicts.
+
+Both drafts are closed objects bounded to 65,536 encoded bytes, and their resulting
+canonical records retain the same bound. Fields use exact case and JSON types.
+Unknown, duplicate, case-aliased, omitted, trailing or wrong-type input rejects;
+null is allowed only for the three activation members above. Boolean, fractional
+and exponent timestamp substitutes reject. Labels are nonempty UTF-8 without NUL:
+item IDs are at most 4,096 bytes, author 128, basis 512, actor ID/version 512 each,
+and non-null reason 4,096. Distinct predecessor/successor items and representation
+pins are required. The vector enumeration limits do not apply to administration.
+
+Author, basis, actor, timestamp and reason are caller assertions, not the
+authenticated HTTP principal or verified authorship. A success receipt accepts
+the supplied canonical record; it is not a newly-inserted count, proof of truth,
+freshness or a promise that the event remains current.
+
+### Current state and denial
+
+Call `mousa_supersession_status` with exactly `{"source":"notes"}`. Its result
+always contains `decision_id`, `decision_outcome` and `decision_reasons`.
+On allowed inspection it also contains required `current`, whose three members
+are always present:
+
+| `current.state` | `current.activation` | `current.declaration` |
+|---|---|---|
+| `no_history` | null | null |
+| `active` | Current canonical activation | Selected canonical declaration |
+| `deactivated` | Current canonical deactivation | null |
+
+Denial returns only the three decision metadata members. It omits `current`
+entirely, not a null current value or history-presence bit. It discloses no state,
+record ID, author, basis, reason or hidden corruption distinction. On an allowed
+inspection, damaged state/event/declaration/chain is an integrity failure, not
+`no_history`, and a read never repairs it.
+
+For an admin-only, denied-read demonstration, prepare an existing JSONL source,
+then use the native operator control `access --source notes deny` for caller
+`cli`. Restart MCP with `--caller cli --source notes --supersession-admin-source
+notes` and no ingestion flag. A valid supplied declaration/transition can succeed;
+status returns decision metadata only, and retrieval/export remains denied.
+This separate policy setup is not an MCP policy-administration capability.
+Mutation responses and errors never supply unsupplied hidden current state or
+foreign-source records.
+
+The [runnable workflow](USAGE.md#mcp-vector-and-hybrid-example) performs the
+replacement lifecycle entirely through MCP. Query enforcement still requires
+explicit `supersession: true`; activation does not alter default queries.
+Historical trail inspection verifies the producing selection after deactivation,
+not today's projection. Native retained-token recount remains separate from MCP
+inspection and independent counting of returned context.
 
 ## Recommendation
 
@@ -671,17 +809,17 @@ Each slice is independently reviewable and changes no native code path.
 
 ## Non-goals
 
-- No MCP administration tool for declarations or activations, and no new storage object;
-  native administration remains the preparation path.
+- No raw declaration/event-by-ID reads, policy or classification administration
+  through MCP. The three source-scoped administration tools above reuse existing storage.
 - No opt-in on the OpenAI extension surface: the `mousa_mentions` tool and the evidence
   resource template call `queryItemsForRequest` with fixed options
   (`cmd/mousa/mcp_openai.go`) and stay unchanged.
 - MCP does not import directories; native directory queries support enforcement through
   the CLI. Lexical association composition records v12 in byte mode or v13 with
-  measured tokens; proposed vector/hybrid composition records v14/v15. No transitive or automatic supersession,
+  measured tokens; accepted vector/hybrid composition records v14/v15. No transitive or automatic supersession,
   or change to ranking, authorization or item pointers is implemented.
-- No new envelope version, no new tool, and no new output field on any existing opt-out
-  response.
+- No new envelope version or output field on an existing opt-out response. The
+  administration change adds exactly three tools and preserves the eight earlier schemas.
 - No semantic-truth, retrieval-quality, performance or authentication claim. The
   consultation is linear in a source's activation history, and no latency measurement
   accompanies these correctness cases.

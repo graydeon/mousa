@@ -15,7 +15,24 @@ On supported desktop hosts, explain that composer mentions search Mousa evidence
 
 Do not create a tunnel, deploy an endpoint, install credentials, publish a plugin, run a model/provider test or change host configuration without explicit authorization. The local generated package is not a public directory submission. Connection and actual host extension rendering must be checked on the host, not inferred from this skill.
 
-The bundled skills guide client setup and evidence use, not administration access. Check the configured tool schema before promising an interface. Native declaration/activation commands prepare supersession pins. Discovered `mousa_query` supersession true enables exact predecessor withholding; omission/false preserves defaults. Lexical queries can also declare associations (v12 in byte mode, v13 with measured tokens in source builds); vector/hybrid associations reject. Discovered `mousa_trail` supersession true returns recorded consultation, not today's activation. Policy, lifecycle and supersession administration remain native-only. Composer mentions/resources keep fixed defaults.
+Check the configured tool schema before promising an interface. Discovered query
+`supersession: true` enables exact predecessor withholding; omission/false preserves
+defaults. Source builds support lexical associations as v12/v13 and vector/hybrid
+associations as v14/v15 for byte/token mode. Discovered `mousa_trail` supersession
+returns recorded consultation, not today's activation. Composer mentions/resources
+keep fixed defaults.
+
+For explicitly authorized replacement administration, discover
+`mousa_supersession_declare`, `mousa_supersession_activate` and
+`mousa_supersession_status`. Mutations require the separate startup
+`--supersession-admin-source` allowlist, off by default, and HTTP `mousa:write`.
+The flag accepts only distinct configured JSONL aliases. It grants neither
+ingestion nor retrieval; `--ingest-source` alone cannot authorize these writes.
+An existing source needs no ingestion permission for admin-only operation.
+Status needs fresh retrieval authorization, not an admin flag or write scope,
+and denial omits current state entirely. Do not infer state from a denied result.
+Policy, lifecycle, raw historical declaration/event-by-ID and classification
+administration remain native-only. Do not enable an admin allowlist implicitly.
 
 Caller-supplied vector and hybrid MCP tools use external embeddings. Discover
 mousa_vector_inputs / mousa_vector_import for client export/import: export needs

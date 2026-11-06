@@ -29,8 +29,9 @@ const (
 )
 
 type mcpSource struct {
-	source mousa.Source
-	write  bool
+	source            mousa.Source
+	write             bool
+	supersessionAdmin bool
 }
 
 type mcpApplication struct {
@@ -53,9 +54,10 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	httpConfigPath := flags.String("http-config", "", "OAuth-protected loopback HTTP configuration; stdio when omitted")
 	tokenPython := flags.String("tokenizer-python", "", "operator-prepared local tiktoken==0.12.0 interpreter; token mode disabled when omitted")
 	tokenCache := flags.String("tokenizer-cache", "", "operator-prepared offline o200k_base cache")
-	var allowed, writable []string
+	var allowed, writable, administrators []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })
 	flags.Func("ingest-source", "permit item ingestion and embedding import into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
+	flags.Func("supersession-admin-source", "permit supersession declarations and activations for an already permitted source; repeatable", func(value string) error { administrators = append(administrators, value); return nil })
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -82,6 +84,14 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 			return usageError{"each --ingest-source must name a distinct permitted --source"}
 		}
 		source.write = true
+		sources[label] = source
+	}
+	for _, label := range administrators {
+		source, ok := sources[label]
+		if !ok || source.supersessionAdmin {
+			return usageError{"each --supersession-admin-source must name a distinct permitted --source"}
+		}
+		source.supersessionAdmin = true
 		sources[label] = source
 	}
 	// Validate the trusted identity before opening or creating a store.
@@ -200,6 +210,12 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
+		case "mousa_supersession_declare":
+			definition.Title = "Declare Mousa replacement"
+		case "mousa_supersession_activate":
+			definition.Title = "Select Mousa replacement state"
+		case "mousa_supersession_status":
+			definition.Title = "Inspect Mousa replacement state"
 		}
 		closed := false
 		destructive := mcpWriteTool(definition.Name)
@@ -213,7 +229,7 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 		}
 		server.AddTool(definition, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if mcpWriteTool(definition.Name) && a.http && (req.Extra == nil || req.Extra.TokenInfo == nil || !slices.Contains(req.Extra.TokenInfo.Scopes, "mousa:write")) {
-				return mcpFailure(definition.Name, "", "insufficient_scope", errors.New("ingestion requires mousa:write"), 0, 0)
+				return mcpFailure(definition.Name, "", "insufficient_scope", errors.New("mutation requires mousa:write"), 0, 0)
 			}
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
@@ -243,8 +259,11 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	if !ok {
 		return mcpFailure(operation, args.Source, "source_not_permitted", errors.New("source is not configured"), 0, 0)
 	}
-	if mcpWriteTool(operation) && !configured.write {
+	if mcpIngestionTool(operation) && !configured.write {
 		return mcpFailure(operation, args.Source, "ingestion_not_permitted", errors.New("ingestion is disabled for this source"), 0, 0)
+	}
+	if mcpSupersessionWriteTool(operation) && !configured.supersessionAdmin {
+		return mcpFailure(operation, args.Source, "supersession_admin_not_permitted", errors.New("supersession administration is disabled for this source"), 0, 0)
 	}
 	// Serialize complete application calls, not just individual SQLite writes.
 	select {
@@ -274,6 +293,26 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	source := configured.source
 	var result any
 	switch operation {
+	case "mousa_supersession_declare":
+		err = a.store.PutSupersessionDeclaration(ctx, args.Declaration)
+		if err == nil {
+			result = mcpSupersessionDeclareResult{Declaration: args.Declaration}
+		}
+	case "mousa_supersession_activate":
+		err = a.store.ApplySupersessionActivation(ctx, args.Activation)
+		if err == nil {
+			result = mcpSupersessionActivateResult{Activation: args.Activation}
+		}
+	case "mousa_supersession_status":
+		var request mousa.PolicyEvaluationRequest
+		request, err = callerRetrievalRequest(source.ID, a.caller)
+		if err == nil {
+			var inspection sqlite.SupersessionInspection
+			inspection, err = a.store.InspectSupersession(ctx, request)
+			if err == nil {
+				result = mcpSupersessionStatusResult{DecisionID: inspection.Decision.ID, DecisionOutcome: inspection.Decision.Outcome, DecisionReasons: inspection.Decision.ReasonCodes, Current: inspection.Current}
+			}
+		}
 	case "mousa_sync":
 		report := syncResult{Source: args.Source, Input: inputJSONL, SegmentPolicy: args.SegmentPolicy}
 		seen := make(map[string]struct{}, len(args.Items))

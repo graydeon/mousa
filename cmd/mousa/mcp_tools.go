@@ -37,6 +37,8 @@ type mcpArguments struct {
 	TokenDetails     bool
 	VectorImport     mousa.VectorImport
 	Associations     []mousa.AssociationDeclaration
+	Declaration      mousa.SupersessionDeclaration
+	Activation       mousa.SupersessionActivation
 }
 
 type mcpToolError struct {
@@ -110,6 +112,7 @@ func mcpErrorCode(err error) string {
 // reached. Pre-validating every item would change the committed-prefix contract.
 func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	args := mcpArguments{SegmentPolicy: mousa.TextSegmentFixedV1, PackingPolicy: mousa.PackingOriginal}
+	var declaration, activation json.RawMessage
 	if !utf8.Valid(raw) {
 		return args, errors.New("arguments must be UTF-8")
 	}
@@ -122,6 +125,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_vector_import":
 		allowed = append(allowed, "import")
 		required = append(required, "import")
+	case "mousa_supersession_declare":
+		allowed = append(allowed, "declaration")
+		required = append(required, "declaration")
+	case "mousa_supersession_activate":
+		allowed = append(allowed, "activation")
+		required = append(required, "activation")
 	case "mousa_query":
 		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession", "associations")
 		required = append(required, "query", "policy", "budget_bytes")
@@ -135,7 +144,7 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_trail":
 		allowed = append(allowed, "trail_id", "supersession", "retrieval_details", "token_details")
 		required = append(required, "trail_id")
-	case "mousa_status", "mousa_vector_inputs":
+	case "mousa_status", "mousa_vector_inputs", "mousa_supersession_status":
 	default:
 		return args, errors.New("unknown operation")
 	}
@@ -166,6 +175,10 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
+		case "declaration":
+			declaration = value
+		case "activation":
+			activation = value
 		case "associations":
 			declarations, err := mousa.DecodeAssociationDeclarations(value)
 			if err != nil {
@@ -301,6 +314,20 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("query expression exceeds byte limit")
 		}
 	}
+	if declaration != nil || activation != nil {
+		source, err := streamSource(args.Source)
+		if err != nil {
+			return args, err
+		}
+		if declaration != nil {
+			args.Declaration, err = decodeMCPSupersessionDeclaration(declaration, source.ID)
+		} else {
+			args.Activation, err = decodeMCPSupersessionActivation(activation, source.ID)
+		}
+		if err != nil {
+			return args, err
+		}
+	}
 	return args, nil
 }
 
@@ -351,7 +378,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"source": source, "query": map[string]any{"type": "string", "minLength": 1, "maxLength": mcpMaxQueryBytes},
 				"policy": stringEnum("original", "dedup"), "packing_policy": stringEnum("original", "exact-v1"),
 				"budget_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": mcpMaxBudgetBytes},
-				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."},
+				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires declaration and activation administration for the same source through native commands or permitted MCP tools; omitted or false keeps the uncurated default."},
 				"associations": map[string]any{
 					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
 					"description": "Caller-declared same-source supporting context for selected primary evidence; byte or measured token packing, optionally with exact pinned supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
@@ -452,5 +479,10 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			"type": "object", "additionalProperties": false, "required": []string{"source", "import"}, "properties": map[string]any{"source": source, "import": mcpVectorImportSchema()},
 		}, OutputSchema: imported},
 	)
+	admin, err := mcpSupersessionToolDefinitions(source)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, admin...)
 	return definitions, nil
 }

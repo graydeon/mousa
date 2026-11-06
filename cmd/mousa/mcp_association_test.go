@@ -237,6 +237,9 @@ func TestMCPAssociationDiscoveryIsAdditive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(listed.Tools) != 11 {
+		t.Fatalf("tool count = %d, want original eight plus three", len(listed.Tools))
+	}
 	current := make(map[string]any)
 	for _, tool := range listed.Tools {
 		encoded, err := json.Marshal(tool)
@@ -263,7 +266,21 @@ func TestMCPAssociationDiscoveryIsAdditive(t *testing.T) {
 				delete(properties, key)
 			}
 		}
+		if tool.Name == "mousa_query" {
+			properties := wire["inputSchema"].(map[string]any)["properties"].(map[string]any)
+			supersession := properties["supersession"].(map[string]any)
+			const corrected = "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires declaration and activation administration for the same source through native commands or permitted MCP tools; omitted or false keeps the uncurated default."
+			if supersession["description"] != corrected {
+				t.Fatal("unexpected supersession administration description")
+			}
+			supersession["description"] = "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."
+		}
 		current[tool.Name] = wire
+	}
+	for _, name := range []string{"mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status"} {
+		if current[name] == nil {
+			t.Fatalf("missing added tool %s", name)
+		}
 	}
 	for _, entry := range baseline["tools"].([]any) {
 		tool := entry.(map[string]any)
