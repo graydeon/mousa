@@ -26,7 +26,7 @@ or v13 with measured tokens in source builds. Only selected surviving primary ev
 triggers support; suppressed targets are omitted before admission and packing.
 When discovery exposes associations on vector/hybrid tools, those queries accept
 the same declared support, both packers and optional token/supersession modes.
-This proposed source capability records v14 byte or v15 token history; it is not
+This accepted source capability records v14 byte or v15 token history; it is not
 a tagged-release claim. Report `associated_evidence` separately from primary
 `evidence`: support has attribution, not a cosine/BM25/fusion rank, and may lack
 an embedding without changing the reported retrieval coverage.
@@ -36,7 +36,38 @@ On supported desktop hosts, a Mousa composer mention provides an evidence resour
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
 
-Supersession declarations and activation are administered through the native CLI. When the discovered query schema declares supersession, pass true only for an explicitly requested enforcement query; omission or false keeps the uncurated default. The opt-in withholds an exact declared predecessor pin and reports supersession_excluded, including zero. It does not infer replacement or establish factual truth. When the discovered mousa_trail schema declares supersession, pass true to read the consultation recorded by v4, lexical token v8, byte vector/hybrid v9 or token vector/hybrid v10 history: consulted state, nullable activation/declaration identities and withholding rows. Legacy trails carry no member. Recorded consultation is not today's activation state. Supersession administration remains native-only. Composer mentions and evidence resources keep their fixed defaults. Explain conflicting released passages using their provenance.
+When discovery exposes supersession administration and the user explicitly
+authorizes it, submit `source` plus a closed `declaration` draft with schema
+`mousa.supersession_declaration_input.v1`, exact predecessor/successor item and
+representation pins, author and basis. All fields are required. Supply no draft
+ID or source ID. The server returns `{"declaration": canonical_record}`.
+Activation takes `source` plus a closed `activation` draft with schema
+`mousa.supersession_activation_input.v1`, explicitly nullable
+`expected_previous_activation_id`, `declaration_id` and `reason`, actor_id,
+actor_version and a positive integer occurred_at_usec. The result is
+`{"activation": canonical_record}`. Preserve these as caller assertions, never
+infer actor/time/predecessor or treat them as the authenticated HTTP principal.
+Null declaration explicitly deactivates; name the exact current event. A stale
+expectation conflicts, and an exact retry is accepted only while its event remains
+current. Ask the user to resolve conflicts rather than silently selecting latest.
+
+Writes require `--supersession-admin-source` separately from ingestion, plus
+HTTP `mousa:write`; administrative permission grants no text access. Call
+`mousa_supersession_status` with source only for fresh-authorized current state.
+Allowed `current` always contains state (`no_history`, `active`, `deactivated`),
+activation (null only without history) and declaration (null unless active).
+Denied status contains only decision_id, decision_outcome and decision_reasons,
+with no current member or history-presence disclosure. Status may append its
+authorization receipt. Historical record-by-ID, policy and classification
+administration remain native-only.
+
+Pass query supersession true only for explicitly requested enforcement; omission
+or false keeps the uncurated default. It withholds an exact predecessor pin and
+reports supersession_excluded, including zero, without proving truth or freshness.
+Trail supersession returns the producing recorded consultation, including composed
+association histories, not today's activation. Legacy trails carry no member.
+Composer mentions/resources keep fixed defaults. Explain conflicting released
+passages using provenance.
 
 When discovery declares `mousa_vector_inputs`, export current authorized normalized
 passage bytes/pins for an approved external producer. Preserve all five pins and

@@ -9,8 +9,8 @@ JSONL query opt-ins and the local stdio MCP tools.** Use
 with flags before positional arguments, or MCP `mousa_query` with `supersession: true`.
 Defaults, legacy trail versions and every opted-out MCP response are unchanged.
 Lexical queries can combine declared supporting context with supersession under
-byte or measured token budgets. The proposed source change extends declared support
-to vector/hybrid queries, with v14 byte or v15 token history.
+byte or measured token budgets. Accepted source also supports declared support
+on vector/hybrid queries, with v14 byte or v15 token history.
 The MCP inspection opt-in, which returns the recorded member of a v4 trail with the same
 boolean, is implemented and specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md). The
@@ -43,7 +43,7 @@ ranking facts and this consultation contract. Its full source admission occurs
 before masking, including when combined with token budgets as v10. Both modes
 reuse token packet v3's full producing-selection binding and complete survivor
 rendering, with null proposed counts for withheld candidates. Lexical token
-association/supersession uses v13; proposed vector/hybrid composition uses v14/v15. See
+association/supersession uses v13; accepted vector/hybrid composition uses v14/v15. See
 [retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
 and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
@@ -68,6 +68,13 @@ For a complete native directory example, including exact source identity and rev
 pin preparation, see [Directory supersession example](USAGE.md#directory-supersession-example).
 Directory resolution retains the `mousa-local` namespace and absolute path; `--source`
 retains the distinct `mousa-jsonl` namespace. Both call the same enforced transaction.
+Configured JSONL aliases can instead prepare declarations, apply explicit
+optimistic transitions and inspect current state entirely through MCP. See
+[source-scoped administration](MCP_SUPERSESSION.md#source-scoped-administration)
+for the separate write allowlist, strict drafts and denial masking. These writes
+reuse native canonical records and transactions; they do not change enforcement
+defaults, current item pointers or historical interpretation.
+
 Resyncing a changed predecessor creates an unpinned revision; historical v4 inspection
 continues to verify the original pins.
 
@@ -318,7 +325,7 @@ recorded as a consulted activation event with a null declaration.
 ## 4. Associations and packing modes
 
 This section records the initial v4 enforcement boundary, not current association
-availability. Accepted lexical composition uses v12/v13; the proposed vector/hybrid
+availability. Accepted lexical composition uses v12/v13; accepted vector/hybrid
 composition uses v14/v15. Their supporting stages apply exact-pin suppression
 before duplicate and budget accounting, as described in the capability contract.
 
@@ -655,9 +662,9 @@ a successful read. Denial precedes that guard and commits only fresh authorizati
 
 Enforcement is explicit, source-local and exact-pin-only. It does not implement semantic
 contradiction detection, authenticated authorship, factual truth or freshness, transitive
-supersession, automatic/default enforcement or associated-passage enforcement;
-MCP administration remains unavailable
-([MCP supersession opt-in](MCP_SUPERSESSION.md)). Ranking, authorization, current item
+supersession or automatic/default enforcement. MCP supports source-scoped
+declaration, activation and current-state inspection
+([MCP supersession contract](MCP_SUPERSESSION.md)). Ranking, authorization, current item
 pointers, declarations and activation history are not rewritten by a query, and an
 inspection reinterprets no recorded selection.
 

@@ -215,8 +215,8 @@ deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
 Token-specific options without `--context-tokens` reject. Lexical token mode
-accepts declared associations with or without supersession. The proposed source
-change also accepts vector/hybrid associations as v15. Without association facts,
+accepts declared associations with or without supersession. Accepted source
+also accepts vector/hybrid associations as v15. Without association facts,
 supersession true writes lexical v8 or vector/hybrid v10;
 recorded lexical association facts use v13 with supersession or v11 without it.
 An unfired stage preserves v8, or v7 when supersession is omitted or false.
@@ -947,11 +947,20 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The eight tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
-`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs` and `mousa_vector_import`.
+The eleven tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`, `mousa_vector_import`,
+`mousa_supersession_declare`, `mousa_supersession_activate` and `mousa_supersession_status`.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
+Supersession writes default off and separately require
+`--supersession-admin-source inspection-notes`. This flag grants no ingestion or
+retrieval permission; status requires fresh retrieval authorization but no admin
+flag. HTTP mutations also require the validated principal's `mousa:write` scope.
+See [exact draft/result shapes and permission examples](MCP_SUPERSESSION.md#source-scoped-administration).
+Raw historical declaration/event-by-ID reads and classification administration
+remain native-only.
+
 
 `mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed
 authorization decision ID and reasons, but no history or existence disclosure.
@@ -1004,7 +1013,7 @@ example uses it only to prepare its fixture.
 
 Both term policies and both packers work with byte or measured token budgets.
 Omitted, false and true supersession work with both budget modes in source builds
-containing token association/supersession composition. The proposed source change
+containing token association/supersession composition. Accepted source
 extends this to vector/hybrid queries. Supply an object, not null, a filename or URL. The
 [native bounds and strict parsing](CAPABILITIES.md#declared-associated-context)
 apply. Assertions check protocol, selection and attribution consistency, not
@@ -1134,15 +1143,23 @@ CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 python3 examples/mcp_retrieval.py --mousa ./mousa
 ```
 
-The proposed source-build example creates separate fresh stores for native directory,
-native JSONL and configured MCP JSONL workflows. Each syncs five items, exports
+The source-build example creates separate fresh stores for native directory,
+native JSONL and configured MCP JSONL workflows. Each syncs six items, exports
 normalized passage pins, imports two hand-assigned vectors, and queries vector
-and hybrid retrieval with both packers. Declared nonmatching support has no
-embedding. Assertions compare primary evidence and retrieval facts against an
-association-free query, then inspect v14 byte or v15 token history.
-Supporting rows appear in `associated_evidence`, not primary `evidence`.
-Add `--supersession` to suppress the exact obsolete supporting pin; the example
-administers declarations through the native CLI, not a new MCP tool.
+and hybrid retrieval with both packers. The MCP form also queries lexical support.
+Nonmatching support and the byte-equal old/twin pair have no embeddings.
+Assertions compare primary evidence and retrieval facts against an association-free
+query and inspect producing history. Vector/hybrid support appears separately in
+`associated_evidence`; lexical support retains its existing combined evidence shape.
+
+The MCP form performs sync, export, import, declaration, activation, current-state
+inspection, retrieval, deactivation with an explicit expected event, and retained
+history inspection entirely through MCP. It enables both ingestion and the separate
+supersession-admin allowlist. It invokes neither native supersession administration
+nor SQLite mutations. Native forms retain their separate canonical administration
+examples. Add `--supersession` to observe suppression of the exact obsolete pin;
+the byte-equal twin remains eligible. Deactivation changes future opted-in support,
+not the producing history. Omission keeps queries uncurated even while active.
 Temporary stores and wire receipts are removed on exit; printed results remain
 available for inspection. Synthetic vectors establish protocol/arithmetic only,
 not semantic quality, model integration, performance or model-window safety.
@@ -1150,6 +1167,19 @@ not semantic quality, model integration, performance or model-window safety.
 ```sh
 python3 examples/mcp_retrieval.py --mousa ./mousa --supersession
 ```
+
+After preparing the optional runtime, exercise measured tokens as well:
+
+```sh
+python3 examples/mcp_retrieval.py --mousa ./mousa --supersession \
+  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
+```
+
+The example independently counts each complete returned context. Native forms
+also perform retained-token recount; MCP inspects recorded token facts without
+a native recount call. Run both with and without `--supersession`, in byte and
+token modes. The [admin-only denied-read example](MCP_SUPERSESSION.md#current-state-and-denial)
+keeps native policy setup separate from the MCP replacement workflow.
 
 For an existing native source, add `--associations associations.json` to
 `query --vector-space SPACE_ID` or `query --hybrid-space SPACE_ID SOURCE TEXT`.
@@ -1210,7 +1240,7 @@ Native v7 vector/hybrid facts can also be inspected. The independent
 Only exact configured JSONL aliases are permitted, including when a label looks
 like a path. No directory read permission follows. Native bounds and precise
 space/dimension/current-coverage errors apply, without lexical fallback.
-The proposed source change accepts associations with optional supersession on both
+Accepted source supports associations with optional supersession on both
 query tools. Refresh cached closed schemas through `tools/list`.
 OpenAI mentions/resources retain their lexical contract.
 

@@ -30,7 +30,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
-| Declared associated context | Source builds | Native directory/JSONL `query --associations <file>`; inline MCP `associations`; lexical and proposed vector/hybrid byte/token modes with optional supersession | Same-source authorization, selected-primary trigger, primary priority, bounded consideration, omissions; lexical v3/v11/v12/v13 and proposed retrieval v14/v15 history | [Runnable retrieval example](../examples/mcp_retrieval.py); synthetic protocol/arithmetic only, not general retrieval quality |
+| Declared associated context | Source builds | Native directory/JSONL `query --associations <file>`; inline MCP `associations`; lexical and vector/hybrid byte/token modes with optional supersession | Same-source authorization, selected-primary trigger, primary priority, bounded consideration, omissions; lexical v3/v11/v12/v13 and retrieval v14/v15 history | [Runnable retrieval example](../examples/mcp_retrieval.py); synthetic protocol/arithmetic only, not general retrieval quality |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
@@ -40,6 +40,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Supersession selection contract | Yes | `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
 | Opt-in supersession trail and survivor packing | Yes | Directory/JSONL and configured MCP lexical, vector and hybrid queries, with independent byte and optional token budgets | v4 lexical bytes, v8 lexical tokens, v9 vector/hybrid bytes and v10 vector/hybrid tokens; both packers, exact pins, original ranks/coverage and survivor packing | Independent companion evidence is separate from product tests; no semantic-quality or latency claim |
 | MCP supersession opt-in | Yes | `mousa_query`, `mousa_vector_query`, `mousa_hybrid_query`, and `mousa_trail` optional `supersession` boolean | Strict arguments, omitted/false/true properties, recorded consultation, native transaction reuse and independent supersession/retrieval/token history opt-ins | Independent stdio captures retain their producing source pins; synthetic client behavior is not retrieval quality or performance |
+| MCP source-scoped supersession administration | Source builds containing the administration change | `mousa_supersession_declare`, `mousa_supersession_activate`, `mousa_supersession_status` | Closed drafts, separate startup write allowlist, optimistic transitions, verified current state under fresh authorization | Existing canonical records; caller assertions, not truth or authenticated authorship; raw historical reads remain native-only |
 | Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
 | Embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
@@ -418,8 +419,8 @@ selected bytes. MCP `supersession`, `retrieval_details` and `token_details` rema
 independent history opt-ins under fresh authorization, with no recount.
 Ordinary v7, lexical v8 and byte-only v9 construction and all valid v1–v9 bytes
 and identities remain unchanged. Native explicit false vector/hybrid token flags,
-previously rejected, now behave like omission and retain v7. The proposed source
-change adds declared support as v14/v15; see [declared associated context](#declared-associated-context).
+previously rejected, now behave like omission and retain v7. Accepted source
+also supports declared support as v14/v15; see [declared associated context](#declared-associated-context).
 See the [runnable synthetic example](USAGE.md#vector-and-hybrid-supersession).
 
 
@@ -445,8 +446,9 @@ candidate's own exact predecessor representation matches; item labels, equal byt
 ancestor pins and successor availability do not. The local stdio MCP query tool
 implements the same explicit opt-in as an optional `supersession` boolean, and its trail
 tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
-boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)), while MCP
-administration remains unsupported. Lexical associations compose as v12 in byte mode or v13 in token mode.
+boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)). Configured JSONL aliases also
+support separately permitted declaration/activation and freshly authorized current-state inspection.
+Lexical associations compose as v12 in byte mode or v13 in token mode.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
 Historical
@@ -698,9 +700,11 @@ records; the command keeps its signature and projection JSON, and its `not_found
 for a source with no history are unchanged.
 
 The `state` command inspects the current projection; `get <activation-id>` reads one
-historical event. There is no activation listing or per-source history command, no
-source alias or name lookup, and no supersession MCP administration tool; the MCP query
-opt-in reads the same records through the retrieval transaction.
+historical event. There is no activation listing or per-source history command.
+Native commands use canonical source IDs. MCP declaration/activation writes and
+current-state inspection instead resolve configured JSONL aliases, as specified in
+[source-scoped administration](MCP_SUPERSESSION.md#source-scoped-administration).
+Raw historical declaration/event-by-ID reads remain native-only.
 
 Declaration storage starts at schema 12; activation history/current state at
 schema 13. Schema 14 adds a source index for history-existence checks. Writable
@@ -769,10 +773,22 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`); inline `associations` for lexical byte/token queries, including supersession | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds primary `supersession_excluded`, associations append independently attributed evidence and any omissions |
 | `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10/v11/v13/v15 token view that exists |
-| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields; inline `associations` in the proposed source change | Primary evidence, cosine/ranks, coverage and producing IDs; separate attributed `associated_evidence` and omissions when present |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields; inline `associations` | Primary evidence, cosine/ranks, coverage and producing IDs; separate attributed `associated_evidence` and omissions when present |
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession, token and association options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60); separate supporting evidence without fabricated ranks |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
+| `mousa_supersession_declare` | `source`, `declaration`: closed `mousa.supersession_declaration_input.v1` | None | `declaration`: accepted canonical record |
+| `mousa_supersession_activate` | `source`, `activation`: closed `mousa.supersession_activation_input.v1` | None | `activation`: accepted canonical record |
+| `mousa_supersession_status` | `source` | None | `decision_id`, `decision_outcome`, `decision_reasons`; allowed calls add `current` with required `state`, nullable `activation` and nullable `declaration` |
+
+The three administration tools use only configured JSONL aliases. Writes require
+the separate repeatable `--supersession-admin-source` startup allowlist, off by
+default; HTTP also requires a validated principal with `mousa:write`. Ingestion
+permission neither implies nor is required by this admin permission. Neither
+permission grants retrieval. Status authorizes and verifies in one snapshot,
+may append its authorization receipt, and omits `current` entirely on denial.
+No hidden state, history-presence or corruption distinction is released. See the
+[exact draft limits, transitions and null shapes](MCP_SUPERSESSION.md#source-scoped-administration).
 
 Export calls `ExportEmbeddingInputs` with the trusted caller's retrieval request.
 Fresh policy/lifecycle and current passage reads share its existing writer snapshot.
@@ -841,7 +857,7 @@ supersession was consulted, the nullable activation and declaration identities a
 withholding rows. Omitted or `false` keeps the default retrieval and response property
 set, and a legacy trail has no member, so the opt-in adds none. Other values are
 `invalid_arguments`, and `mousa_sync` and `mousa_status` reject the field. The records are
-prepared by native administration; MCP exposes no administration tool. The client
+prepared by native administration or the source-scoped MCP draft tools. The client
 contract, the declared optional members and the reasons for keeping the envelope at
 `mousa.mcp_result.v1` are specified in
 [MCP supersession opt-in](MCP_SUPERSESSION.md).
@@ -869,7 +885,7 @@ Denial/withdrawal releases no evidence, source coverage or candidate facts.
 Vector/hybrid requests accept the optional `supersession` boolean: true withholds
 exact declared predecessors and records byte-only v9 or token-budget v10, while
 omission/false keeps the existing producing version and response properties.
-The proposed source change accepts strict inline associations. See
+Accepted source supports strict inline associations. See
 [vector/hybrid supersession](#byte-only-vectorhybrid-supersession).
 Vector-only queries also reject lexical policy/query fields.
 Unknown, duplicate, missing, null and wrong-type input members reject before
@@ -1500,7 +1516,8 @@ passages under byte or measured token budgets. See the
 and [directory pin preparation](USAGE.md#directory-supersession-example).
 MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
 boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
-the same optional boolean. MCP administration remains unavailable.
+the same optional boolean. Source-scoped MCP declaration, activation and status
+use the [separate administration contract](MCP_SUPERSESSION.md#source-scoped-administration).
 
 Valid queries open the store writable and may create or migrate it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not
@@ -1676,7 +1693,7 @@ The existing transport frame bound still applies. No path, URL or additional
 source selector is accepted. Both term policies and both packers work with byte or
 measured token budgets; omitted, false and true `supersession` work.
 Source-build token triples record v13 only when association facts are recorded.
-The proposed source change accepts vector/hybrid associations with both packers
+Accepted source supports vector/hybrid associations with both packers
 and optional token budgets and explicit supersession; it is not a released-version claim.
 Support is returned separately as `associated_evidence`, with association attribution,
 not in primary `evidence` or retrieval rank/score arrays. `association_omissions`

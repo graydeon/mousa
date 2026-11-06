@@ -9,9 +9,19 @@ Read the current task, repository documentation and operator-supplied workflow b
 
 ## Find the affected contract
 
-Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in, including lexical associations as v12/v13 and proposed vector/hybrid associations as v14/v15 for byte/token mode. Defaults remain uncurated; MCP administration remains unsupported.
+Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in, including lexical associations as v12/v13 and accepted vector/hybrid associations as v14/v15 for byte/token mode. Defaults remain uncurated. Read [MCP administration](../../docs/MCP_SUPERSESSION.md#source-scoped-administration) for strict drafts, separate write permission and fresh-authorized status.
 
 Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection, supersession selection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
+
+For MCP administration, reuse native canonical writes and transaction-local
+verified consultation. Keep admin permission separate from ingestion and
+retrieval; authorize status before consulting hidden state. Denied status omits
+current entirely, including corruption distinctions. Allowed no-history is
+verified absence, not a damaged projection fallback. Preserve explicit nullable
+draft fields, canonical size/label limits and exact retries: an activation retry
+conflicts after its event stops being current. Historical pins with valid ancestry
+remain administrable without a current-pin or vector-enumeration gate. Caller
+actor/time/reason are assertions, distinct from authenticated HTTP identity.
 
 ## Preserve canonical behavior
 
