@@ -34,6 +34,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
+| MCP attributed classification administration | Source builds containing this addition | `mousa_classification_put`, `mousa_classification_get` | Separate write allowlist; all subject/basis ancestry roots in one source; fresh-authorized scoped read; strict native draft and canonical retry | [MCP example](../examples/mcp_classifications.py); synthetic attribution only, not classifier accuracy, calibrated confidence or a tagged-release claim |
 | Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
 | Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
 | Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
@@ -67,7 +68,8 @@ immutable `mousa.classification.v1` primitive. A strict bounded
 `mousa.classification_input.v1` draft omits the computed ID; put derives it, validates
 all facts and writes through the existing single-store transaction. Put/get return
 the existing canonical record. No stored schema, migration, query/packet/trail
-property, canonical v1–v11 bytes, default selection or MCP definition changes.
+property, canonical v1–v11 bytes or default selection changes. The separate MCP
+addition below extends discovery without changing native storage semantics.
 
 Subjects and ordered basis references support source, observation, artifact,
 representation and segment parents. All must exist; no placeholder parents are
@@ -89,6 +91,25 @@ Delivered value is durable, inspectable attribution with typed evidence basis.
 Classification-based filtering/authorization, secret scanning and automatic
 classification/inference remain unimplemented. Indexing, retrieval permission,
 ranking, freshness and supersession do not consume these labels.
+
+### Same-source MCP classification administration
+
+The [MCP workflow](USAGE.md#mcp-classification-administration) reuses the native
+draft and canonical records, but requires all ancestry roots of the subject and
+every basis entry to belong to the selected configured JSONL source. Native
+cross-source basis remains supported. Foreign, mixed-source and unprovable scoped
+reads return generic `not_found`, without partial records or foreign corruption
+details. Denial precedes lookup and omits classification entirely.
+
+Put requires the independent `--classification-admin-source` allowlist and HTTP
+write scope when hosted; ingestion and supersession permissions are insufficient.
+Get needs no write grant, but fresh retrieval authorization, ancestry proof,
+verified readback and the normal decision receipt share one writer snapshot.
+Historical/withdrawn/never-indexed parents do not require current index coverage.
+This interface adds no classifier, enumeration, label filtering, ranking rule or
+access grant. Asserted identities are not authenticated transport principals.
+The source addition and executable example are not public capture results.
+
 
 ## Native token-aware packing
 
@@ -780,8 +801,10 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_supersession_declare` | `source`, `declaration`: closed `mousa.supersession_declaration_input.v1` | None | `declaration`: accepted canonical record |
 | `mousa_supersession_activate` | `source`, `activation`: closed `mousa.supersession_activation_input.v1` | None | `activation`: accepted canonical record |
 | `mousa_supersession_status` | `source` | None | `decision_id`, `decision_outcome`, `decision_reasons`; allowed calls add `current` with required `state`, nullable `activation` and nullable `declaration` |
+| `mousa_classification_put` | `source`, `classification`: closed `mousa.classification_input.v1` | None | `classification`: verified accepted canonical record |
+| `mousa_classification_get` | `source`, `classification_id` | None | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; `classification` only when allowed and same-source scope is proven |
 
-The three administration tools use only configured JSONL aliases. Writes require
+The three supersession administration tools use only configured JSONL aliases. Writes require
 the separate repeatable `--supersession-admin-source` startup allowlist, off by
 default; HTTP also requires a validated principal with `mousa:write`. Ingestion
 permission neither implies nor is required by this admin permission. Neither

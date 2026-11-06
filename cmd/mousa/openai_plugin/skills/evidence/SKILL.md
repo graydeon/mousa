@@ -58,8 +58,22 @@ Allowed `current` always contains state (`no_history`, `active`, `deactivated`),
 activation (null only without history) and declaration (null unless active).
 Denied status contains only decision_id, decision_outcome and decision_reasons,
 with no current member or history-presence disclosure. Status may append its
-authorization receipt. Historical record-by-ID, policy and classification
+authorization receipt. Historical supersession record-by-ID and policy
 administration remain native-only.
+
+Use `mousa_classification_put` only for explicitly supplied attribution, with
+`source` and the complete native `mousa.classification_input.v1` draft in
+`classification`. Supply every required field, including confidence zero;
+preserve ordered, nonduplicate typed basis references. The separate
+`--classification-admin-source` grant and HTTP write scope authorize this
+mutation, not ingestion or retrieval. Subject and every basis entry must be
+provably wholly within the selected configured source. An exact retry returns
+the same canonical assertion; changed attribution appends a different record.
+Fetch by `source` and `classification_id` using `mousa_classification_get`.
+Denial omits classification entirely, even existence and corruption details.
+Attribution is not factual truth, calibrated confidence or current permission.
+Historical pins do not relabel replacement evidence. Labels never affect
+default query/trail payloads, ranking, packing, authorization or supersession.
 
 Pass query supersession true only for explicitly requested enforcement; omission
 or false keeps the uncurated default. It withholds an exact predecessor pin and

@@ -28,7 +28,7 @@ func mcpSupersessionWriteTool(name string) bool {
 }
 
 func mcpWriteTool(name string) bool {
-	return mcpIngestionTool(name) || mcpSupersessionWriteTool(name)
+	return mcpIngestionTool(name) || mcpSupersessionWriteTool(name) || name == "mousa_classification_put"
 }
 
 func mcpVectorImportSchema() map[string]any {

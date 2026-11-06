@@ -44,8 +44,9 @@ See [vector/hybrid usage](USAGE.md#vector-and-hybrid-supersession).
 Source builds containing the MCP administration change expose three additional
 tools for configured JSONL aliases. They reuse existing canonical declarations
 and activation transactions, not a new storage format or policy system. Native
-directory administration remains separate. Raw declaration/event-by-ID reads,
-policy administration and classification administration remain native-only.
+directory administration remains separate. Raw declaration/event-by-ID reads and
+policy administration remain native-only. Classification has a separate
+[same-source MCP interface](USAGE.md#mcp-classification-administration).
 
 ### Startup permissions
 

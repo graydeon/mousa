@@ -128,7 +128,7 @@ func startMCPClient(t *testing.T, run testRun, caller string, writable bool, sta
 		}
 		c.schemas[tool.Name] = resolved
 	}
-	if len(c.schemas) != 11 || c.schemas["mousa_sync"] == nil || c.schemas["mousa_status"] == nil || c.schemas["mousa_query"] == nil || c.schemas["mousa_trail"] == nil || c.schemas["mousa_vector_query"] == nil || c.schemas["mousa_hybrid_query"] == nil || c.schemas["mousa_vector_inputs"] == nil || c.schemas["mousa_vector_import"] == nil || c.schemas["mousa_supersession_declare"] == nil || c.schemas["mousa_supersession_activate"] == nil || c.schemas["mousa_supersession_status"] == nil {
+	if len(c.schemas) != 13 || c.schemas["mousa_sync"] == nil || c.schemas["mousa_status"] == nil || c.schemas["mousa_query"] == nil || c.schemas["mousa_trail"] == nil || c.schemas["mousa_vector_query"] == nil || c.schemas["mousa_hybrid_query"] == nil || c.schemas["mousa_vector_inputs"] == nil || c.schemas["mousa_vector_import"] == nil || c.schemas["mousa_supersession_declare"] == nil || c.schemas["mousa_supersession_activate"] == nil || c.schemas["mousa_supersession_status"] == nil || c.schemas["mousa_classification_put"] == nil || c.schemas["mousa_classification_get"] == nil {
 		t.Fatalf("unexpected discoverable tools: %+v", tools)
 	}
 	logMCPReceipt(t, map[string]any{"initialize": initialized, "tools": tools})

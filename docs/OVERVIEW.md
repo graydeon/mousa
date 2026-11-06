@@ -26,6 +26,13 @@ classification storage; they do not change selection, permissions or factual tru
 See the [classification workflow](USAGE.md#native-classification-administration).
 Synthetic examples establish protocol/identity behavior, not label correctness,
 retrieval quality or semantic sufficiency. No tagged-release availability is claimed.
+The MCP classification source addition exposes same-source put/get with a separate
+`--classification-admin-source` write allowlist. Every subject and basis ancestry
+root must belong to the selected source; native cross-source storage is unchanged.
+Get requires fresh retrieval authorization and withholds the entire payload on
+denial. See the [MCP workflow](USAGE.md#mcp-classification-administration).
+This open source addition is distinct from accepted earlier native administration,
+tagged releases and independently published observations.
 
 ## Why Mousa?
 
@@ -83,7 +90,8 @@ associations as v14 byte or v15 token history. MCP declaration, activation and
 current-state inspection use configured JSONL aliases; mutations require the
 separate `--supersession-admin-source` startup allowlist. Status authorizes before
 consulting state and may persist an authorization receipt. Raw historical
-record-by-ID reads, policy and classification administration remain native-only.
+record-by-ID reads and policy administration remain native-only. Classification
+put/get also have the bounded same-source MCP interface described above.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 A query prepares and size-checks its expression before opening the store only when it

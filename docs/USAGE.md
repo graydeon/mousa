@@ -737,6 +737,49 @@ It also verifies unchanged ordinary selection and readback after replacing the s
 revision. It exercises segment subjects and representation basis, not all subject
 kinds. No SQL, model, classifier, answer generation or semantic judging is involved.
 
+### MCP classification administration
+
+Source builds containing this addition expose `mousa_classification_put` and
+`mousa_classification_get`. This is separate from tagged-release availability;
+the runnable example is not a published acceptance receipt.
+
+```sh
+./mousa -store local.sqlite mcp --caller cli --source notes --classification-admin-source notes
+python3 examples/mcp_classifications.py --mousa ./mousa
+```
+
+Put arguments are `{"source":"notes","classification":DRAFT}`, where `DRAFT`
+is the strict native `mousa.classification_input.v1` object above. The result is
+`{"classification":CANONICAL_RECORD}` inside the ordinary MCP result envelope.
+Get arguments are `{"source":"notes","classification_id":"CLASSIFICATION_ID"}`.
+Its result contains `decision_id`, `decision_outcome` and `decision_reasons`;
+`classification` appears only when authorized and source scope is proven.
+Denied get omits the payload and does not reveal existence or corruption.
+
+The repeatable startup flag `--classification-admin-source` accepts only configured
+`--source` aliases and defaults off. It grants neither ingestion nor supersession
+administration or retrieval visibility. Those permissions do not grant classification
+writes. HTTP put also requires the validated transport principal's existing
+`mousa:write` scope; the asserted asserter is not that principal. Get needs no admin
+flag but always evaluates fresh retrieval authorization and may persist its normal
+decision receipt. It is not physically read-only like native classification get.
+
+Subject and every ordered basis entry must have all canonical ancestry roots in
+the selected source. Native cross-source storage remains supported; mixed-source,
+foreign and unprovable classifications are outside this MCP interface and return
+generic `not_found` on scoped get. No partial basis is released. Historical,
+withdrawn and never-indexed same-source pins remain valid metadata references,
+but current authorization still controls get. Source aliases are configuration
+names, not filesystem paths. No listing, classifier or taxonomy access rule is added.
+
+The example uses MCP sync/export to obtain pins, puts and retries confidence 0,
+reads both separately versioned assertions, and compares stable query fields.
+It invokes no native classification command or SQL. Its segment subject and
+representation basis illustrate attribution, not all five subject kinds.
+Confidence is an asserted integer, not a calibrated probability; labels do not
+establish factual truth, authenticate authorship, approve future revisions or
+recover retired text. Default query/trail payloads and selection remain unchanged.
+
 ### Supersession administration
 
 `supersession declaration put` appends one strict revision-pinned declaration read
@@ -947,9 +990,10 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The eleven tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+The thirteen tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
 `mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`, `mousa_vector_import`,
-`mousa_supersession_declare`, `mousa_supersession_activate` and `mousa_supersession_status`.
+`mousa_supersession_declare`, `mousa_supersession_activate`, `mousa_supersession_status`,
+`mousa_classification_put` and `mousa_classification_get`.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
@@ -958,8 +1002,8 @@ Supersession writes default off and separately require
 retrieval permission; status requires fresh retrieval authorization but no admin
 flag. HTTP mutations also require the validated principal's `mousa:write` scope.
 See [exact draft/result shapes and permission examples](MCP_SUPERSESSION.md#source-scoped-administration).
-Raw historical declaration/event-by-ID reads and classification administration
-remain native-only.
+Raw historical declaration/event-by-ID reads remain native-only. Classification
+has a separate [same-source MCP interface](#mcp-classification-administration).
 
 
 `mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed

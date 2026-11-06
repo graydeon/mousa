@@ -51,10 +51,20 @@ For classification administration, use the
 [native draft contract](../../docs/USAGE.md#native-classification-administration).
 `DecodeClassificationInput` requires explicit facts and derives the existing
 classification.v1 identity; preserve typed subject parsing and ordered basis.
-Put/get use existing store validation and transactional parents, including
-cross-source basis. Keep parser tests separate from store rollback/damage evidence
-and native-client observations. Labels are attribution, not access authority or
-automatic classification; revision pins do not relabel replacement evidence.
+Native put/get preserve cross-source basis and readonly get. For the
+[MCP interface](../../docs/USAGE.md#mcp-classification-administration), prove all
+subject and basis ancestry roots belong to the selected source in the owning
+transaction. Scope projections conservatively before canonical release; forged
+local projections must not authorize foreign payloads. Denied inspection authorizes
+before lookup, omits payload and hides existence/corruption. Foreign, mixed or
+unprovable scope is generic not_found. Fresh authorization, scope, verified readback
+and receipt share one writer snapshot. Explicit classification administration grants
+no ingestion, supersession or read rights; HTTP writes retain principal/scope gates.
+Use canonical historical ancestry, not current index/vector coverage. Preserve
+confidence 0, exact retries and refusal without repair. Keep parser, actual-store,
+HTTP and stdio evidence distinct. Labels are attribution, not factual truth,
+calibrated confidence, access authority or automatic classification; revision pins
+do not relabel replacement evidence.
 
 For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
 Native `vector inputs`, `vector import` and `query --vector-space` form one supported

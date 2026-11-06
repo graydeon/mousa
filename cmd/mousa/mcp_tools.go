@@ -39,6 +39,8 @@ type mcpArguments struct {
 	Associations     []mousa.AssociationDeclaration
 	Declaration      mousa.SupersessionDeclaration
 	Activation       mousa.SupersessionActivation
+	Classification   mousa.Classification
+	ClassificationID mousa.ClassificationID
 }
 
 type mcpToolError struct {
@@ -119,6 +121,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	allowed := []string{"source"}
 	required := []string{"source"}
 	switch operation {
+	case "mousa_classification_put":
+		allowed = append(allowed, "classification")
+		required = append(required, "classification")
+	case "mousa_classification_get":
+		allowed = append(allowed, "classification_id")
+		required = append(required, "classification_id")
 	case "mousa_sync":
 		allowed = append(allowed, "items", "segment_policy")
 		required = append(required, "items")
@@ -175,6 +183,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
+		case "classification":
+			record, err := mousa.DecodeClassificationInput(value)
+			if err != nil {
+				return args, err
+			}
+			args.Classification = record
 		case "declaration":
 			declaration = value
 		case "activation":
@@ -273,6 +287,11 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 					return args, errors.New("packing_policy must be original or exact-v1")
 				}
 				args.PackingPolicy = text
+			case "classification_id":
+				args.ClassificationID, err = mousa.ParseClassificationID(text)
+				if err != nil || args.ClassificationID == (mousa.ClassificationID{}) {
+					return args, errors.New("classification_id must be a nonzero lowercase SHA-256 ID")
+				}
 			case "space_id":
 				args.SpaceID, err = mousa.ParseSHA256(text)
 				if err != nil || args.SpaceID == (mousa.SHA256{}) {
@@ -345,6 +364,8 @@ func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
 		reflect.TypeFor[mousa.SupersessionDeclarationID](): hexID,
 		reflect.TypeFor[mousa.RepresentationID]():          hexID,
 		reflect.TypeFor[mousa.SourceID]():                  hexID,
+		reflect.TypeFor[mousa.ClassificationID]():          hexID,
+		reflect.TypeFor[mousa.ClassificationSubject]():     mcpClassificationSubjectSchema(),
 	}})
 	if err != nil {
 		return nil, err
@@ -484,5 +505,10 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		return nil, err
 	}
 	definitions = append(definitions, admin...)
+	classifications, err := mcpClassificationToolDefinitions(source)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, classifications...)
 	return definitions, nil
 }
