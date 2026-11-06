@@ -1,6 +1,7 @@
 package beir
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -8,10 +9,18 @@ import (
 // tracedReport is a minimal traced-mode report with the given mean coverage
 // values, the way run() writes it.
 func tracedReport(dataset string, budget uint64, limit int, coverage *PackCoverage) RunReport {
+	count := coverage.Queries
+	queries := make([]QueryReport, count)
+	for i := range queries {
+		queries[i] = QueryReport{QueryID: fmt.Sprintf("q%d", i), PackCoverage: &QueryCoverage{}}
+	}
 	return RunReport{
 		Dataset: dataset, Mode: string(ModeTraced), ExpressionPolicy: string(PolicyOriginal),
-		Budget: budget, Limit: limit, CorpusDocuments: 100, JudgedQueries: 50,
-		Aggregate: AggregateMetrics{Queries: 50, PackCoverage: coverage},
+		Budget: budget, Limit: limit, CorpusDocuments: 100, JudgedQueries: count,
+		Content:   ContentIdentity{CorpusSHA256: "c", QueriesSHA256: "q", QrelsSHA256: "r"},
+		Protocol:  EvaluationProtocol{Name: ReferenceProtocol},
+		Queries:   queries,
+		Aggregate: AggregateMetrics{Queries: count, PackCoverage: coverage},
 	}
 }
 

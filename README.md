@@ -168,6 +168,12 @@ The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior
 The [research record](docs/RESEARCH.md) separates regression coverage from measured
 retrieval quality and performance.
 
+The BEIR evaluation harness serializes aggregate pack coverage for traced runs.
+Coverage curves and report comparisons require matching input content identities,
+evaluation protocols and ordered query populations; provenance-incomplete legacy
+reports remain readable but cannot certify a comparison. See the
+[evaluation commands](docs/RESEARCH.md#reproduction).
+
 ## Explore
 
 | Start here | For |
