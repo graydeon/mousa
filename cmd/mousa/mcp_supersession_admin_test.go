@@ -269,8 +269,8 @@ func TestMCPSupersessionDiscoverySchemas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(definitions) != 13 {
-		t.Fatalf("discovery contains %d tools, want 13", len(definitions))
+	if len(definitions) != 14 {
+		t.Fatalf("discovery contains %d tools, want 14", len(definitions))
 	}
 	seen := make(map[string]bool)
 	for _, tool := range definitions {
@@ -413,7 +413,7 @@ func TestMCPSupersessionDiscoveryPreservesAcceptedTools(t *testing.T) {
 		}
 		delete(current, original.Name)
 	}
-	for _, name := range []string{"mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status", "mousa_classification_put", "mousa_classification_get"} {
+	for _, name := range []string{"mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status", "mousa_classification_put", "mousa_classification_get", "mousa_source_manifest"} {
 		if current[name] == nil {
 			t.Fatalf("missing added tool %s", name)
 		}

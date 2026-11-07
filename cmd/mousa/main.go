@@ -48,6 +48,8 @@ func main() {
 		err = trailCommand(ctx, *storePath, rest)
 	case "vector":
 		err = vectorCommand(ctx, *storePath, rest)
+	case "manifest":
+		err = manifestCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "withdraw":
@@ -91,6 +93,10 @@ commands:
   vector inputs --source <id>
   vector import <dir>       import one bounded vector batch from stdin (JSON)
   vector import --source <id>
+  manifest [--expect <id>] <dir>
+                            inspect current indexed content under fresh authorization (JSON)
+  manifest --source <id> [--expect <manifest-id>]
+                            denial or mismatch exits 1; invalid syntax exits 2
   access <dir> allow|deny     set this CLI caller's source-scoped access policy (JSON)
   access --source <id> allow|deny
   withdraw <dir>             withdraw a directory source from retrieval (JSON)

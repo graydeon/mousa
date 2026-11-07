@@ -16,8 +16,8 @@ measured token budgets with declared lexical supporting context and closed v11
 history, alongside native/MCP lexical/vector/hybrid supersession.
 Accepted source includes lexical association/supersession history as v12 in byte
 mode and v13 with measured tokens, plus vector/hybrid declared support as v14/v15
-(accepted in PR108). The new MCP administration change adds source-scoped
-declare, activate and status tools. These source capabilities are not a claim
+(accepted in PR108). Accepted PR109 and PR110 add source-scoped MCP supersession
+and classification administration. These source capabilities are not a claim
 about a tagged release; independent captures retain their own producing commits.
 
 Source builds containing native `classification put|get` also record immutable
@@ -31,8 +31,14 @@ The MCP classification source addition exposes same-source put/get with a separa
 root must belong to the selected source; native cross-source storage is unchanged.
 Get requires fresh retrieval authorization and withholds the entire payload on
 denial. See the [MCP workflow](USAGE.md#mcp-classification-administration).
-This open source addition is distinct from accepted earlier native administration,
-tagged releases and independently published observations.
+These accepted source additions remain distinct from tagged releases and
+independently published observations.
+
+Source builds containing `manifest` add bounded current-source inspection through
+the native directory/JSONL selectors and MCP configured JSONL aliases. This is
+the source-manifest addition, not a tagged-release or accepted measurement claim.
+See [usage](USAGE.md#current-source-manifests) for caller refusal on mismatch or
+denial and the indexed-snapshot boundary.
 
 ## Why Mousa?
 
@@ -249,11 +255,11 @@ Implemented and planned capabilities, marked per item:
 - lexical retrieval through SQLite FTS5 or an equally portable built-in mechanism (FTS5 implemented);
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
-- deterministic ingestion, chunk identity and source hashing (implemented); caller-owned pinned corpus manifests (documentation examples); general core manifest support (planned);
+- deterministic ingestion, chunk identity and source hashing (implemented); caller-owned current indexed-source manifests with fresh-authorized native/MCP comparison (source builds containing `manifest`); full-store interchange and action-completion tracking (not implemented);
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical/vector/hybrid enforcement with byte or token budgets and v4/v8/v9/v10 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
-- source-scoped declared associations with attributed, bounded context (native CLI and inline lexical MCP query, with byte or measured token budgets; not inferred relationships or access grants);
+- source-scoped declared associations with attributed, bounded context (native CLI and inline MCP lexical/vector/hybrid queries, with byte or measured token budgets and optional supersession; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 
