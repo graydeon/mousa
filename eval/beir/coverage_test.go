@@ -14,13 +14,15 @@ func tracedReport(dataset string, budget uint64, limit int, coverage *PackCovera
 	for i := range queries {
 		queries[i] = QueryReport{QueryID: fmt.Sprintf("q%d", i), PackCoverage: &QueryCoverage{}}
 	}
+	segmentation, _ := SegmentIdentity(SegmentFixedV1)
 	return RunReport{
 		Dataset: dataset, Mode: string(ModeTraced), ExpressionPolicy: string(PolicyOriginal),
 		Budget: budget, Limit: limit, CorpusDocuments: 100, JudgedQueries: count,
-		Content:   ContentIdentity{CorpusSHA256: "c", QueriesSHA256: "q", QrelsSHA256: "r"},
-		Protocol:  EvaluationProtocol{Name: ReferenceProtocol},
-		Queries:   queries,
-		Aggregate: AggregateMetrics{Queries: count, PackCoverage: coverage},
+		Segmentation: segmentation,
+		Content:      ContentIdentity{CorpusSHA256: "c", QueriesSHA256: "q", QrelsSHA256: "r"},
+		Protocol:     EvaluationProtocol{Name: ReferenceProtocol},
+		Queries:      queries,
+		Aggregate:    AggregateMetrics{Queries: count, PackCoverage: coverage},
 	}
 }
 

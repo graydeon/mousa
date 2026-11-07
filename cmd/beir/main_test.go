@@ -57,10 +57,12 @@ func TestCheckManifestRefusesOtherFormatAndTimeout(t *testing.T) {
 
 // validComparableReport is a minimal report the compare validator accepts.
 func validComparableReport(dataset, mode, policy string, budget uint64) beir.RunReport {
+	segmentation, _ := beir.SegmentIdentity(beir.SegmentFixedV1)
 	return beir.RunReport{
 		Dataset: dataset, Mode: mode, ExpressionPolicy: policy, Budget: budget,
 		Limit: 100, CorpusDocuments: 2, JudgedQueries: 1,
-		Content: beir.ContentIdentity{CorpusSHA256: "c", QueriesSHA256: "q", QrelsSHA256: "r"},
+		Segmentation: segmentation,
+		Content:      beir.ContentIdentity{CorpusSHA256: "c", QueriesSHA256: "q", QrelsSHA256: "r"},
 		Protocol: beir.EvaluationProtocol{
 			Name: beir.ReferenceProtocol, BEIRRevision: beir.BEIRRevision,
 			TrecEvalRevision: beir.TrecEvalRevision, IgnoreIdenticalIDs: true,

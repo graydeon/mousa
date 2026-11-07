@@ -188,10 +188,12 @@ The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior
 The [research record](docs/RESEARCH.md) separates regression coverage from measured
 retrieval quality and performance.
 
-The BEIR evaluation harness serializes aggregate pack coverage for traced runs.
-Coverage curves and report comparisons require matching input content identities,
-evaluation protocols and ordered query populations; provenance-incomplete legacy
-reports remain readable but cannot certify a comparison. See the
+Source builds of the BEIR evaluator accept `-segment-policy fixed-v1|passage-v1`
+(default `fixed-v1`) and record canonical segmentation provenance. Traced runs
+serialize aggregate pack coverage. Coverage curves hold segmentation constant;
+`-report compare -axis segmentation` explicitly compares the two choices.
+Input identities, protocols and ordered populations must agree. Legacy reports
+remain readable but cannot certify a comparison. See the
 [evaluation commands](docs/RESEARCH.md#reproduction).
 
 ## Explore

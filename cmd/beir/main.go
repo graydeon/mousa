@@ -29,12 +29,13 @@ func main() {
 	limit := flag.Int("limit", 100, "candidate limit per query (1-100)")
 	budget := flag.Uint64("budget", 1<<20, "traced-mode pack budget in bytes (e.g. 512, 2048, 8192)")
 	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats), dedup (fold repeats; changes rankings), or drop-floor (drop terms at the BM25 evidence floor; measured floor-weight evaluation)")
+	segmentPolicy := flag.String("segment-policy", string(beir.SegmentFixedV1), "segmentation policy: fixed-v1 (4096-byte slices; default) or passage-v1 (up to 1024-byte passages); reuse/resume must match")
 	ignoreIdentical := flag.Bool("ignore-identical-ids", true, "remove retrieved documents whose ID equals the query ID before scoring (BEIR default)")
 	resume := flag.Bool("resume", false, "resume an interrupted run from its journal (manifest must match)")
 	queryLimit := flag.Int("queries", 0, "limit the run to the first N judged queries in file order (0 = all; part of the run identity)")
 	report := flag.String("report", "", `report mode: "coverage" joins the traced reports named by -reports into the pack byte-budget curve, "compare" checks two reports' rankings against each other, or "rescore" recomputes the metrics of saved reports under the reference protocol, instead of running queries`)
 	reports := flag.String("reports", "", "comma-separated report paths (with -report coverage, compare, or rescore)")
-	axis := flag.String("axis", "", "comparison axis for -report compare: policy, mode, or budget; the one dimension the arms intentionally differ on")
+	axis := flag.String("axis", "", "comparison axis for -report compare: policy, mode, budget, or segmentation; the one dimension the arms intentionally differ on")
 	flag.Parse()
 	switch *report {
 	case "":
@@ -42,12 +43,13 @@ func main() {
 			flag.Usage()
 		}
 		config := beir.RunConfig{
-			Mode:       beir.SearchMode(*mode),
-			Limit:      *limit,
-			Budget:     *budget,
-			Policy:     beir.ExpressionPolicy(*policy),
-			Dataset:    *dataset,
-			QueryLimit: *queryLimit,
+			Mode:          beir.SearchMode(*mode),
+			Limit:         *limit,
+			Budget:        *budget,
+			Policy:        beir.ExpressionPolicy(*policy),
+			SegmentPolicy: beir.SegmentPolicy(*segmentPolicy),
+			Dataset:       *dataset,
+			QueryLimit:    *queryLimit,
 		}
 		if err := run(*dataDir, *out, config, *reuse, *resume, *queryTimeout, *ignoreIdentical); err != nil {
 			fmt.Fprintf(os.Stderr, "beir: %v\n", err)
@@ -55,7 +57,7 @@ func main() {
 		}
 	case "compare":
 		if *reports == "" || *out == "" {
-			fmt.Fprintln(os.Stderr, `beir: -report compare requires -reports <two comma-separated report paths>, -axis <policy|mode|budget>, and -out`)
+			fmt.Fprintln(os.Stderr, `beir: -report compare requires -reports <two comma-separated report paths>, -axis <policy|mode|budget|segmentation>, and -out`)
 			os.Exit(2)
 		}
 		if err := compareReportTo(*out, strings.Split(*reports, ","), *axis); err != nil {
@@ -87,6 +89,16 @@ func main() {
 }
 
 func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTimeout time.Duration, ignoreIdenticalIDs bool) error {
+	var err error
+	config.SegmentPolicy, err = beir.NormalizeSegmentPolicy(config.SegmentPolicy)
+	if err != nil {
+		return err
+	}
+	segmentation, err := beir.SegmentIdentity(config.SegmentPolicy)
+	if err != nil {
+		return err
+	}
+	reuse = reuse || resume
 	started := time.Now()
 	ctx := context.Background()
 	dataset, err := beir.LoadDataset(config.Dataset, dataDir)
@@ -119,28 +131,18 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		skip = completed
 		fmt.Fprintf(os.Stderr, "%s: resuming with %d completed queries\n", config.Dataset, len(skip))
 	}
-	if !resume {
-		if err := writeManifest(manifestPath, config, storePath, queryTimeout); err != nil {
-			return err
-		}
-		// A fresh run replaces any stale journal so completed queries from a
-		// different configuration are never mixed in.
-		if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-	}
 	beir.IngestProgress = func(done, total int, elapsed float64) {
 		fmt.Fprintf(os.Stderr, "\r%s: ingest %d/%d docs (%.1fs)", config.Dataset, done, total, elapsed)
 	}
 	if reuse {
 		startedOpen := time.Now()
-		ingested, err = beir.OpenExisting(ctx, dataset, storePath)
+		ingested, err = beir.OpenExistingWithPolicy(ctx, dataset, storePath, config.SegmentPolicy)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "%s: reusing existing store %s (opened+mapped in %.1fs)\n", config.Dataset, storePath, time.Since(startedOpen).Seconds())
 	} else {
-		ingested, err = beir.IngestCorpus(ctx, dataset, storePath)
+		ingested, err = beir.IngestCorpusWithPolicy(ctx, dataset, storePath, config.SegmentPolicy)
 		if err != nil {
 			return err
 		}
@@ -148,13 +150,21 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 			len(dataset.Corpus), ingested.IndexingSeconds,
 			float64(len(dataset.Corpus))/maxSeconds(ingested.IndexingSeconds, 0.001))
 	}
+	defer ingested.Close()
+	if !resume {
+		if err := writeManifest(manifestPath, config, storePath, queryTimeout); err != nil {
+			return err
+		}
+		if err := os.Remove(journalPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
 	var instrument *beir.ReductionReport
 	if config.Policy == beir.PolicyDropFloor {
 		beir.SearchInstrumentation = func(report beir.ReductionReport) {
 			instrument = &report
 		}
 	}
-	defer ingested.Close()
 	beir.SearchProgress = func(done, total int, lastQueryID string) {
 		fmt.Fprintf(os.Stderr, "%s: search %d/%d (last %s)\n", config.Dataset, done, total, lastQueryID)
 	}
@@ -264,8 +274,9 @@ func run(dataDir, out string, config beir.RunConfig, reuse, resume bool, queryTi
 		CorpusDocuments: len(dataset.Corpus), JudgedQueries: len(judged), QueryLimit: config.QueryLimit,
 		IndexBytes: ingested.IndexBytes, IndexingSeconds: ingested.IndexingSeconds,
 		PeakRSSKB: peak, StartedAt: started, FinishedAt: time.Now(),
-		Content:   config.Content,
-		Reduction: instrument,
+		Content:      config.Content,
+		Segmentation: segmentation,
+		Reduction:    instrument,
 		Protocol: beir.EvaluationProtocol{
 			Name:               beir.ReferenceProtocol,
 			BEIRRevision:       beir.BEIRRevision,
@@ -350,24 +361,27 @@ const journalFormat = 4
 // insufficient: changed query text or judgments with the same name and count
 // must refuse resume.
 type manifestIdentity struct {
-	Dataset          string               `json:"dataset"`
-	Content          beir.ContentIdentity `json:"content"`
-	Corpus           int                  `json:"corpus_documents"`
-	Judged           int                  `json:"judged_queries"`
-	Mode             string               `json:"mode"`
-	Limit            int                  `json:"limit"`
-	Budget           uint64               `json:"budget_bytes"`
-	Policy           string               `json:"expression_policy"`
-	QueryTimeout     time.Duration        `json:"query_timeout"`
-	StorePath        string               `json:"store_path"`
-	RequestNamespace string               `json:"request_namespace"`
-	JournalFormat    int                  `json:"journal_format"`
+	Dataset          string                    `json:"dataset"`
+	Content          beir.ContentIdentity      `json:"content"`
+	Segmentation     beir.SegmentationIdentity `json:"segmentation"`
+	Corpus           int                       `json:"corpus_documents"`
+	Judged           int                       `json:"judged_queries"`
+	Mode             string                    `json:"mode"`
+	Limit            int                       `json:"limit"`
+	Budget           uint64                    `json:"budget_bytes"`
+	Policy           string                    `json:"expression_policy"`
+	QueryTimeout     time.Duration             `json:"query_timeout"`
+	StorePath        string                    `json:"store_path"`
+	RequestNamespace string                    `json:"request_namespace"`
+	JournalFormat    int                       `json:"journal_format"`
 }
 
 func manifestIdentityFor(config beir.RunConfig, storePath string, queryTimeout time.Duration) manifestIdentity {
+	segmentation, _ := beir.SegmentIdentity(config.SegmentPolicy)
 	return manifestIdentity{
 		Dataset: config.Dataset, Content: config.Content, Corpus: config.Corpus, Judged: config.Judged,
-		Mode: string(config.Mode), Limit: config.Limit, Budget: config.Budget,
+		Segmentation: segmentation,
+		Mode:         string(config.Mode), Limit: config.Limit, Budget: config.Budget,
 		Policy:           string(config.Policy),
 		QueryTimeout:     queryTimeout,
 		StorePath:        storePath,
@@ -377,6 +391,9 @@ func manifestIdentityFor(config beir.RunConfig, storePath string, queryTimeout t
 }
 
 func writeManifest(path string, config beir.RunConfig, storePath string, queryTimeout time.Duration) error {
+	if _, err := beir.SegmentIdentity(config.SegmentPolicy); err != nil {
+		return err
+	}
 	identity := manifestIdentityFor(config, storePath, queryTimeout)
 	encoded, err := json.MarshalIndent(identity, "", "  ")
 	if err != nil {
@@ -393,9 +410,15 @@ func checkManifest(path string, config beir.RunConfig, queryTimeout time.Duratio
 	if err != nil {
 		return err
 	}
+	if _, err := beir.ReadSegmentationMetadata(raw, true); err != nil {
+		return fmt.Errorf("manifest %s: %w", path, err)
+	}
 	var stored manifestIdentity
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return fmt.Errorf("manifest %s is unreadable: %w", path, err)
+	}
+	if err := beir.ValidateSegmentationIdentity(stored.Segmentation); err != nil {
+		return fmt.Errorf("manifest %s: %w", path, err)
 	}
 	// The store path is the manifest's own record: the journal next to this
 	// manifest belongs to that store. The query timeout, however, is this
@@ -512,15 +535,16 @@ func coverageReportTo(out string, paths []string) error {
 // and the project-defined binary form, plus the with/without-rule variants of
 // the self-ID treatment, so a protocol deviation is visible instead of silent.
 type rescoreEntry struct {
-	Report           string  `json:"report"`
-	Dataset          string  `json:"dataset"`
-	Queries          int     `json:"queries"`
-	NDCGAt10         float64 `json:"ndcg_at_10"`
-	RecallAt100      float64 `json:"recall_at_100"`
-	MRRAt10          float64 `json:"mrr_at_10"`
-	BinaryNDCGAt10   float64 `json:"binary_ndcg_at_10"`
-	SelfIDRemoved    int     `json:"self_id_removed"`
-	NDCGAt10WithSelf float64 `json:"ndcg_at_10_with_self_id"`
+	Report           string                    `json:"report"`
+	Dataset          string                    `json:"dataset"`
+	Segmentation     beir.SegmentationIdentity `json:"segmentation,omitzero"`
+	Queries          int                       `json:"queries"`
+	NDCGAt10         float64                   `json:"ndcg_at_10"`
+	RecallAt100      float64                   `json:"recall_at_100"`
+	MRRAt10          float64                   `json:"mrr_at_10"`
+	BinaryNDCGAt10   float64                   `json:"binary_ndcg_at_10"`
+	SelfIDRemoved    int                       `json:"self_id_removed"`
+	NDCGAt10WithSelf float64                   `json:"ndcg_at_10_with_self_id"`
 }
 
 type rescoreReport struct {
@@ -563,7 +587,8 @@ func rescoreReportTo(dataDir, out string, paths []string, ignoreIdenticalIDs boo
 		}
 		entries = append(entries, rescoreEntry{
 			Report: path, Dataset: report.Dataset, Queries: len(report.Queries),
-			NDCGAt10: beir.Aggregate(ndcg), RecallAt100: beir.Aggregate(recall),
+			Segmentation: report.Segmentation,
+			NDCGAt10:     beir.Aggregate(ndcg), RecallAt100: beir.Aggregate(recall),
 			MRRAt10: beir.Aggregate(mrr), BinaryNDCGAt10: beir.Aggregate(binary),
 			SelfIDRemoved: removed, NDCGAt10WithSelf: beir.Aggregate(withSelf),
 		})

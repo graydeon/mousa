@@ -90,12 +90,13 @@ loss does not violate a monotonicity contract.
 
 Read-only inspection of the retained first-pass store found 1,495 segments:
 1,352 exceed 1,024 bytes and 996 are exactly 4,096 bytes. Fixed-v1 whole-passage fit
-is therefore a concrete explanation to examine. The next bounded experiment should
-compare existing fixed-v1 and passage-v1 under separately frozen conditions, inspect
-per-question selection, omission and segment sizes, and require fresh held-out
-confirmation before adopting changes. Passage-v1 already emits passages of at most
-1,024 bytes and is exposed through native/MCP sync. These observations justify
-neither a new packer nor a default change.
+is therefore a concrete explanation to examine. The source-built evaluator now
+exposes existing fixed-v1 and passage-v1 with explicit store/run provenance and a
+segmentation comparison axis. A separately frozen experiment must inspect
+per-question selection, omission, segment sizes and ranking changes; require fresh
+held-out confirmation before adopting changes. Passage-v1 emits passages of at most
+1,024 bytes and remains available through native/MCP sync. These observations
+justify neither a new packer nor a default change.
 
 This roadmap item does not authorize or delay a new retrieval campaign. Preserve
 the failed 4 MiB v1 preparation and measured 8 MiB v2 records byte-for-byte.
@@ -1556,8 +1557,42 @@ The coverage command and `-report compare -axis budget` share comparability
 validation: corpus/query/qrel content identities, evaluation protocol, ordered
 nonempty unique query IDs, query slice, candidate limit and dataset must agree.
 Query and coverage counts must match the actual population. Curves also require
-traced mode, the same expression policy and one report per budget.
+traced mode, the same expression and segmentation policies, and one report per budget.
 Legacy reports without this provenance remain readable, but cannot be used to
 certify a comparison. Preserve their original bytes; rerun the original inputs
 when new comparable evidence is needed. Content hashes do not authenticate
 relevance labels or establish that judgments are complete.
+
+### Evaluator segmentation identity
+
+Source builds accept `-segment-policy fixed-v1|passage-v1`, defaulting to
+`fixed-v1`. Both use the core normalizer and segment dispatcher. Reports and
+store/run manifests bind the versioned policy, normalizer ID/version and canonical
+parameter digest alongside input content identities. Changing segmentation changes
+representation and segment identities and can change BM25 document rankings.
+Document coverage is a coarse relevance proxy, not semantic sufficiency.
+
+Use separate store directories for a segmentation comparison:
+
+```sh
+mkdir -p fixed passage
+/tmp/beir -data <dataset> -dataset study -mode traced -budget 1024 -policy original -segment-policy fixed-v1 -out fixed/1024.json
+/tmp/beir -data <dataset> -dataset study -mode traced -budget 1024 -policy original -segment-policy passage-v1 -out passage/1024.json
+/tmp/beir -report compare -axis segmentation -reports fixed/1024.json,passage/1024.json -out segmentation.json
+/tmp/beir -data <dataset> -dataset study -mode traced -budget 4096 -policy original -segment-policy passage-v1 -reuse -out passage/4096.json
+```
+
+Repeat the selected policy on `-reuse` and `-resume`; resume reuses the indexed
+store and retains completed journal rows. Unknown policies fail before persistent
+changes. Wrong-policy, incomplete or altered manifests fail before queries.
+Store reuse verifies canonical representations, segments, exact indexed text and
+the complete indexed population, not just names or document counts.
+
+A store without a segmentation manifest is eligible only for legacy fixed-v1
+reuse after that exact correspondence check. Absence never establishes passage-v1.
+A deleted fixed-v1 manifest is indistinguishable from a legacy fixed store; the same
+content checks still apply. Missing segmentation in a historical report remains
+readable and rescorable without modifying its bytes, but cannot certify a new
+comparison or resume. New resume manifests must carry the complete identity.
+All non-segmentation comparison axes hold segmentation constant; budget curves
+cannot mix it. Segmentation comparisons use document rankings, not equal segment IDs.
