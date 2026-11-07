@@ -27,6 +27,26 @@ type queryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
+// boundedRecordQueryer opts a transaction into admission before canonical blobs
+// are fetched. Nested verified readers retain the same admission boundary.
+type boundedRecordQueryer struct {
+	queryer
+}
+
+func admitCanonicalRecord(ctx context.Context, q queryRower, table string, id []byte) error {
+	if _, bounded := q.(boundedRecordQueryer); !bounded {
+		return nil
+	}
+	var size int64
+	if err := q.QueryRowContext(ctx, `SELECT length(CAST(record_json AS BLOB)) FROM `+table+` WHERE id=?`, id).Scan(&size); err != nil {
+		return readError("admit canonical record", err)
+	}
+	if size > maxRecordBytes {
+		return wrap(CodeResourceLimit, "admit canonical record", fmt.Errorf("stored record size %d exceeds %d", size, maxRecordBytes))
+	}
+	return nil
+}
+
 func (store *Store) PutSource(ctx context.Context, record mousa.Source) error {
 	if err := store.requireWritable("put source"); err != nil {
 		return err
@@ -57,6 +77,9 @@ func (store *Store) GetSource(ctx context.Context, id mousa.SourceID) (mousa.Sou
 }
 
 func getSource(ctx context.Context, q queryRower, id mousa.SourceID) (mousa.Source, error) {
+	if err := admitCanonicalRecord(ctx, q, "sources", id[:]); err != nil {
+		return mousa.Source{}, err
+	}
 	var data []byte
 	if err := q.QueryRowContext(ctx, `SELECT record_json FROM sources WHERE id = ?`, id[:]).Scan(&data); err != nil {
 		return mousa.Source{}, readError("get source", err)
@@ -104,6 +127,9 @@ func (store *Store) GetObservation(ctx context.Context, id mousa.ObservationID) 
 }
 
 func getObservation(ctx context.Context, q queryRower, id mousa.ObservationID) (mousa.Observation, error) {
+	if err := admitCanonicalRecord(ctx, q, "observations", id[:]); err != nil {
+		return mousa.Observation{}, err
+	}
 	var sourceID []byte
 	var data []byte
 	if err := q.QueryRowContext(ctx, `SELECT source_id, record_json FROM observations WHERE id = ?`, id[:]).Scan(&sourceID, &data); err != nil {
@@ -156,6 +182,9 @@ func (store *Store) GetArtifact(ctx context.Context, id mousa.ArtifactID) (mousa
 }
 
 func getArtifact(ctx context.Context, q queryRower, id mousa.ArtifactID) (mousa.Artifact, error) {
+	if err := admitCanonicalRecord(ctx, q, "artifacts", id[:]); err != nil {
+		return mousa.Artifact{}, err
+	}
 	var observationID []byte
 	var data []byte
 	if err := q.QueryRowContext(ctx, `SELECT observation_id, record_json FROM artifacts WHERE id = ?`, id[:]).Scan(&observationID, &data); err != nil {
@@ -240,6 +269,9 @@ func (store *Store) GetRepresentation(ctx context.Context, id mousa.Representati
 }
 
 func getRepresentation(ctx context.Context, q queryer, id mousa.RepresentationID) (mousa.Representation, error) {
+	if err := admitCanonicalRecord(ctx, q, "representations", id[:]); err != nil {
+		return mousa.Representation{}, err
+	}
 	var data []byte
 	if err := q.QueryRowContext(ctx, `SELECT record_json FROM representations WHERE id = ?`, id[:]).Scan(&data); err != nil {
 		return mousa.Representation{}, readError("get representation", err)
@@ -357,6 +389,9 @@ func (store *Store) GetSegment(ctx context.Context, id mousa.SegmentID) (mousa.S
 }
 
 func getSegment(ctx context.Context, q queryRower, id mousa.SegmentID) (mousa.Segment, error) {
+	if err := admitCanonicalRecord(ctx, q, "segments", id[:]); err != nil {
+		return mousa.Segment{}, err
+	}
 	var representationID, start, end, data []byte
 	if err := q.QueryRowContext(ctx, `SELECT representation_id, selector_start, selector_end, record_json FROM segments WHERE id = ?`, id[:]).Scan(&representationID, &start, &end, &data); err != nil {
 		return mousa.Segment{}, readError("get segment", err)

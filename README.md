@@ -125,6 +125,14 @@ Local directory and JSONL ingestion, lexical retrieval, source lifecycle and acc
 checks, byte-budget packing, exact-content deduplication, declared associations and
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
 
+Source builds containing `manifest` can export and check a caller-owned
+fingerprint of current indexed directory or JSONL content. MCP exposes the same
+inspection as `mousa_source_manifest` for configured JSONL aliases. Each inspection
+reauthorizes access; a mismatch or denial must stop caller resumption. This checks
+the indexed snapshot, not unsynced files, completed actions or a later query.
+See the [manifest workflow and example](docs/USAGE.md#current-source-manifests).
+This addition is not a tagged-release or independent capture acceptance claim.
+
 Native `classification put` and `classification get ID` record and retrieve
 immutable attributed labels against existing evidence. The
 [runnable classification example](docs/USAGE.md#native-classification-administration)

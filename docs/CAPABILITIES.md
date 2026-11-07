@@ -23,6 +23,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Raw-content identity and normalized text | Yes | Both input forms | CRLF, BOM, empty text, exact retries | Core evaluation includes normalization; no separate normalization ablation |
 | Versioned passage boundaries | Yes | `sync --segment-policy passage-v1`; source-built BEIR `-segment-policy fixed-v1|passage-v1` | Exact source slices, policy replacement, retries, interrupted activation, historical identities and access exclusion; evaluator identity/reuse/resume and explicit comparison axis | Bounded documentation and synthetic comparison in the research record; no general quality claim |
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
+| Current indexed-source manifests | Source builds containing this addition | Native `manifest DIRECTORY` / `manifest --source SOURCE`; MCP `mousa_source_manifest` | Fresh authorization and complete bounded inspection in one writer snapshot; expected-ID comparison; no persisted manifest | [Runnable example](../examples/source_manifest.py); no performance, semantic-quality or later-operation safety claim |
 | Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
 | Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
@@ -803,6 +804,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_supersession_status` | `source` | None | `decision_id`, `decision_outcome`, `decision_reasons`; allowed calls add `current` with required `state`, nullable `activation` and nullable `declaration` |
 | `mousa_classification_put` | `source`, `classification`: closed `mousa.classification_input.v1` | None | `classification`: verified accepted canonical record |
 | `mousa_classification_get` | `source`, `classification_id` | None | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; `classification` only when allowed and same-source scope is proven |
+| `mousa_source_manifest` | `source` | `expected_manifest_id`: nonzero lowercase 64-hex ID | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; authorized `manifest`; `matches` only for an authorized expected-ID check |
 
 The three supersession administration tools use only configured JSONL aliases. Writes require
 the separate repeatable `--supersession-admin-source` startup allowlist, off by

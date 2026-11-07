@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 )
@@ -124,7 +126,23 @@ func mcpHTTPHandler(server *mcp.Server, config *mcpHTTPConfig, client *http.Clie
 	resource, _ := url.Parse(config.Resource)
 	metadataURL := resource.Scheme + "://" + resource.Host + "/.well-known/oauth-protected-resource/mcp"
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: mcpMaxFrameBytes, DisableLocalhostProtection: true})
-	protected := auth.RequireBearerToken(config.verifier(client), &auth.RequireBearerTokenOptions{ResourceMetadataURL: metadataURL, Scopes: []string{"mousa:read"}})(transport)
+	bounded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, mcpMaxFrameBytes))
+			if err != nil {
+				http.Error(w, "request exceeds transport limit", http.StatusRequestEntityTooLarge)
+				return
+			}
+			message, err := jsonrpc.DecodeMessage(body)
+			if err == nil && !mcpManifestRequestIDAllowed(message) {
+				http.Error(w, "manifest request ID exceeds transport limit", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		transport.ServeHTTP(w, r)
+	})
+	protected := auth.RequireBearerToken(config.verifier(client), &auth.RequireBearerTokenOptions{ResourceMetadataURL: metadataURL, Scopes: []string{"mousa:read"}})(bounded)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", protected)
 	metadataPath := "/.well-known/oauth-protected-resource/mcp"
