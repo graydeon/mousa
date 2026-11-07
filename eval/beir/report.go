@@ -80,25 +80,26 @@ type EvaluationProtocol struct {
 // corpus, with which protocol, and what it measured. The EvaluationProtocol
 // records the metric semantics and the pinned reference revisions.
 type RunReport struct {
-	Dataset          string             `json:"dataset"`
-	Mode             string             `json:"mode"`
-	ExpressionPolicy string             `json:"expression_policy"`
-	RequestNamespace string             `json:"request_namespace"`
-	Budget           uint64             `json:"budget_bytes"`
-	Content          ContentIdentity    `json:"content"`
-	Limit            int                `json:"limit"`
-	CorpusDocuments  int                `json:"corpus_documents"`
-	QueryLimit       int                `json:"query_limit"`
-	JudgedQueries    int                `json:"judged_queries"`
-	IndexBytes       int64              `json:"index_bytes"`
-	IndexingSeconds  float64            `json:"indexing_seconds"`
-	PeakRSSKB        int64              `json:"peak_rss_kib"`
-	StartedAt        time.Time          `json:"started_at"`
-	FinishedAt       time.Time          `json:"finished_at"`
-	Reduction        *ReductionReport   `json:"reduction,omitempty"`
-	Protocol         EvaluationProtocol `json:"evaluation_protocol"`
-	Aggregate        AggregateMetrics   `json:"aggregate"`
-	Queries          []QueryReport      `json:"queries"`
+	Dataset          string               `json:"dataset"`
+	Mode             string               `json:"mode"`
+	ExpressionPolicy string               `json:"expression_policy"`
+	RequestNamespace string               `json:"request_namespace"`
+	Budget           uint64               `json:"budget_bytes"`
+	Content          ContentIdentity      `json:"content"`
+	Segmentation     SegmentationIdentity `json:"segmentation,omitzero"`
+	Limit            int                  `json:"limit"`
+	CorpusDocuments  int                  `json:"corpus_documents"`
+	QueryLimit       int                  `json:"query_limit"`
+	JudgedQueries    int                  `json:"judged_queries"`
+	IndexBytes       int64                `json:"index_bytes"`
+	IndexingSeconds  float64              `json:"indexing_seconds"`
+	PeakRSSKB        int64                `json:"peak_rss_kib"`
+	StartedAt        time.Time            `json:"started_at"`
+	FinishedAt       time.Time            `json:"finished_at"`
+	Reduction        *ReductionReport     `json:"reduction,omitempty"`
+	Protocol         EvaluationProtocol   `json:"evaluation_protocol"`
+	Aggregate        AggregateMetrics     `json:"aggregate"`
+	Queries          []QueryReport        `json:"queries"`
 }
 
 // LoadRunReport reads one harness report.
@@ -111,6 +112,11 @@ func LoadRunReport(path string) (RunReport, error) {
 	if err := json.Unmarshal(raw, &report); err != nil {
 		return RunReport{}, fmt.Errorf("report %s is unreadable: %w", path, err)
 	}
+	identity, err := ReadSegmentationMetadata(raw, false)
+	if err != nil {
+		return RunReport{}, fmt.Errorf("report %s: %w", path, err)
+	}
+	report.Segmentation = identity
 	normalizeReport(&report)
 	return report, nil
 }

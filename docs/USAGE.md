@@ -43,6 +43,14 @@ replaces current evidence even when source bytes are unchanged. Smaller passages
 can fit smaller evidence budgets but change lexical ranking and increase segment
 count. See [policy identity, boundaries and limitations](CAPABILITIES.md#ingestion-segment-policies).
 
+The source-built BEIR evaluator exposes the same choice with
+`-segment-policy fixed-v1|passage-v1`; its default remains `fixed-v1`.
+Use separate output directories for the policies because each dataset has one
+indexed store per directory. Repeat the flag on reuse and resume.
+See [evaluator provenance and commands](RESEARCH.md#reproduction) for store
+compatibility and explicit segmentation comparisons. This option does not
+change the runtime ranking or packing defaults.
+
 For an explicit item stream:
 
 ```sh

@@ -43,6 +43,9 @@ func ValidateComparable(report *RunReport) error {
 	if report.Content.CorpusSHA256 == "" || report.Content.QueriesSHA256 == "" || report.Content.QrelsSHA256 == "" {
 		return fmt.Errorf("report carries incomplete content identity (legacy report); provenance-incomplete evidence cannot be compared")
 	}
+	if err := ValidateSegmentationIdentity(report.Segmentation); err != nil {
+		return fmt.Errorf("report carries invalid segmentation provenance: %w", err)
+	}
 	if coverage := report.Aggregate.PackCoverage; coverage != nil {
 		if coverage.Queries != len(report.Queries) {
 			return fmt.Errorf("coverage claims %d queries but the report carries %d", coverage.Queries, len(report.Queries))
@@ -60,11 +63,20 @@ func ValidateComparable(report *RunReport) error {
 // Only the named dimension may differ between the two reports.
 func RequireMatchingFields(baseline, candidate RunReport, axis string) error {
 	switch axis {
-	case "policy", "mode", "budget":
+	case "policy", "mode", "budget", "segmentation":
 	case "":
-		return fmt.Errorf("compare requires an explicitly declared axis (-axis policy|mode|budget); the axis is the one dimension the two arms intentionally differ on")
+		return fmt.Errorf("compare requires an explicitly declared axis (-axis policy|mode|budget|segmentation); the axis is the one dimension the two arms intentionally differ on")
 	default:
-		return fmt.Errorf("unknown comparison axis %q (supported: policy, mode, budget)", axis)
+		return fmt.Errorf("unknown comparison axis %q (supported: policy, mode, budget, segmentation)", axis)
+	}
+	if err := ValidateSegmentationIdentity(baseline.Segmentation); err != nil {
+		return fmt.Errorf("invalid baseline segmentation: %w", err)
+	}
+	if err := ValidateSegmentationIdentity(candidate.Segmentation); err != nil {
+		return fmt.Errorf("invalid candidate segmentation: %w", err)
+	}
+	if axis != "segmentation" && baseline.Segmentation != candidate.Segmentation {
+		return fmt.Errorf("arms differ beyond the declared axis: segmentation identities differ")
 	}
 	if !reflect.DeepEqual(baseline.Protocol, candidate.Protocol) {
 		return fmt.Errorf("reports are not comparable: evaluation protocols differ (baseline %+v / candidate %+v)", baseline.Protocol, candidate.Protocol)
@@ -81,6 +93,13 @@ func RequireMatchingFields(baseline, candidate RunReport, axis string) error {
 		}
 	}
 	switch axis {
+	case "segmentation":
+		if baseline.Segmentation.Policy == candidate.Segmentation.Policy {
+			return fmt.Errorf("comparison axis is segmentation but both arms ran %q", baseline.Segmentation.Policy)
+		}
+		if baseline.Mode != candidate.Mode || baseline.Budget != candidate.Budget || baseline.ExpressionPolicy != candidate.ExpressionPolicy {
+			return fmt.Errorf("arms differ beyond the declared segmentation axis: mode, budget, or expression policy differs")
+		}
 	case "policy":
 		if baseline.ExpressionPolicy == candidate.ExpressionPolicy {
 			return fmt.Errorf("comparison axis is policy but both arms ran %q", baseline.ExpressionPolicy)

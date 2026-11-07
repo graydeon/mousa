@@ -1,12 +1,14 @@
 package beir
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +28,7 @@ type IngestedCorpus struct {
 	DocRepresentations map[mousa.RepresentationID]string
 	IndexBytes         int64
 	IndexingSeconds    float64
+	Segmentation       SegmentationIdentity
 }
 
 type document struct {
@@ -48,12 +51,25 @@ type ProgressFunc func(done, total int, elapsedSeconds float64)
 var IngestProgress ProgressFunc
 
 func IngestCorpus(ctx context.Context, dataset *Dataset, storePath string) (*IngestedCorpus, error) {
+	return IngestCorpusWithPolicy(ctx, dataset, storePath, SegmentFixedV1)
+}
+
+// IngestCorpusWithPolicy validates the policy before replacing any persistent state.
+func IngestCorpusWithPolicy(ctx context.Context, dataset *Dataset, storePath string, policy SegmentPolicy) (*IngestedCorpus, error) {
+	identity, err := SegmentIdentity(policy)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(storePath), 0o755); err != nil {
 		return nil, err
 	}
-	_ = os.Remove(storePath)
-	for _, suffix := range []string{"-wal", "-shm"} {
-		_ = os.Remove(storePath + suffix)
+	if err := writeStoreManifest(storePath, corpusManifest(dataset, identity, false)); err != nil {
+		return nil, err
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Remove(storePath + suffix); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
 	}
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
@@ -64,6 +80,7 @@ func IngestCorpus(ctx context.Context, dataset *Dataset, storePath string) (*Ing
 		Path:               storePath,
 		SegmentToDoc:       map[mousa.SegmentID]string{},
 		DocRepresentations: map[mousa.RepresentationID]string{},
+		Segmentation:       identity,
 	}
 	sourceID, err := mousa.NewSourceID("beir-eval", dataset.Name)
 	if err != nil {
@@ -100,6 +117,10 @@ func IngestCorpus(ctx context.Context, dataset *Dataset, storePath string) (*Ing
 	if err == nil {
 		ingested.IndexBytes = info.Size()
 	}
+	if err := writeStoreManifest(storePath, corpusManifest(dataset, identity, true)); err != nil {
+		store.Close()
+		return nil, err
+	}
 	return ingested, nil
 }
 
@@ -128,7 +149,7 @@ func (ingested *IngestedCorpus) ingestDocument(ctx context.Context, corpusID, te
 	if err := ingested.Store.ApplyIngest(ctx, batch); err != nil {
 		return err
 	}
-	representation, normalized, err := mousa.NormalizeUTF8Text(artifact, content)
+	representation, normalized, err := mousa.NormalizeUTF8TextWithPolicy(artifact, content, string(ingested.Segmentation.Policy))
 	if err != nil {
 		return err
 	}
@@ -214,14 +235,15 @@ const (
 // deterministically from the configuration, so re-running the same experiment
 // reuses the same namespace.
 type RunConfig struct {
-	Mode       SearchMode
-	Limit      int
-	Budget     uint64           // traced-mode pack budget in bytes; ignored by other modes
-	Policy     ExpressionPolicy // term folding policy; PolicyOriginal by default
-	Dataset    string
-	Corpus     int
-	Judged     int
-	QueryLimit int // first N judged queries in file order; 0 = all
+	Mode          SearchMode
+	Limit         int
+	Budget        uint64           // traced-mode pack budget in bytes; ignored by other modes
+	Policy        ExpressionPolicy // term folding policy; PolicyOriginal by default
+	SegmentPolicy SegmentPolicy
+	Dataset       string
+	Corpus        int
+	Judged        int
+	QueryLimit    int // first N judged queries in file order; 0 = all
 	// Content binds the experiment to the bytes it measured. Names and counts
 	// are not identities: two corpora with the same name and document count can
 	// differ in every document. CorpusSHA256, QueriesSHA256, and QrelsSHA256
@@ -247,7 +269,11 @@ func (identity ContentIdentity) empty() bool {
 // The content digests are part of the identity: a namespace names what was
 // measured, and equal names with different bytes must never share one.
 func (config RunConfig) Namespace() string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s",
+	identity, err := SegmentIdentity(config.SegmentPolicy)
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%v\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s", identity,
 		config.Dataset, string(config.Mode), config.Limit, config.Budget, string(config.Policy),
 		config.Corpus, config.Judged, config.QueryLimit,
 		config.Content.CorpusSHA256, config.Content.QueriesSHA256, config.Content.QrelsSHA256)))
@@ -297,6 +323,13 @@ var QueryTimeout time.Duration
 var SearchInstrumentation func(report ReductionReport)
 
 func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, config RunConfig, skip map[string]SearchResult, journal func(SearchResult)) ([]SearchResult, error) {
+	identity, err := SegmentIdentity(config.SegmentPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if ingested == nil || identity != ingested.Segmentation {
+		return nil, fmt.Errorf("run segmentation does not match the indexed corpus")
+	}
 	if config.Limit < 1 || config.Limit > 100 {
 		return nil, fmt.Errorf("run limit %d is out of bounds", config.Limit)
 	}
@@ -522,7 +555,9 @@ func newEvaluationRequest(sourceID mousa.SourceID, externalRequestID string) (mo
 		PurposeNamespace:  "beir-eval.purpose",
 		ExternalPurposeID: "ranking",
 		SourceID:          sourceID,
-		RequestedAtUsec:   time.Now().UnixMicro(),
+		// Harness requests are synthetic and repeatable, including their time.
+		// Wall time would conflict with the same external identity on resume.
+		RequestedAtUsec: 1,
 	}
 	id, err := mousa.NewPolicyEvaluationRequestID(request)
 	if err != nil {
@@ -651,6 +686,21 @@ func deployHarnessPolicy(ctx context.Context, store *sqlite.Store) error {
 // mapping being nonempty and the Source record existing are necessary checks,
 // not proof of correspondence; this validation is.
 func OpenExisting(ctx context.Context, dataset *Dataset, storePath string) (*IngestedCorpus, error) {
+	return OpenExistingWithPolicy(ctx, dataset, storePath, SegmentFixedV1)
+}
+
+// OpenExistingWithPolicy proves the requested policy and exact indexed mapping.
+func OpenExistingWithPolicy(ctx context.Context, dataset *Dataset, storePath string, policy SegmentPolicy) (*IngestedCorpus, error) {
+	identity, err := SegmentIdentity(policy)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStoreManifest(storePath, dataset, identity); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(storePath); err != nil {
+		return nil, err
+	}
 	// Opened writable: enforced and traced modes must evaluate one policy request
 	// per query, which writes decision records. Verified mode performs no writes.
 	store, err := sqlite.Open(ctx, storePath)
@@ -662,6 +712,7 @@ func OpenExisting(ctx context.Context, dataset *Dataset, storePath string) (*Ing
 		Path:               storePath,
 		SegmentToDoc:       map[mousa.SegmentID]string{},
 		DocRepresentations: map[mousa.RepresentationID]string{},
+		Segmentation:       identity,
 	}
 	// The store's Source identity was fixed at ingest time from the original
 	// dataset name. Reuse therefore requires this run's dataset name to match
@@ -692,18 +743,17 @@ func OpenExisting(ctx context.Context, dataset *Dataset, storePath string) (*Ing
 		store.Close()
 		return nil, fmt.Errorf("reuse validation failed: store %s was not indexed as dataset %q: %w", storePath, dataset.Name, err)
 	}
-	if err := verifyIndexedCorrespondence(ctx, ingested, corpusIDs, dataset); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("reuse validation failed: store %s does not match dataset %q content: %w", storePath, dataset.Name, err)
-	}
 	return ingested, nil
 }
 
-// verifyIndexedCorrespondence checks, for every corpus document, that the store
-// holds the representation the dataset text derives to, with the same content
-// digest and byte length. This is what "reusing an indexed store" means: the
-// indexed content corresponds to the measured inputs, document by document.
-func verifyIndexedCorrespondence(ctx context.Context, ingested *IngestedCorpus, corpusIDs []string, dataset *Dataset) error {
+// rebuildSegmentMapping verifies canonical records and the complete lexical row
+// population before publishing a reconstructed segment-to-document mapping.
+func (ingested *IngestedCorpus) rebuildSegmentMapping(ctx context.Context, corpusIDs []string, dataset *Dataset) error {
+	probe, err := OpenIndexProbe(ctx, ingested.Path)
+	if err != nil {
+		return err
+	}
+	defer probe.Close()
 	for index, corpusID := range corpusIDs {
 		content := []byte(dataset.Corpus[corpusID])
 		externalObservationID := fmt.Sprintf("doc-%d", index)
@@ -719,53 +769,50 @@ func verifyIndexedCorrespondence(ctx context.Context, ingested *IngestedCorpus, 
 			Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: "body",
 			MediaType: mousa.UTF8TextMediaType, ContentSHA256: mousa.SHA256(sha256.Sum256(content)), ByteLength: uint64(len(content)),
 		}
-		representation, _, err := mousa.NormalizeUTF8Text(artifact, content)
+		representation, normalized, err := mousa.NormalizeUTF8TextWithPolicy(artifact, content, string(ingested.Segmentation.Policy))
 		if err != nil {
 			return err
 		}
 		stored, err := ingested.Store.GetRepresentation(ctx, representation.ID)
 		if err != nil {
-			return fmt.Errorf("document %d (%s): %w", index, corpusID, err)
+			return fmt.Errorf("document %s representation: %w", corpusID, err)
 		}
-		if stored.ContentSHA256 != representation.ContentSHA256 || stored.ByteLength != representation.ByteLength {
-			return fmt.Errorf("document %d (%s): stored content digest does not match the dataset text", index, corpusID)
-		}
-	}
-	return nil
-}
-
-// rebuildSegmentMapping reconstructs the segment→document mapping for an
-// existing store by recomputing the deterministic identities from the corpus
-// text with the same pure functions IngestCorpus used. It touches no product
-// API beyond those pure functions and no SQL.
-func (ingested *IngestedCorpus) rebuildSegmentMapping(ctx context.Context, corpusIDs []string, dataset *Dataset) error {
-	for index, corpusID := range corpusIDs {
-		content := []byte(dataset.Corpus[corpusID])
-		externalObservationID := fmt.Sprintf("doc-%d", index)
-		observationID, err := mousa.NewObservationID(ingested.Source.ID, externalObservationID)
-		if err != nil {
-			return err
-		}
-		artifactID, err := mousa.NewArtifactID(observationID, "body")
-		if err != nil {
-			return err
-		}
-		artifact := mousa.Artifact{
-			Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: "body",
-			MediaType: mousa.UTF8TextMediaType, ContentSHA256: mousa.SHA256(sha256.Sum256(content)), ByteLength: uint64(len(content)),
-		}
-		representation, normalized, err := mousa.NormalizeUTF8Text(artifact, content)
-		if err != nil {
-			return err
+		if !reflect.DeepEqual(stored, representation) {
+			return fmt.Errorf("document %s canonical representation mismatch", corpusID)
 		}
 		segments, err := mousa.SegmentUTF8Text(representation, normalized)
 		if err != nil {
 			return err
 		}
 		for _, segment := range segments {
+			stored, err := ingested.Store.GetSegment(ctx, segment.ID)
+			if err != nil {
+				return fmt.Errorf("document %s segment: %w", corpusID, err)
+			}
+			if !reflect.DeepEqual(stored, segment) {
+				return fmt.Errorf("document %s canonical segment mismatch", corpusID)
+			}
+			var indexedText string
+			var indexedDigest []byte
+			if err := probe.db.QueryRowContext(ctx, `SELECT f.text, f.content_sha256
+				FROM segment_lexical_rows r JOIN segment_lexical_fts f ON f.rowid = r.rowid
+				WHERE r.segment_id = ?`, segment.ID[:]).Scan(&indexedText, &indexedDigest); err != nil {
+				return fmt.Errorf("document %s indexed segment: %w", corpusID, err)
+			}
+			span, _ := segment.Selector.TextByteRange()
+			if indexedText != string(normalized[span.Start:span.End]) || !bytes.Equal(indexedDigest, segment.ContentSHA256[:]) {
+				return fmt.Errorf("document %s indexed segment content mismatch", corpusID)
+			}
 			ingested.SegmentToDoc[segment.ID] = corpusID
 		}
 		ingested.DocRepresentations[representation.ID] = corpusID
+	}
+	var mappingRows int
+	if err := probe.db.QueryRowContext(ctx, "SELECT count(*) FROM segment_lexical_rows").Scan(&mappingRows); err != nil {
+		return err
+	}
+	if probe.Rows() != len(ingested.SegmentToDoc) || mappingRows != len(ingested.SegmentToDoc) {
+		return fmt.Errorf("indexed segment population does not match corpus mapping")
 	}
 	return nil
 }

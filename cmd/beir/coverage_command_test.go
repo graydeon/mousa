@@ -66,6 +66,47 @@ func TestCoverageProducerConsumer(t *testing.T) {
 	highPath, high := produce("traced", 4096)
 	_, zero := produce("traced", 1)
 	_, plain := produce("verified", 1024)
+	fixedIdentity, err := beir.SegmentIdentity(beir.SegmentFixedV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if low.Segmentation != fixedIdentity {
+		t.Fatal("default CLI policy is not fixed-v1")
+	}
+	invalidDir := filepath.Join(dir, "invalid-policy")
+	command(t, 1, "-data", data, "-dataset", "toy", "-out", filepath.Join(invalidDir, "out.json"), "-segment-policy", "unknown")
+	if _, err := os.Stat(invalidDir); !os.IsNotExist(err) {
+		t.Fatal("invalid policy created persistent output")
+	}
+	passageDir := filepath.Join(dir, "passage")
+	if err := os.Mkdir(passageDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	passagePath := filepath.Join(passageDir, "out.json")
+	passageArgs := []string{"-data", data, "-dataset", "toy", "-out", passagePath, "-mode", "traced", "-budget", "1024", "-limit", "100", "-query-timeout", "30s", "-segment-policy", "passage-v1"}
+	command(t, 0, passageArgs...)
+	passage, err := beir.LoadRunReport(passagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passage.Segmentation.Policy != beir.SegmentPassageV1 || len(passage.Queries) != 2 {
+		t.Fatal("CLI passage identity or population missing")
+	}
+	command(t, 0, append(passageArgs, "-reuse")...)
+	command(t, 0, append(passageArgs, "-reuse", "-resume")...)
+	preserved, err := os.ReadFile(passagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"-reuse", "-resume"} {
+		command(t, 1, append(passageArgs, "-segment-policy", "fixed-v1", flag)...)
+		after, err := os.ReadFile(passagePath)
+		if err != nil || string(after) != string(preserved) {
+			t.Fatal("wrong-policy invocation changed report")
+		}
+	}
+	command(t, 0, "-report", "compare", "-reports", lowPath+","+passagePath, "-axis", "segmentation", "-out", filepath.Join(dir, "segmentation-comparison.json"))
+	command(t, 1, "-report", "coverage", "-reports", highPath+","+passagePath, "-out", filepath.Join(dir, "mixed-segmentation-curve.json"))
 	for _, report := range []beir.RunReport{low, high, zero} {
 		coverage := report.Aggregate.PackCoverage
 		if coverage == nil {
@@ -115,18 +156,22 @@ func TestCoverageProducerConsumer(t *testing.T) {
 		t.Fatalf("wrong native curve: %+v", curve)
 	}
 	for name, mutate := range map[string]func(*beir.RunReport){
-		"corpus":             func(r *beir.RunReport) { r.Content.CorpusSHA256 = "different" },
-		"queries-content":    func(r *beir.RunReport) { r.Content.QueriesSHA256 = "different" },
-		"qrels":              func(r *beir.RunReport) { r.Content.QrelsSHA256 = "different" },
-		"protocol":           func(r *beir.RunReport) { r.Protocol.Name = "different" },
-		"wrong-id":           func(r *beir.RunReport) { r.Queries[0].QueryID = "wrong" },
-		"duplicate":          func(r *beir.RunReport) { r.Queries[1].QueryID = r.Queries[0].QueryID },
-		"empty-id":           func(r *beir.RunReport) { r.Queries[0].QueryID = "" },
-		"missing-population": func(r *beir.RunReport) { r.Queries = nil },
-		"coverage-count":     func(r *beir.RunReport) { r.Aggregate.PackCoverage.Queries++ },
-		"aggregate-count":    func(r *beir.RunReport) { r.Aggregate.Queries++ },
-		"slice":              func(r *beir.RunReport) { r.QueryLimit = 1 },
-		"legacy":             func(r *beir.RunReport) { r.Content = beir.ContentIdentity{} },
+		"corpus":                func(r *beir.RunReport) { r.Content.CorpusSHA256 = "different" },
+		"queries-content":       func(r *beir.RunReport) { r.Content.QueriesSHA256 = "different" },
+		"qrels":                 func(r *beir.RunReport) { r.Content.QrelsSHA256 = "different" },
+		"protocol":              func(r *beir.RunReport) { r.Protocol.Name = "different" },
+		"wrong-id":              func(r *beir.RunReport) { r.Queries[0].QueryID = "wrong" },
+		"duplicate":             func(r *beir.RunReport) { r.Queries[1].QueryID = r.Queries[0].QueryID },
+		"empty-id":              func(r *beir.RunReport) { r.Queries[0].QueryID = "" },
+		"missing-population":    func(r *beir.RunReport) { r.Queries = nil },
+		"coverage-count":        func(r *beir.RunReport) { r.Aggregate.PackCoverage.Queries++ },
+		"aggregate-count":       func(r *beir.RunReport) { r.Aggregate.Queries++ },
+		"slice":                 func(r *beir.RunReport) { r.QueryLimit = 1 },
+		"legacy":                func(r *beir.RunReport) { r.Content = beir.ContentIdentity{} },
+		"segmentation":          func(r *beir.RunReport) { r.Segmentation, _ = beir.SegmentIdentity(beir.SegmentPassageV1) },
+		"missing-segmentation":  func(r *beir.RunReport) { r.Segmentation = beir.SegmentationIdentity{} },
+		"unknown-segmentation":  func(r *beir.RunReport) { r.Segmentation.Policy = "unknown" },
+		"tampered-segmentation": func(r *beir.RunReport) { r.Segmentation.ParametersSHA256 = "tampered" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			changed, err := beir.LoadRunReport(highPath)

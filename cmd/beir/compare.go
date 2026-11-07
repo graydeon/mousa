@@ -13,21 +13,24 @@ import (
 // their metrics and latency distributions differ. It is how a
 // ranking-identity claim is checked rather than eyeballed.
 type compareReport struct {
-	Dataset    string               `json:"dataset"`
-	Mode       string               `json:"mode"`
-	Limit      int                  `json:"limit"`
-	QueryLimit int                  `json:"query_limit"`
-	Judged     int                  `json:"judged_queries"`
-	Baseline   string               `json:"baseline_report"`
-	Candidate  string               `json:"candidate_report"`
-	Identical  bool                 `json:"rankings_identical"`
-	Differing  []string             `json:"differing_queries,omitempty"`
-	FirstDiff  string               `json:"first_differing_query,omitempty"`
-	Content    beir.ContentIdentity `json:"content"`
-	Comparison metricCompare        `json:"metrics"`
-	Latency    latencyCompare       `json:"latency"`
-	PerQuery   []queryCompare       `json:"per_query,omitempty"`
-	Criteria   criterionOutcomes    `json:"criteria"`
+	Axis                  string                    `json:"axis"`
+	BaselineSegmentation  beir.SegmentationIdentity `json:"baseline_segmentation"`
+	CandidateSegmentation beir.SegmentationIdentity `json:"candidate_segmentation"`
+	Dataset               string                    `json:"dataset"`
+	Mode                  string                    `json:"mode"`
+	Limit                 int                       `json:"limit"`
+	QueryLimit            int                       `json:"query_limit"`
+	Judged                int                       `json:"judged_queries"`
+	Baseline              string                    `json:"baseline_report"`
+	Candidate             string                    `json:"candidate_report"`
+	Identical             bool                      `json:"rankings_identical"`
+	Differing             []string                  `json:"differing_queries,omitempty"`
+	FirstDiff             string                    `json:"first_differing_query,omitempty"`
+	Content               beir.ContentIdentity      `json:"content"`
+	Comparison            metricCompare             `json:"metrics"`
+	Latency               latencyCompare            `json:"latency"`
+	PerQuery              []queryCompare            `json:"per_query,omitempty"`
+	Criteria              criterionOutcomes         `json:"criteria"`
 }
 
 // metricCompare carries both arms' aggregate metrics and their deltas
@@ -110,6 +113,7 @@ func compareReportTo(out string, paths []string, axis string) error {
 	}
 
 	compare := compareReport{
+		Axis: axis, BaselineSegmentation: baseline.Segmentation, CandidateSegmentation: candidate.Segmentation,
 		Dataset: baseline.Dataset, Mode: baseline.Mode, Limit: baseline.Limit,
 		QueryLimit: baseline.QueryLimit, Judged: len(baseline.Queries),
 		Baseline: paths[0], Candidate: paths[1],
