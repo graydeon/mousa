@@ -2,6 +2,8 @@
 
 Mousa is pre-alpha. Before proposing a change, check the supported behavior in [the capability matrix](docs/CAPABILITIES.md) and search existing issues and pull requests. Keep one bounded change or a coherent set of related fixes per pull request. Use a Conventional Commit-style PR title such as `fix(docs): correct source attribution`.
 
+The maintainer commits directly to `main` without issues or pull requests. The sections below apply to outside contributions.
+
 ## Pull requests
 
 Use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) for web-created and API-created PRs. Describe what changed, why, and actual proof that the changed behavior works. Record exact checks and results, including failures or checks not run. Select only testing boxes that apply; they are not an ordered or all-required list. Before requesting review, the author must check all four author-review attestations after reviewing the final diff, behavior, rationale, and evidence. Checking a box is not a substitute for the described evidence or an independent review. No automated rejection or approval is installed by this template.
