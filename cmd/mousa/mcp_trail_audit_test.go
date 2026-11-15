@@ -89,7 +89,10 @@ func requireInspectionAudit(t *testing.T, run testRun, before map[string][]strin
 	if err := db.QueryRow(`SELECT source_id, outcome, record_json FROM policy_decisions WHERE id = ?`, id).Scan(&sourceID, &storedOutcome, &record); err != nil {
 		t.Fatal(err)
 	}
-	source := declarationSource(t, sourceLabel)
+	source, err := streamSource(sourceLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
 	decision, err := mousa.DecodePolicyDecision(record)
 	if err != nil || decision.ID.String() != result["authorization_decision_id"] || decision.Request.SourceID != source.ID ||
 		hex.EncodeToString(sourceID) != source.ID.String() || storedOutcome != outcome || string(decision.Outcome) != outcome || result["authorization_outcome"] != outcome {
@@ -119,34 +122,29 @@ func requireInspectionAudit(t *testing.T, run testRun, before map[string][]strin
 	logMCPReceipt(t, map[string]any{"audit_decision": decision, "input_rows": count, "other_rows_unchanged": true})
 }
 
-func TestMCPSupersessionTrailDeniedAudit(t *testing.T) {
+func TestMCPTrailDeniedAudit(t *testing.T) {
 	run, _ := setup(t)
 	jsonlSync(t, run, "alpha", record("doc", "harbor audit evidence"))
 	client := startMCPClient(t, run, "cli", false)
-	query := client.call("mousa_query", mcpOptInQuery("alpha", "harbor", 8192, mousa.PackingOriginal), "")
+	query := client.call("mousa_query", mcpQueryPacking("alpha", "harbor", 8192, mousa.PackingOriginal), "")
 	// The access change is preparation, not part of any inspection bracket.
 	run.run(false, "access", "--source", "alpha", "deny")
-	for _, mode := range []any{nil, false, true} {
-		args := map[string]any{"source": "alpha", "trail_id": query["trail_id"]}
-		if mode != nil {
-			args["supersession"] = mode
-		}
-		before := inspectionRows(t, run.store, nil)
-		denied := client.call("mousa_trail", args, "")
-		if _, present := denied["historical"]; present {
-			t.Fatalf("denial released historical payload: %v", denied)
-		}
-		requireInspectionAudit(t, run, before, denied, "alpha", "deny")
-		encoded, err := json.Marshal(denied)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("successful denied inspection commits its response-bound authorization: %s", encoded)
+	args := map[string]any{"source": "alpha", "trail_id": query["trail_id"]}
+	before := inspectionRows(t, run.store, nil)
+	denied := client.call("mousa_trail", args, "")
+	if _, present := denied["historical"]; present {
+		t.Fatalf("denial released historical payload: %v", denied)
 	}
+	requireInspectionAudit(t, run, before, denied, "alpha", "deny")
+	encoded, err := json.Marshal(denied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("successful denied inspection commits its response-bound authorization: %s", encoded)
 	client.close()
 }
 
-func TestMCPSupersessionTrailOrphanSourceMasking(t *testing.T) {
+func TestMCPTrailOrphanSourceMasking(t *testing.T) {
 	for _, deny := range []bool{false, true} {
 		name := "allow"
 		if deny {
@@ -160,7 +158,7 @@ func TestMCPSupersessionTrailOrphanSourceMasking(t *testing.T) {
 			client := startMCPClient(t, run, "cli", false)
 			var ids []string
 			for _, source := range []string{"alpha", "beta"} {
-				query := client.call("mousa_query", mcpOptInQuery(source, "harbor", 8192, mousa.PackingOriginal), "")
+				query := client.call("mousa_query", mcpQueryPacking(source, "harbor", 8192, mousa.PackingOriginal), "")
 				ids = append(ids, query["trail_id"].(string))
 			}
 			if deny {
@@ -177,28 +175,23 @@ func TestMCPSupersessionTrailOrphanSourceMasking(t *testing.T) {
 			ids = append(ids, strings.Repeat("a", 64))
 			var refusal map[string]any
 			for _, id := range ids {
-				for _, mode := range []any{nil, false, true} {
-					args := map[string]any{"source": "alpha", "trail_id": id}
-					if mode != nil {
-						args["supersession"] = mode
+				args := map[string]any{"source": "alpha", "trail_id": id}
+				before := inspectionRows(t, run.store, nil)
+				if deny {
+					result := client.call("mousa_trail", args, "")
+					if _, present := result["historical"]; present {
+						t.Fatalf("denial disclosed damaged history: %v", result)
 					}
-					before := inspectionRows(t, run.store, nil)
-					if deny {
-						result := client.call("mousa_trail", args, "")
-						if _, present := result["historical"]; present {
-							t.Fatalf("denial disclosed damaged history: %v", result)
-						}
-						requireInspectionAudit(t, run, before, result, "alpha", "deny")
-					} else {
-						result := client.call("mousa_trail", args, "not_found")
-						if refusal == nil {
-							refusal = result
-						} else if !reflect.DeepEqual(refusal, result) {
-							t.Fatalf("own/foreign/unknown refusal differs: %v versus %v", refusal, result)
-						}
-						if after := inspectionRows(t, run.store, nil); !reflect.DeepEqual(before, after) {
-							t.Fatal("scoped refusal committed its in-flight authorization or repaired damage")
-						}
+					requireInspectionAudit(t, run, before, result, "alpha", "deny")
+				} else {
+					result := client.call("mousa_trail", args, "not_found")
+					if refusal == nil {
+						refusal = result
+					} else if !reflect.DeepEqual(refusal, result) {
+						t.Fatalf("own/foreign/unknown refusal differs: %v versus %v", refusal, result)
+					}
+					if after := inspectionRows(t, run.store, nil); !reflect.DeepEqual(before, after) {
+						t.Fatal("scoped refusal committed its in-flight authorization or repaired damage")
 					}
 				}
 			}
@@ -222,4 +215,31 @@ func TestMCPSupersessionTrailOrphanSourceMasking(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mcpQueryPacking is mcpQuery with an explicit packing policy; the empty policy keeps the default.
+func mcpQueryPacking(source, text string, budget int, packing string) map[string]any {
+	args := mcpQuery(source, text, budget)
+	if packing != "" {
+		args["packing_policy"] = packing
+	}
+	return args
+}
+
+func requireTrailID(t *testing.T, value string) mousa.SourceTrailID {
+	t.Helper()
+	id, err := mousa.ParseSourceTrailID(value)
+	if err != nil || id == (mousa.SourceTrailID{}) {
+		t.Fatalf("inspection returned an invalid trail id %q", value)
+	}
+	return id
+}
+
+func mcpCanonicalJSON(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
 }

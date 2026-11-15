@@ -15,7 +15,6 @@ const (
 	ContextPacketSchemaV2 = "mousa.context_packet.v2"
 	SourceTrailSchema     = "mousa.source_trail.v1"
 	SourceTrailSchemaV2   = "mousa.source_trail.v2"
-	SourceTrailSchemaV4   = "mousa.source_trail.v4"
 	PackingOriginal       = "original"
 	PackingExactV1        = "exact-v1"
 )
@@ -23,7 +22,7 @@ const (
 // isSourceTrailSchema reports whether one schema literal is a supported Source Trail version.
 func isSourceTrailSchema(schema string) bool {
 	switch schema {
-	case SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV4:
+	case SourceTrailSchema, SourceTrailSchemaV2:
 		return true
 	}
 	return false
@@ -68,7 +67,7 @@ func ParseContextPacketID(value string) (ContextPacketID, error) {
 // that do not fit and continuing. Rejected candidates are never selected. This is the original
 // released-text byte packing policy; exact-content packing requires verified text in NewSourceTrail.
 func PackVerifiedLexicalCandidates(candidates []TrailCandidate, budgetBytes uint64) (PacketPlan, error) {
-	return packAcceptedCandidates(candidates, budgetBytes, nil)
+	return packAcceptedCandidates(candidates, budgetBytes)
 }
 
 // NewContextPacketID binds the budget and ordered selected segment identities, digests, ranks
@@ -121,24 +120,22 @@ type TrailCandidate struct {
 
 // SourceTrail is one immutable record of how a context packet was produced: the enforced decision,
 // the search expression, the pack budget accounting, and every considered candidate with its
-// disposition and selection. Released text is never copied into the record. A v4 trail records the
-// consulted supersession evidence: an opt-in trail always carries one closed Supersession member.
+// disposition and selection. Released text is never copied into the record.
 type SourceTrail struct {
-	Schema        string                 `json:"schema"`
-	ID            SourceTrailID          `json:"id"`
-	RequestID     string                 `json:"request_id"`
-	DecisionID    string                 `json:"decision_id"`
-	Outcome       string                 `json:"outcome"`
-	Expression    string                 `json:"expression,omitempty"`
-	BudgetBytes   uint64                 `json:"budget_bytes"`
-	UsedBytes     uint64                 `json:"used_bytes"`
-	PacketID      string                 `json:"packet_id"`
-	Candidates    []TrailCandidate       `json:"candidates"`
-	PackingPolicy string                 `json:"packing_policy,omitempty"`
-	Supersession  *SupersessionSelection `json:"supersession,omitempty"`
-	Vector        *VectorSelection       `json:"vector,omitempty"`
-	Hybrid        *HybridSelection       `json:"hybrid,omitempty"`
-	Token         *TokenSelection        `json:"token,omitempty"`
+	Schema        string           `json:"schema"`
+	ID            SourceTrailID    `json:"id"`
+	RequestID     string           `json:"request_id"`
+	DecisionID    string           `json:"decision_id"`
+	Outcome       string           `json:"outcome"`
+	Expression    string           `json:"expression,omitempty"`
+	BudgetBytes   uint64           `json:"budget_bytes"`
+	UsedBytes     uint64           `json:"used_bytes"`
+	PacketID      string           `json:"packet_id"`
+	Candidates    []TrailCandidate `json:"candidates"`
+	PackingPolicy string           `json:"packing_policy,omitempty"`
+	Vector        *VectorSelection `json:"vector,omitempty"`
+	Hybrid        *HybridSelection `json:"hybrid,omitempty"`
+	Token         *TokenSelection  `json:"token,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -166,11 +163,9 @@ func trailCandidatesFromVerified(candidates []VerifiedLexicalCandidate) []TrailC
 
 // packTraceCandidates is the Trace stage's Pack step: it applies the recorded packing policy to the
 // trail's candidate rows and returns the selection, the released total and the packet identity.
-// suppressed marks candidates removed from the surviving set before packing, as the opt-in Trace
-// stage does for withheld candidates; the default Trace stage suppresses none.
-func packTraceCandidates(trail []TrailCandidate, candidates []VerifiedLexicalCandidate, budgetBytes uint64, packingPolicy string, suppressed []bool) (PacketPlan, error) {
+func packTraceCandidates(trail []TrailCandidate, candidates []VerifiedLexicalCandidate, budgetBytes uint64, packingPolicy string) (PacketPlan, error) {
 	if packingPolicy == PackingExactV1 {
-		if err := packExact(trail, candidates, budgetBytes, suppressed); err != nil {
+		if err := packExact(trail, candidates, budgetBytes); err != nil {
 			return PacketPlan{}, err
 		}
 		plan := PacketPlan{Selected: make([]bool, len(trail))}
@@ -187,7 +182,7 @@ func packTraceCandidates(trail []TrailCandidate, candidates []VerifiedLexicalCan
 		plan.PacketID = id
 		return plan, nil
 	}
-	return packAcceptedCandidates(trail, budgetBytes, suppressed)
+	return packAcceptedCandidates(trail, budgetBytes)
 }
 
 // SourceTrailID binds the complete trail explanation and parent snapshot.
@@ -240,7 +235,7 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 	if budgetBytes == 0 {
 		return SourceTrail{}, retrievalValidationError("budget_bytes", ValidationCodeInvalidRange, "must be positive")
 	}
-	plan, err := packTraceCandidates(trailCandidates, candidates, budgetBytes, packingPolicy, nil)
+	plan, err := packTraceCandidates(trailCandidates, candidates, budgetBytes, packingPolicy)
 	if err != nil {
 		return SourceTrail{}, err
 	}
@@ -276,92 +271,10 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 	return trail, nil
 }
 
-// NewSourceTrailWithSupersession is the opt-in Trace stage: it records the consulted supersession
-// evidence, packs only the surviving candidates under the requested policy, and builds one immutable
-// v4 trail whose identity binds the complete explanation, including the consultation and every
-// suppression row.
-//
-// The consultation member is derived by BuildSupersessionSelection from the request's source, the
-// decision's outcome, the already verified candidates and the explicitly supplied verified activation
-// state and declaration, so the exact-pin match exists once instead of being reimplemented here. A
-// non-allow outcome is recorded unconsulted and rejects supplied administrative records or candidates;
-// an allow outcome distinguishes verified no-history (nil state), deactivation (a state naming no
-// declaration) and an active declaration. The opt-in is not authorization: the outcome, the request,
-// the decision and the packet identity keep their existing construction, and a request that releases
-// the same selection keeps the packet identity a default query would produce.
-//
-// Like NewSourceTrail it checks structure, accounting and identity only: it reads no store, so it
-// proves no stored existence, canonical ancestry, authorization or transaction-local current state,
-// and validation of a decoded v4 record stays structural for the same reason.
-func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision PolicyDecision, expression string, candidates []VerifiedLexicalCandidate, budgetBytes uint64, packingPolicy string, activation *SupersessionActivationState, declaration *SupersessionDeclaration) (SourceTrail, error) {
-	if packingPolicy != PackingOriginal && packingPolicy != PackingExactV1 {
-		return SourceTrail{}, retrievalValidationError("packing_policy", ValidationCodeInvalidValue, "must be original or exact-v1")
-	}
-	if err := request.Validate(); err != nil {
-		return SourceTrail{}, prefixValidationError(err, "request")
-	}
-	if err := decision.Validate(); err != nil {
-		return SourceTrail{}, prefixValidationError(err, "decision")
-	}
-	if decision.Request != request {
-		return SourceTrail{}, newValidationError("decision", ValidationCodeInvalidValue, "decision belongs to another request", nil)
-	}
-	if budgetBytes == 0 {
-		return SourceTrail{}, retrievalValidationError("budget_bytes", ValidationCodeInvalidRange, "must be positive")
-	}
-	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 {
-		return SourceTrail{}, retrievalValidationError("expression", ValidationCodeInvalidRange, "must be non-empty valid UTF-8 within bounds")
-	}
-	selection, err := BuildSupersessionSelection(request.SourceID, decision.Outcome, candidates, activation, declaration)
-	if err != nil {
-		return SourceTrail{}, prefixValidationError(err, "supersession")
-	}
-	if candidates == nil {
-		candidates = []VerifiedLexicalCandidate{}
-	}
-	trailCandidates := trailCandidatesFromVerified(candidates)
-	suppressed, err := suppressSupersededCandidates(trailCandidates, &selection)
-	if err != nil {
-		return SourceTrail{}, err
-	}
-	plan, err := packTraceCandidates(trailCandidates, candidates, budgetBytes, packingPolicy, suppressed)
-	if err != nil {
-		return SourceTrail{}, err
-	}
-	for index := range trailCandidates {
-		trailCandidates[index].Selected = plan.Selected[index]
-	}
-	trail := SourceTrail{
-		Schema:        SourceTrailSchemaV4,
-		RequestID:     request.ID.String(),
-		DecisionID:    decision.ID.String(),
-		Outcome:       string(decision.Outcome),
-		Expression:    expression,
-		BudgetBytes:   budgetBytes,
-		UsedBytes:     plan.UsedBytes,
-		PacketID:      plan.PacketID.String(),
-		Candidates:    trailCandidates,
-		PackingPolicy: packingPolicy,
-		Supersession:  &selection,
-	}
-	id, err := NewSourceTrailID(trail)
-	if err != nil {
-		return SourceTrail{}, err
-	}
-	trail.ID = id
-	if err := trail.Validate(); err != nil {
-		return SourceTrail{}, err
-	}
-	return trail, nil
-}
-
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
-	if trail.Schema == SourceTrailSchemaV9 {
-		return trail.validateRetrievalSupersessionTrail()
-	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
+	if trail.Schema == SourceTrailSchemaV7 {
 		return trail.validateTokenTrail()
 	}
 	if trail.Token != nil {
@@ -382,16 +295,6 @@ func (trail SourceTrail) Validate() error {
 	if !isSourceTrailSchema(trail.Schema) {
 		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
-	if trail.Schema == SourceTrailSchemaV4 {
-		if trail.Supersession == nil {
-			return newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
-		}
-		if err := trail.Supersession.Validate(); err != nil {
-			return prefixValidationError(err, "supersession")
-		}
-	} else if trail.Supersession != nil {
-		return newValidationError("supersession", ValidationCodeInvalidSchema, "field requires source trail v4", nil)
-	}
 	if err := trail.validatePacking(); err != nil {
 		return err
 	}
@@ -403,10 +306,6 @@ func (trail SourceTrail) Validate() error {
 	}
 	if trail.Outcome != string(PolicyOutcomeAllow) && trail.Outcome != string(PolicyOutcomeDeny) {
 		return newValidationError("outcome", ValidationCodeInvalidValue, "must be allow or deny", nil)
-	}
-	if trail.Schema == SourceTrailSchemaV4 && trail.Supersession.Consulted != (trail.Outcome == string(PolicyOutcomeAllow)) {
-		// The flag is recorded, never inferred: an allow consulted supersession and a deny did not.
-		return newValidationError("supersession.consulted", ValidationCodeInvalidValue, "must be true exactly when the decision allowed the source", nil)
 	}
 	if !utf8.ValidString(trail.Expression) || len(trail.Expression) < 1 || len(trail.Expression) > 4096 {
 		return retrievalValidationError("expression", ValidationCodeInvalidRange, "must be non-empty valid UTF-8 within bounds")
@@ -488,10 +387,7 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema == SourceTrailSchemaV9 {
-		return vectorTrailIdentity(trail)
-	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
+	if trail.Schema == SourceTrailSchemaV7 {
 		return vectorTrailIdentity(trail)
 	}
 	if trail.Schema == SourceTrailSchemaV6 {
@@ -551,7 +447,7 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 			[]byte(candidate.Disposition),
 			selected[:],
 		)
-		if trail.Schema == SourceTrailSchemaV2 || trail.Schema == SourceTrailSchemaV4 {
+		if trail.Schema == SourceTrailSchemaV2 {
 			fields = append(fields, []byte(candidate.Omission), []byte(candidate.DuplicateOf))
 		}
 		for _, reason := range candidate.Reasons {
@@ -560,46 +456,8 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 		fields = append(fields, []byte("end"))
 		_ = index
 	}
-	if trail.Schema == SourceTrailSchemaV4 {
-		if trail.Supersession == nil {
-			return SourceTrailID{}, newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
-		}
-		fields = append(fields, supersessionIdentityFields(trail.Supersession)...)
-	}
 	writeTuple(digest, fields...)
 	return SourceTrailID(digest.Sum(nil)), nil
-}
-
-// supersessionIdentityFields returns the v4 identity fields for one consultation member: the
-// consultation flag, both nullable identities and every disposition row in recorded order. A nil
-// identity is written as an empty field and a present identity is always 32 nonzero bytes, so
-// absence and presence cannot collide; the shared writeTuple length-delimits every field.
-func supersessionIdentityFields(selection *SupersessionSelection) [][]byte {
-	consulted := []byte{0}
-	if selection.Consulted {
-		consulted[0] = 1
-	}
-	fields := [][]byte{
-		[]byte("supersession"),
-		consulted,
-		supersessionActivationIdentityBytes(selection.ActivationID),
-		supersessionDeclarationIdentityBytes(selection.DeclarationID),
-	}
-	for _, disposition := range selection.Dispositions {
-		fields = append(fields,
-			[]byte("disposition"),
-			[]byte(disposition.Selection),
-			disposition.SegmentID[:],
-			disposition.ContentSHA256[:],
-			disposition.DeclarationID[:],
-			[]byte(disposition.PredecessorItemID),
-			disposition.PredecessorRepresentationID[:],
-			[]byte(disposition.SuccessorItemID),
-			disposition.SuccessorRepresentationID[:],
-			[]byte("end"),
-		)
-	}
-	return fields
 }
 
 // EncodeSourceTrail returns the exact canonical trail bytes.
@@ -620,9 +478,7 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
-		case SourceTrailSchemaV9:
-			return decodeRetrievalSupersessionTrail(data)
-		case SourceTrailSchemaV7, SourceTrailSchemaV8, SourceTrailSchemaV10:
+		case SourceTrailSchemaV7:
 			return decodeTokenSourceTrail(data)
 		case SourceTrailSchemaV6:
 			return decodeHybridSourceTrail(data)
@@ -641,7 +497,6 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		UsedBytes     uint64          `json:"used_bytes"`
 		PacketID      string          `json:"packet_id"`
 		PackingPolicy json.RawMessage `json:"packing_policy"`
-		Supersession  json.RawMessage `json:"supersession"`
 		Candidates    []struct {
 			SegmentID     string          `json:"segment_id"`
 			ContentSHA256 string          `json:"content_sha256"`
@@ -730,69 +585,8 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		entry.Selected = candidate.Selected
 		trail.Candidates[index] = entry
 	}
-	if wire.Supersession != nil {
-		if wire.Schema != SourceTrailSchemaV4 {
-			return SourceTrail{}, newValidationError("supersession", ValidationCodeInvalidSchema, "field requires source trail v4", nil)
-		}
-		selection, err := decodeSupersessionSelection(wire.Supersession)
-		if err != nil {
-			return SourceTrail{}, err
-		}
-		trail.Supersession = selection
-	} else if wire.Schema == SourceTrailSchemaV4 {
-		return SourceTrail{}, newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
-	}
 	if err := trail.Validate(); err != nil {
 		return SourceTrail{}, err
 	}
 	return trail, nil
-}
-
-// decodeSupersessionSelection decodes the v4 consultation member into its canonical output. Every
-// member is required: the consultation flag, both identities as an explicit null or a lowercase
-// identity, and the disposition array, which null cannot stand in for. Unknown or duplicate keys,
-// mistyped values, zero identities and a non-array disposition field are rejected. This is a
-// structural codec: it cannot show that a named activation event, declaration or pinned revision
-// exists, belongs to the trail's source, or was authorized.
-func decodeSupersessionSelection(data []byte) (*SupersessionSelection, error) {
-	if string(data) == "null" {
-		return nil, newValidationError("supersession", ValidationCodeInvalidValue, "must be an object, not null", nil)
-	}
-	var wire struct {
-		Consulted     *bool           `json:"consulted"`
-		ActivationID  json.RawMessage `json:"activation_id"`
-		DeclarationID json.RawMessage `json:"declaration_id"`
-		Dispositions  json.RawMessage `json:"dispositions"`
-	}
-	if err := decodeJSONContract(data, &wire); err != nil {
-		return nil, prefixValidationError(err, "supersession")
-	}
-	if wire.Consulted == nil || wire.ActivationID == nil || wire.DeclarationID == nil || wire.Dispositions == nil {
-		return nil, newValidationError("supersession", ValidationCodeInvalidValue, "every member must be present, including explicit nulls", nil)
-	}
-	if string(wire.Dispositions) == "null" {
-		return nil, newValidationError("supersession.dispositions", ValidationCodeInvalidValue, "must be an array, not null", nil)
-	}
-	activationID, err := decodeNullableSupersessionActivationID(wire.ActivationID)
-	if err != nil {
-		return nil, validationErrorForField(err, "supersession.activation_id")
-	}
-	declarationID, err := decodeNullableSupersessionDeclarationID(wire.DeclarationID)
-	if err != nil {
-		return nil, validationErrorForField(err, "supersession.declaration_id")
-	}
-	var dispositions []SupersessionDisposition
-	if err := decodeJSONContract(wire.Dispositions, &dispositions); err != nil {
-		return nil, prefixValidationError(err, "supersession.dispositions")
-	}
-	selection := &SupersessionSelection{
-		Consulted:     *wire.Consulted,
-		ActivationID:  activationID,
-		DeclarationID: declarationID,
-		Dispositions:  dispositions,
-	}
-	if err := selection.Validate(); err != nil {
-		return nil, prefixValidationError(err, "supersession")
-	}
-	return selection, nil
 }

@@ -34,7 +34,6 @@ type SourceTrailView struct {
 	Candidates        []SourceTrailCandidateView   `json:"candidates"`
 	Schema            string                       `json:"schema,omitempty"`
 	PackingPolicy     string                       `json:"packing_policy,omitempty"`
-	Supersession      *mousa.SupersessionSelection `json:"supersession,omitempty"`
 	// Native callers expose vector history explicitly; the MCP view stays closed.
 	Vector            *mousa.VectorSelection    `json:"-"`
 	Hybrid            *mousa.HybridSelection    `json:"-"`
@@ -168,22 +167,9 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 			view.PackingPolicy = trail.PackingPolicy
 			view.Vector = trail.Vector
 		}
-		if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV4 {
+		if trail.Schema == mousa.SourceTrailSchemaV2 {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
-		}
-		if trail.Supersession != nil {
-			selection := *trail.Supersession
-			selection.Dispositions = append([]mousa.SupersessionDisposition{}, trail.Supersession.Dispositions...)
-			if selection.ActivationID != nil {
-				id := *selection.ActivationID
-				selection.ActivationID = &id
-			}
-			if selection.DeclarationID != nil {
-				id := *selection.DeclarationID
-				selection.DeclarationID = &id
-			}
-			view.Supersession = &selection
 		}
 		for _, candidate := range trail.Candidates {
 			if candidate.Disposition != mousa.CandidateAccepted {

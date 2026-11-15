@@ -273,14 +273,10 @@ func TestMCPTokenSkippedCandidatesAndAuthorization(t *testing.T) {
 func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 	startup := mcpTokenStartup(t)
 	for _, mode := range []string{"lexical", "vector", "hybrid"} {
-		for _, scenario := range []struct{ cancelled, supersession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
-			cancelled, supersession := scenario.cancelled, scenario.supersession
-			t.Run(fmt.Sprintf("%s/cancelled=%v/supersession=%v", mode, cancelled, supersession), func(t *testing.T) {
+		for _, cancelled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/cancelled=%v", mode, cancelled), func(t *testing.T) {
 				run, _ := setup(t)
 				jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
-				if supersession {
-					newMCPWithholdingTrailFixture(t, run, "alpha", "Drain predecessor", "Drain successor")
-				}
 				tool := "mousa_query"
 				args := mcpQuery("alpha", "Drain", 4096)
 				if mode != "lexical" {
@@ -288,7 +284,7 @@ func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 					args = mcpRetrievalArgs(space, mode, "original", 4096)
 					tool = "mousa_" + mode + "_query"
 				}
-				args["context_tokens"], args["supersession"] = 256, supersession
+				args["context_tokens"] = 256
 				input, err := json.Marshal(args)
 				if err != nil {
 					t.Fatal(err)
@@ -310,7 +306,10 @@ func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 				if err := os.WriteFile(path, []byte(script), 0700); err != nil {
 					t.Fatal(err)
 				}
-				source := declarationSource(t, "alpha")
+				source, err := streamSource("alpha")
+				if err != nil {
+					t.Fatal(err)
+				}
 				app := mcpApplication{store: store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source}}, gate: make(chan struct{}, 1), tokenizerPython: path, tokenizerCache: startup[3]}
 				before := inspectionRows(t, run.store, nil)
 				ctx, cancel := context.WithCancel(t.Context())

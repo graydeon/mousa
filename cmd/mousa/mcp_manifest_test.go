@@ -54,12 +54,9 @@ func TestMCPManifestStdioSnapshotAndPermissions(t *testing.T) {
 	run.runInput("{\"id\":\"a\",\"text\":\"cedar\"}\n", false, "sync", "--source", "alpha")
 	_, native := run.run(false, "manifest", "--source", "alpha")
 	id := manifestID(t, native)
-	for mask := range 8 {
+	for mask := range 4 {
 		var startup []string
 		if mask&2 != 0 {
-			startup = append(startup, "--supersession-admin-source", "alpha")
-		}
-		if mask&4 != 0 {
 			startup = append(startup, "--classification-admin-source", "alpha")
 		}
 		client := startMCPClient(t, run, "cli", mask&1 != 0, startup...)
@@ -77,7 +74,7 @@ func TestMCPManifestStdioSnapshotAndPermissions(t *testing.T) {
 		}
 		client.close()
 	}
-	unauthorized := startMCPClient(t, run, "untrusted", true, "--supersession-admin-source", "alpha", "--classification-admin-source", "alpha")
+	unauthorized := startMCPClient(t, run, "untrusted", true, "--classification-admin-source", "alpha")
 	assertManifestDenied(t, unauthorized.call("mousa_source_manifest", map[string]any{"source": "alpha", "expected_manifest_id": id}, ""))
 	unauthorized.close()
 	client := startMCPClient(t, run, "cli", false)

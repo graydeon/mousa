@@ -22,13 +22,7 @@ comparison.
 ## Status
 
 Pre-alpha engine: verified FTS5 BM25 retrieval, ingestion, segmentation, lifecycle and
-policy decisions, Source Trails, byte-budget packets,
-and explicit native JSONL supersession enforcement. Declaration/activation administration
-and read-only current-state inspection are implemented. The fresh opted-in store path
-consults administration inside the retrieval transaction and emits v4; default queries
-are unchanged, and the local stdio MCP query tool exposes the same opt-in explicitly
-while its opted-out responses keep the previous property set.
-Native directory enforcement is also implemented.
+policy decisions, Source Trails and byte-budget packets.
 See the maintained capability contract for canonical version and history details.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
@@ -41,11 +35,7 @@ retriever alone. General temporal-memory benchmarks await explicit semantics; se
 ## Evaluation priorities and promotion gates
 
 These are development decisions and proposed checks, not new benchmark results.
-PR92 and its paired byte-only vector/hybrid supersession evidence are accepted
-as of 2026-10-31. The earlier lexical composition and survivor aggregate-admission
-correction remain accepted. This proposal combines measured whole-context token
-budgets with vector/hybrid supersession and v10 history without changing producing
-ranks, coverage or full-source admission. Product regressions and the runnable
+Product regressions and the runnable
 synthetic example are distinct from independent public-client observations and
 final-head acceptance. Preserve older captures, conditions and negative results.
 Startup-study timeout/export holds remain separate.
@@ -129,22 +119,8 @@ multi-source derivations; ordinary single-source native captures do not establis
 this internal graph case. Canonical v7 facts remain recorded; released token
 arrays contain only accepted candidates with consecutive release ranks.
 
-Lexical supersession can now compose with token packing for native directory/JSONL
-and MCP configured JSONL. The v8 record binds transaction-local producing
-consultation and complete survivor-rendering observations; byte-only v4 and
-ordinary token v7 histories retain their existing contracts. Product regressions
-exercise exact pins, withheld twins, budget/reservation boundaries, historical
-inspection and corruption rejection. These are synthetic behavior/counting
-checks, not retrieval-quality, latency or full-window measurements.
-The [runnable example](USAGE.md#lexical-supersession-with-token-budgets) compares
-the returned context with an independent official ordinary-text count.
 Retired text is unarchived; unknown application/model framing remains outside the cap.
 
-Vector/hybrid token composition uses v10 on this proposal branch. Its whole-source
-admission precedes suppression, unlike lexical survivor aggregate accounting.
-Recorded cosine/hybrid branches and RRF(k60) remain unchanged; only survivor
-packing changes. Independent official counts cover the exact returned versioned
-rendering, not summed passage estimates or unknown application framing.
 Public-client captures cannot establish internal graph, corruption or concurrency
 seams; those remain product-local checks, not semantic or performance evidence.
 
@@ -169,7 +145,7 @@ model was run; provider/model/version labels are caller declarations. This is no
 an automatic natural-language semantic-search, retrieval-quality or performance
 measurement. No ANN, answering pipeline or authenticated model-window guarantee is implemented.
 Independent public-head native observations belong in the companion repository;
-historical lexical or supersession captures do not validate this path.
+historical lexical captures do not validate this path.
 
 Native hybrid retrieval now combines the established lexical branch and supplied
 vector branch with equal-weight reciprocal rank fusion, fixed k=60. The
@@ -211,7 +187,7 @@ replacement during external computation requires a fresh export and embeddings.
 These observations do not attest an external producer or model integration.
 
 MCP lexical/vector/hybrid queries also accept explicit whole-rendering token
-budgets through the native v7/v8/v10 transactions. Product stdio checks independently
+budgets through the native v7 transactions. Product stdio checks independently
 count returned context with official `encode_ordinary` under both packers,
 exercise exact fit/one-token-short and byte pressure, reservation arithmetic,
 strict inputs, denial and recorded history after restart/replacement. A deterministic
@@ -223,170 +199,6 @@ The [runnable token client](USAGE.md#mcp-token-budget-example) requires explicit
 operator preparation. Separate public-head observations belong in the companion
 repository; historical archives keep their own pins and evidence boundaries.
 
-
-## Supersession contract evidence
-
-The [public contract capture](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
-pins Mousa source `47232cf9e7deec20b246590a5b77116a26865153`. It records 35
-top-level domain/SQLite tests and 170 nested subtests, including strict codecs,
-revision provenance, immutable storage, transitions, restart and tamper checks.
-These are product regression cases, not independent relevance samples. Raw Go
-elapsed times are incidental, not a performance comparison.
-
-Two preserved negative cases reverse only their production fixes: replacement
-over a damaged active-declaration projection, and reading absent current state
-with retained history. Both tests fail on that pre-fix implementation. Later
-product regressions additionally cover new transitions against missing state,
-exact retries against historical projections, and version-13-to-14 upgrade.
-The archived source identity and observations have not been relabelled as those
-later fixes or as current-main acceptance.
-
-The current source index changes the bundled SQLite driver's history-existence
-plan from a full covering-index scan to a covering source-index search. Tests
-verify preserved records, per-migration backup, read-only refusal to migrate and
-startup detection of a missing required index. No latency, startup scan cost,
-capacity or sustained-writer performance study accompanies this change.
-
-The archive's corrected reproduction runner forces `GOWORK=off` and records it in
-new observations. Its original observation did not record workspace configuration
-and does not prove environment isolation. Historical raw events and protocol are
-unchanged. The runner verifies the pinned checkout, not arbitrary current source.
-
-The pinned capture checks the internal supersession storage/activation APIs, not
-the later native declaration or activation commands. Current product CLI regressions
-exercise those commands against real temporary stores, including initial selection,
-replacement, deactivation, reactivation, exact retry, stale rejection, rejected
-input, damaged-store rejection, and the read-only current-state view (its three-field
-JSON projection, deactivation as an explicit null, per-source isolation, usage and
-missing-history exits, refusal to create or migrate a store, and failure without
-repair over a damaged projection). The MCP supersession opt-in is implemented for both
-tools: the optional `supersession` boolean withholds a pinned predecessor on
-`mousa_query`, and the same boolean on `mousa_trail` returns the recorded consultation
-member of a `mousa.source_trail.v4` record. Product client regressions cover both halves
-in `cmd/mousa/mcp_supersession_test.go` and `cmd/mousa/mcp_trail_supersession_test.go`
-over the built executable and fresh temporary stores;
-[MCP supersession opt-in](MCP_SUPERSESSION.md) records the client contract and the
-[independent query-only client capture](https://github.com/graydeon/mousa-benchmarks/tree/2f419c47be796f6e647997e120fe5a364351e9ce/results/2026-10-12-mcp-query-supersession-schedule-binding).
-The capture records two fresh-store observations with 129 steps, 2,847 passing
-assertions and 39 stable selections each, plus replay and rejecting controls.
-
-The [2026-10-13 independent inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession),
-accepted with [product PR75](https://github.com/graydeon/mousa/pull/75) and
-[companion PR30](https://github.com/graydeon/mousa-benchmarks/pull/30), add two final
-fresh-store captures and offline replays. Each capture records 268 steps, 5,314 passing
-assertions and 60 stable historical selections. All 60 selections match between stores;
-a separate comparison of all 18 denied wrappers per store excludes only the fresh
-authorization ID and echoed requested trail ID, with every remaining field equal.
-Producing identities are validated within each capture before the protocol's enumerated
-fresh identity fields are excluded from historical cross-store comparison.
-The assertion count is not a count of independent relevance cases.
-
-The capture targets public product commit `5ffa0286b35ecf84b36abe53d029a78075c02b86`,
-tree `c73fb12a9ccdc6df65ad998a3039255a43dc6ad1`, built with Go 1.27.1,
-`GOWORK=off`, `CGO_ENABLED=0` and `go build -trimpath`. The capture-time companion
-HEAD is `2f419c47be796f6e647997e120fe5a364351e9ce`; runner and fixture bytes are
-separately hashed. The later evidence head `9a5a4433f0bdce707288c7e7b97fb986d5ce38ff`
-and companion merge `7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d` publish those bytes;
-the product merge `899449f8b000c7b35a4f98266efdfdf1119c1971` is not the observation
-pin. Earlier query-only and native captures keep their original pins and raw bytes.
-
-All 17 rehashed negative mutation controls reject at their named detectors, while two
-ordinary controls pass. Separately, a real extra-table-and-row write during a denied
-inspection makes capture and replay fail at
-`orphan-deny-unknown-true:only-bound-authorization-write`. These are specific detector
-checks, not general fault coverage. The [runner and frozen protocol](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/mcp-trail-supersession)
-provide reproduction instructions, comparison exclusions and retained failure receipts.
-
-This is synthetic native/stdio client evidence, not semantic truth, retrieval quality,
-latency/throughput, authentication, native-host acceptance or general physical database
-integrity. A matching rebuilt binary in the tested environment is not universal
-reproducible-build proof. Historical inspection verifies recorded consultation, not
-today's activation projection; current `indexed_now` fields are not frozen history.
-Startup refusal is distinct from live transaction rollback.
-
-The 2026-10-13 inspection evidence correction adds real stdio regressions in
-`cmd/mousa/mcp_trail_audit_test.go`: successful denial commits a response-bound decision
-and its input children with all existing rows unchanged; and own/foreign
-orphans remain source-masked `not_found` in an already-open inspector while canonical
-and startup verification reject the damage as integrity. These correct documentation
-claims and missing fixtures, not runtime regressions. No storage semantics changed.
-Product domain regressions cover exact predecessor matching, multiple segments,
-lifecycle-rejected and non-matching candidates, later revisions, equal-byte other items,
-ancestor pins, source isolation, malformed administrative inputs, row order and
-unchanged caller-owned inputs. These pure supplied-record cases are structural evidence,
-not independent native enforcement acceptance.
-
-The fresh store entry point and native subprocess regressions separately exercise
-the [enforcement contract](SUPERSESSION_ENFORCEMENT.md): both packing policies,
-no-history/active/deactivated/stale pins, survivor selection, disjoint counts/outcomes,
-historical reads and restart. Real SQLite files and live-store corruption test rollback
-after opening; startup refusal alone does not establish transaction rollback.
-Native requests deliberately have fresh request/decision/trail IDs, while identical
-released selection retains its packet ID. No semantic contradiction resolution,
-authenticated authorship, native-host agent acceptance, model-window safety or
-performance improvement follows from these correctness cases.
-
-The domain half of the v4 trail record and survivor packing is covered by product
-regression cases in `internal/mousa/trail_v4_test.go` and a pinned golden fixture in
-`internal/mousa/testdata/trail-v4.json`. The golden canonical bytes and trail identity
-were derived outside the package from the documented identity construction rather than
-read back from the implementation, which then reproduced them. Cases cover the version
-boundary (earlier versions reject the member, including a null one, and v4 requires its
-closed object), each consultation shape (active declaration, verified no-history,
-deactivation and denial), both packing policies including a surviving budget skip with
-no omission field and a withheld copy that must not become the retained exact-v1
-duplicate, the candidate invariants shared by both policies for a constructed and for a
-decoded record under no-history, deactivation and an active declaration, row membership,
-digest and order, canonical size preservation, unchanged
-caller inputs, and mutations that must be rejected for a specific field rather than for
-the identity alone. Every earlier trail and packet golden still reproduces its recorded
-bytes and identity without regeneration. These are structural cases over supplied
-records: they are not independent relevance samples, they exercise no store read or
-write, and they are not enforcement acceptance.
-
-The transaction-local consultation is covered by focused product regression cases in
-`internal/sqlite/supersession_activation_test.go` over real temporary SQLite files: a source with no
-activation history is a verified absence that writes nothing, initial selection, replacement,
-deactivation and reactivation each return the verified state and the declaration it selects, a
-caller's open transaction keeps the state it read while another connection commits a replacement,
-and a missing projection with retained history, a projection naming an older event, a projection
-disagreeing with its event, a replaced event record, a missing current event, a missing selected
-declaration and missing pinned provenance are all refused without repairing or writing anything.
-A current projection whose named event no longer exists is classified as recorded corruption: both the
-public state read and a transaction-local consultation report an integrity failure, while a direct
-historical read of that identity is still the `not_found` of a missing row and a surviving historical
-event stays readable, so the corruption classification is not a global remapping of missing event IDs.
-The public state method's reported code and message for a source with no history were compared
-against the pre-change implementation rather than re-derived. These are regression cases on the
-store's own verification, not measurements and not enforcement acceptance.
-
-Stored v4 trail verification is covered by focused product regression cases in
-`internal/sqlite/trail_supersession_test.go` over real temporary SQLite files. A fixture source holds a
-pinned predecessor, a byte-identical twin of it, the declared successor and an unrelated peer, all as
-current indexed items; the cases build a `mousa.source_trail.v4` record through the opt-in domain
-constructor and commit it through the existing internal trail insert helper, so every valid record is
-read back canonically and every corrupt one is committed without the production read-back. Cases cover
-both packing policies with an active declaration, verified no-history, deactivation and denial
-records, a store reopen, and a recorded trail that stays readable and identical after a replacement
-activation, a deactivation and a successor item revision. Negative cases reject, as integrity errors,
-a missing, foreign-source or mismatching activation event, a missing or cross-source declaration, a
-disposition row whose pins disagree with the consulted declaration, a missing suppression row, an
-extra suppression row, and a changed record committed without repair or writes. A mandatory
-regression turns a constructor-produced duplicate omission into a second released survivor with
-recomputed packet and trail identities and projection rows, shows the structural codec still accepts
-it, and shows the canonical read and a read-only reopen reject it; the withheld duplicate is also
-placed directly after its retained byte-equal twin to show that a withheld candidate seeds no
-retained duplicate set. Every earlier v1–v3 trail case remains unchanged. These are
-product-local regressions on supplied records, separate from fresh retrieval integration
-and independent native subprocess observations.
-
-A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
-pins the observed behavior of the native declaration and activation administration
-commands against a synthetic store at that baseline, including its failed-boolean and
-injected-write controls. It records pinned administration behavior with unchanged
-uncurated query output and is separate from the domain regression cases above: it does
-not exercise a v4 record, survivor packing or any query enforcement, and none of its
-observations is relabelled as acceptance of them.
 
 ## Startup verification at 16,384 documents
 

@@ -2,13 +2,19 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	modernsqlite "modernc.org/sqlite"
 )
 
 // Tests invoke the built CLI against fresh stores and real directories so each
@@ -407,4 +413,105 @@ func TestLocalSliceStatusSeparatesCurrentItemsFromHistory(t *testing.T) {
 	if deleted["active_items"] != float64(0) || deleted["observations"] != float64(2) {
 		t.Fatalf("deletion removed history or retained activation: %v", deleted)
 	}
+}
+
+// runExitInput runs the CLI with input on stdin and reports its exit code, stdout and stderr. The
+// exact code is part of the command contract: 2 for an invalid invocation, 1 for a rejected
+// operation.
+func (r testRun) runExitInput(input string, args ...string) (int, string, string) {
+	r.t.Helper()
+	cmd := exec.Command(r.binary, append([]string{"-store", r.store}, args...)...)
+	if input != "" {
+		cmd.Stdin = strings.NewReader(input)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if err == nil {
+		return 0, stdout.String(), stderr.String()
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		r.t.Fatalf("run %v: %v", args, err)
+	}
+	return exitErr.ExitCode(), stdout.String(), stderr.String()
+}
+
+func (r testRun) runExit(args ...string) (int, string, string) {
+	return r.runExitInput("", args...)
+}
+
+// rawExec runs one statement outside the CLI so a test can inject a damaged stored record.
+func rawExec(t *testing.T, path, statement string) {
+	t.Helper()
+	connector, err := modernsqlite.NewConnector("file:" + path + "?mode=rw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := sql.OpenDB(connector)
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+	if _, err := db.Exec(statement); err != nil {
+		t.Fatalf("raw exec %q: %v", statement, err)
+	}
+}
+
+func openRawStore(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	connector, err := modernsqlite.NewConnector("file:" + path + "?mode=ro&_query_only=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := sql.OpenDB(connector)
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// tableDigest reports one table's row count and a digest of every column, so a test compares the
+// exact stored bytes rather than a count alone.
+func tableDigest(t *testing.T, path, table string) (int, string) {
+	t.Helper()
+	db := openRawStore(t, path)
+	rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("scan %s: %v", table, err)
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.New()
+	count := 0
+	for rows.Next() {
+		values := make([]any, len(columns))
+		pointers := make([]any, len(columns))
+		for index := range values {
+			pointers[index] = &values[index]
+		}
+		if err := rows.Scan(pointers...); err != nil {
+			t.Fatalf("scan %s row: %v", table, err)
+		}
+		for _, value := range values {
+			switch typed := value.(type) {
+			case nil:
+				hash.Write([]byte{0})
+			case []byte:
+				fmt.Fprintf(hash, "%d:", len(typed))
+				hash.Write(typed)
+			case int64:
+				fmt.Fprintf(hash, "i%d;", typed)
+			case string:
+				fmt.Fprintf(hash, "s%d:%s;", len(typed), typed)
+			default:
+				fmt.Fprintf(hash, "%v;", typed)
+			}
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return count, hex.EncodeToString(hash.Sum(nil))
 }

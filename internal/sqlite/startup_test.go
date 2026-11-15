@@ -75,7 +75,7 @@ func TestActiveRepresentationMigrationPreservesRevisionsAndBackup(t *testing.T) 
 		}
 	}
 	if _, err := store.GetRepresentation(ctx, old.ID); err != nil {
-		t.Fatalf("migration removed superseded history: %v", err)
+		t.Fatalf("migration removed earlier history: %v", err)
 	}
 	backupPath := path + ".pre-migrate-v10-to-v11.sqlite"
 	backup, err := connect(ctx, backupPath, true)

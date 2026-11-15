@@ -317,16 +317,10 @@ type TracedVectorResult struct {
 // EvaluateAndTraceVector uses fresh policy and current source pins in the same
 // immediate transaction as the immutable cosine selection and packet record.
 func (store *Store) EvaluateAndTraceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, false)
+	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil)
 }
 
-// EvaluateAndTraceSupersessionVector withholds exact predecessor pins after ranking
-// and full source admission, using the same writer snapshot as authorization.
-func (store *Store) EvaluateAndTraceSupersessionVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceVector(ctx, request, spaceID, values, budget, packing, nil, true)
-}
-
-func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool) (TracedVectorResult, error) {
+func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluationRequest, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery) (TracedVectorResult, error) {
 	if err := store.requireWritable("query vector"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -418,17 +412,7 @@ func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluat
 			selection.Candidates = append(selection.Candidates, row.candidate)
 		}
 		selection.Indexed = len(rankedRows)
-		var trail mousa.SourceTrail
-		var consultation supersessionConsultation
-		if supersession {
-			consultation, err = consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
-			if err != nil {
-				return err
-			}
-			trail, err = mousa.NewVectorSourceTrailWithSupersession(request, decision, selection, candidates, budget, packing, consultation.state, consultation.declaration)
-		} else {
-			trail, err = mousa.NewVectorSourceTrail(request, decision, selection, candidates, budget, packing)
-		}
+		trail, err := mousa.NewVectorSourceTrail(request, decision, selection, candidates, budget, packing)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build vector trail", err)
 		}
@@ -445,7 +429,6 @@ func (store *Store) traceVector(ctx context.Context, request mousa.PolicyEvaluat
 		}
 		result.Decision = decision
 		result.Trail = written
-		clearWithheldPassages(&result)
 		return nil
 	})
 	if err != nil {

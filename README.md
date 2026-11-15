@@ -96,7 +96,7 @@ This opt-in counts the complete versioned rendering with official
 local Python environment/cache; queries never download vocabulary assets.
 Ordinary queries and the CGO-disabled Go build do not require Python.
 Query and opted-in history token facts use an accepted-candidate release view;
-canonical v7/v8 producing facts remain intact for integrity checks.
+canonical v7 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
@@ -118,7 +118,7 @@ Native `classification put` and `classification get ID` record and retrieve
 immutable attributed labels against existing evidence. The
 [runnable classification example](docs/USAGE.md#native-classification-administration)
 demonstrates exact retry, coexisting conflicting labels and revision-pinned readback.
-Labels do not change indexing, ranking, retrieval permission or supersession;
+Labels do not change indexing, ranking or retrieval permission;
 caller attribution is not authenticated authorship or factual verification.
 Source builds containing the MCP classification addition also expose
 `mousa_classification_put` and `mousa_classification_get`, limited to subjects and
@@ -128,50 +128,15 @@ The [MCP-only example](examples/mcp_classifications.py) uses sync/export pins,
 exact retry and separately versioned assertions without changing retrieval.
 This source addition is not a tagged-release or public-capture acceptance claim.
 
-Revision-pinned supersession declarations and activation administration are available,
-together with explicit native directory (`query --supersession DIRECTORY TEXT`) and
-JSONL (`query --source ID --supersession TEXT`) query opt-ins, and the same opt-in on
-the local stdio MCP `mousa_query` tool; an opted-in `mousa_trail` call returns the consultation a
-`mousa.source_trail.v4`, v8, v9, v10, v12 or v13 record recorded. Default and opted-out queries remain
-uncurated; inspections preserve recorded selection and omit the member unless requested.
+Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
+records branch contributions in v6. Native and MCP token-aware lexical/vector/hybrid
+selection records measured rendering and reservation facts in v7. MCP `mousa_trail`
+exposes those recorded facts only with `token_details: true`, without recounting.
 Inspection reauthorizes access, including a committed decision on denial without
-historical disclosure. Native-created v1–v3 history remains inspectable without a
-supersession member. Opt-in usage and source-masked refusal boundaries are in the
-[usage guide](docs/USAGE.md#local-usage-cmdmousa). Caller-supplied vector retrieval
-uses a separate v5 trail; hybrid selection records branch contributions in v6.
-Native and MCP token-aware lexical/vector/hybrid selection records measured
-rendering and reservation facts in v7. MCP `mousa_trail` exposes those recorded
-facts only with `token_details: true`, without recounting.
-Lexical queries can combine supersession and token budgets with either packer,
-for native directory/JSONL sources and configured MCP JSONL aliases.
-Withheld predecessors consume neither budget nor duplicate slots. The combined
-v8 trail binds recorded consultation and measured survivor rendering.
-Vector/hybrid queries also accept explicit supersession through native
-directory/JSONL and configured MCP aliases: byte-only selection records v9;
-measured token composition records v10. Neither reranks nor relaxes full-source
-admission. The [runnable vector/hybrid example](docs/USAGE.md#vector-and-hybrid-supersession)
-supports an optional independently counted token run and a Python-independent
-byte-only run. Lexical supporting context uses the shared supersession consultation under either budget mode.
-The [lexical token example](docs/USAGE.md#lexical-supersession-with-token-budgets)
-keeps its separate v8 contract.
+historical disclosure. Historical record-by-ID reads and policy administration
+remain native-only.
 Automatic embedding generation and secret filtering remain pending.
 Caller-declared reservations do not prove full model-window safety.
-
-The [directory supersession example](docs/USAGE.md#directory-supersession-example)
-shows how to discover revision pins, prepare declaration and activation records, and
-inspect the recorded reason for withholding a predecessor.
-
-Source builds containing the MCP administration change also expose
-`mousa_supersession_declare`, `mousa_supersession_activate` and
-`mousa_supersession_status` for configured JSONL aliases. Mutations require the
-separate startup `--supersession-admin-source` allowlist; status requires fresh
-retrieval authorization. See the [drafts and permission contract](docs/MCP_SUPERSESSION.md#source-scoped-administration)
-and the MCP-only lifecycle in `examples/mcp_retrieval.py`. Historical record-by-ID
-and policy administration remain native-only. Classification administration has a
-separate [same-source MCP interface](docs/USAGE.md#mcp-classification-administration).
-
-The [2026-10-13 independent MCP inspection observations](https://github.com/graydeon/mousa-benchmarks/tree/7b29e226ea1d8362262f99dfb95bf2ee06c5fa7d/results/2026-10-13-mcp-trail-supersession)
-record synthetic native/stdio behavior, not retrieval quality or performance.
 
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
 The [research record](docs/RESEARCH.md) separates regression coverage from measured
@@ -194,7 +159,6 @@ remain readable but cannot certify a comparison. See the
 | [How Mousa works](docs/OVERVIEW.md) | The nine-stage pipeline, Source Trails and design principles. |
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
-| [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
 | [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
 | [MCP classification example](examples/mcp_classifications.py) | Same-source attributed put/retry/get and coexisting asserted versions through MCP. |
 

@@ -17,31 +17,6 @@ On supported desktop hosts, a Mousa composer mention provides an evidence resour
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
 
-When discovery exposes supersession administration and the user explicitly
-authorizes it, submit `source` plus a closed `declaration` draft with schema
-`mousa.supersession_declaration_input.v1`, exact predecessor/successor item and
-representation pins, author and basis. All fields are required. Supply no draft
-ID or source ID. The server returns `{"declaration": canonical_record}`.
-Activation takes `source` plus a closed `activation` draft with schema
-`mousa.supersession_activation_input.v1`, explicitly nullable
-`expected_previous_activation_id`, `declaration_id` and `reason`, actor_id,
-actor_version and a positive integer occurred_at_usec. The result is
-`{"activation": canonical_record}`. Preserve these as caller assertions, never
-infer actor/time/predecessor or treat them as the authenticated HTTP principal.
-Null declaration explicitly deactivates; name the exact current event. A stale
-expectation conflicts, and an exact retry is accepted only while its event remains
-current. Ask the user to resolve conflicts rather than silently selecting latest.
-
-Writes require `--supersession-admin-source` separately from ingestion, plus
-HTTP `mousa:write`; administrative permission grants no text access. Call
-`mousa_supersession_status` with source only for fresh-authorized current state.
-Allowed `current` always contains state (`no_history`, `active`, `deactivated`),
-activation (null only without history) and declaration (null unless active).
-Denied status contains only decision_id, decision_outcome and decision_reasons,
-with no current member or history-presence disclosure. Status may append its
-authorization receipt. Historical supersession record-by-ID and policy
-administration remain native-only.
-
 Use `mousa_classification_put` only for explicitly supplied attribution, with
 `source` and the complete native `mousa.classification_input.v1` draft in
 `classification`. Supply every required field, including confidence zero;
@@ -54,12 +29,8 @@ Fetch by `source` and `classification_id` using `mousa_classification_get`.
 Denial omits classification entirely, even existence and corruption details.
 Attribution is not factual truth, calibrated confidence or current permission.
 Historical pins do not relabel replacement evidence. Labels never affect
-default query/trail payloads, ranking, packing, authorization or supersession.
+default query/trail payloads, ranking, packing or authorization.
 
-Pass query supersession true only for explicitly requested enforcement; omission
-or false keeps the uncurated default. It withholds an exact predecessor pin and
-reports supersession_excluded, including zero, without proving truth or freshness.
-Trail supersession returns the producing recorded consultation, not today's activation. Legacy trails carry no member.
 Composer mentions/resources keep fixed defaults. Explain conflicting released
 passages using provenance.
 
@@ -74,14 +45,11 @@ foreign pins refuse the complete batch: re-export/recompute after replacement.
 Then supply source, space_id, values and budget_bytes to `mousa_vector_query`.
 `mousa_hybrid_query` additionally requires independent lexical
 query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
-uses the same byte packers; optional `supersession: true` withholds only the
-exact declared predecessor and reports `supersession_excluded`, including zero.
-Omission/false retains ordinary retrieval.
+uses the same byte packers.
 No embedding service is bundled. Query text does not attest how values were
 generated; declared labels and synthetic vectors establish no semantic truth.
-Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6/v9 or safe
-v7/v10/v14/v15 vector/hybrid facts under fresh authorization. Independently opt into
-supersession to see recorded consultation. Default history omits those members.
+Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6 or safe
+v7 vector/hybrid facts under fresh authorization.
 OpenAI mention/resource search stays lexical.
 
 When discovery declares `context_tokens`, any of the three query tools can opt
@@ -92,11 +60,8 @@ whose token count includes headers/separators but excludes tool envelopes and
 unknown client/model framing. Reservations do not prove model-window safety.
 The operator configures the prepared offline backend at startup; tool arguments
 cannot choose interpreter/cache/store/caller. Report tokenizer_unavailable rather
-than silently falling back to bytes. All three query tools can combine
-`supersession: true` with token budgets; withheld predecessors consume neither
-budget nor duplicate retention. Omission/false retains v7; true records lexical
-v8 or vector/hybrid v10. Full vector-source admission remains before masking.
+than silently falling back to bytes.
 OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7/v8/v10 token facts under
+Use `mousa_trail` with token_details true for safe recorded v7 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.

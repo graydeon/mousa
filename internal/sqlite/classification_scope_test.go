@@ -79,7 +79,7 @@ func TestSourceClassificationAllKindsAndNeverIndexedAncestry(t *testing.T) {
 func TestSourceClassificationForeignMixedAndDamagedParents(t *testing.T) {
 	for _, mode := range []string{"foreign subject", "foreign basis", "damaged foreign basis", "mixed subject", "mixed basis", "missing parent", "missing source"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newV4Fixture(t)
+			f := newScopeFixture(t)
 			defer f.store.Close()
 			foreign := addVerifiedLexicalDocument(t, f.store, "classification-foreign", "foreign evidence")
 			mixed := putVerifiedRepresentation(t, f.store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(f.predecessor.ID), mousa.NewRepresentationDerivationInput(foreign.representation.ID)}, "classification-mixed", []byte("mixed evidence"), true)
@@ -137,7 +137,7 @@ func TestSourceClassificationForeignMixedAndDamagedParents(t *testing.T) {
 func TestInspectClassificationProjectionEligibility(t *testing.T) {
 	for _, mode := range []string{"foreign canonical subject", "foreign canonical basis", "foreign projection", "foreign basis projection", "local contradiction", "missing trailing basis", "ordinal gap", "malformed bytes", "noncanonical bytes"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newV4Fixture(t)
+			f := newScopeFixture(t)
 			defer f.store.Close()
 			foreign := addVerifiedLexicalDocument(t, f.store, "classification-hidden", "hidden evidence")
 			local := mousa.NewRepresentationClassificationSubject(f.predecessor.ID)
@@ -201,7 +201,7 @@ func TestInspectClassificationProjectionEligibility(t *testing.T) {
 }
 
 func TestSourceClassificationHistoricalWithdrawnAndRollback(t *testing.T) {
-	f := newV4Fixture(t)
+	f := newScopeFixture(t)
 	defer f.store.Close()
 	_, replacement, text := prepareLocalRevision(t, f.store, "predecessor", "new replacement")
 	if _, err := f.store.ActivateLocalItem(t.Context(), f.source.ID, "predecessor", replacement.ID, text); err != nil {
@@ -249,7 +249,7 @@ func TestSourceClassificationHistoricalWithdrawnAndRollback(t *testing.T) {
 }
 
 func TestInspectClassificationOwnsWriterSnapshot(t *testing.T) {
-	f := newV4Fixture(t)
+	f := newScopeFixture(t)
 	defer f.store.Close()
 	local := mousa.NewRepresentationClassificationSubject(f.predecessor.ID)
 	record := scopedClassification(t, local, local)
@@ -385,7 +385,7 @@ func TestInspectClassificationMalformedTypedProjections(t *testing.T) {
 		`UPDATE classification_bases SET basis_kind = 'future'`,
 	} {
 		t.Run(damage, func(t *testing.T) {
-			f := newV4Fixture(t)
+			f := newScopeFixture(t)
 			defer f.store.Close()
 			subject := mousa.NewRepresentationClassificationSubject(f.predecessor.ID)
 			record := scopedClassification(t, subject, subject)
@@ -413,4 +413,41 @@ func TestInspectClassificationMalformedTypedProjections(t *testing.T) {
 			}
 		})
 	}
+}
+
+// scopeFixture is one store whose source holds four current indexed items for classification scope tests.
+type scopeFixture struct {
+	store       *Store
+	source      mousa.Source
+	predecessor mousa.Representation
+	twin        mousa.Representation
+	successor   mousa.Representation
+	peer        mousa.Representation
+}
+
+func newScopeFixture(t *testing.T) *scopeFixture {
+	t.Helper()
+	ctx := context.Background()
+	store := openLexicalStore(t)
+	seedEvaluationFixture(t, store)
+	source, predecessor, predecessorText := prepareLocalRevision(t, store, "predecessor", "sharedterm predecessor evidence")
+	_, twin, twinText := prepareLocalRevision(t, store, "twin", "sharedterm predecessor evidence")
+	_, successor, successorText := prepareLocalRevision(t, store, "successor", "sharedterm successor evidence")
+	_, peer, peerText := prepareLocalRevision(t, store, "peer", "sharedterm peer evidence")
+	for _, item := range []struct {
+		name           string
+		representation mousa.Representation
+		text           []byte
+	}{
+		{"predecessor", predecessor, predecessorText},
+		{"twin", twin, twinText},
+		{"successor", successor, successorText},
+		{"peer", peer, peerText},
+	} {
+		action, err := store.ActivateLocalItem(ctx, source.ID, item.name, item.representation.ID, item.text)
+		if err != nil || action != "added" {
+			t.Fatalf("activate %s = %q, %v", item.name, action, err)
+		}
+	}
+	return &scopeFixture{store: store, source: source, predecessor: predecessor, twin: twin, successor: successor, peer: peer}
 }

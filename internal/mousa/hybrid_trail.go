@@ -61,20 +61,10 @@ func HybridRRFScore(lexicalRank, vectorRank int) float64 {
 // NewHybridSourceTrail packs only the supplied fused order. Canonical store
 // membership and current-pointer verification remain the caller's responsibility.
 func NewHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, expression string, selection HybridSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string) (SourceTrail, error) {
-	return newHybridSourceTrail(request, decision, expression, selection, candidates, budget, packing, nil)
+	return newHybridSourceTrail(request, decision, expression, selection, candidates, budget, packing)
 }
 
-// NewHybridSourceTrailWithSupersession packs survivors without changing either producing branch.
-// Administration and candidate ancestry must be verified in the caller's transaction.
-func NewHybridSourceTrailWithSupersession(request PolicyEvaluationRequest, decision PolicyDecision, expression string, selection HybridSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string, activation *SupersessionActivationState, declaration *SupersessionDeclaration) (SourceTrail, error) {
-	supersession, err := BuildSupersessionSelection(request.SourceID, decision.Outcome, candidates, activation, declaration)
-	if err != nil {
-		return SourceTrail{}, err
-	}
-	return newHybridSourceTrail(request, decision, expression, selection, candidates, budget, packing, &supersession)
-}
-
-func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, expression string, selection HybridSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string, supersession *SupersessionSelection) (SourceTrail, error) {
+func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, expression string, selection HybridSelection, candidates []VerifiedLexicalCandidate, budget uint64, packing string) (SourceTrail, error) {
 	if err := request.Validate(); err != nil {
 		return SourceTrail{}, err
 	}
@@ -85,11 +75,7 @@ func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 		return SourceTrail{}, errors.New("hybrid decision belongs to another request")
 	}
 	rows := trailCandidatesFromVerified(candidates)
-	suppressed, err := suppressSupersededCandidates(rows, supersession)
-	if err != nil {
-		return SourceTrail{}, err
-	}
-	plan, err := packTraceCandidates(rows, candidates, budget, packing, suppressed)
+	plan, err := packTraceCandidates(rows, candidates, budget, packing)
 	if err != nil {
 		return SourceTrail{}, err
 	}
@@ -97,9 +83,6 @@ func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 		rows[i].Selected = plan.Selected[i]
 	}
 	trail := SourceTrail{Schema: SourceTrailSchemaV6, RequestID: request.ID.String(), DecisionID: decision.ID.String(), Outcome: string(decision.Outcome), Expression: expression, BudgetBytes: budget, UsedBytes: plan.UsedBytes, PacketID: plan.PacketID.String(), Candidates: rows, PackingPolicy: packing, Hybrid: &selection}
-	if supersession != nil {
-		trail.Schema, trail.Supersession = SourceTrailSchemaV9, supersession
-	}
 	trail.ID, err = vectorTrailIdentity(trail)
 	if err != nil {
 		return SourceTrail{}, err
@@ -110,7 +93,7 @@ func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 func (trail SourceTrail) validateHybridTrail() error {
 	invalid := func() error { return errors.New("invalid v6 hybrid bindings, coverage or order") }
 	h := trail.Hybrid
-	if h == nil || trail.Vector != nil || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) {
+	if h == nil || trail.Vector != nil {
 		return invalid()
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {

@@ -176,8 +176,8 @@ func TestMCPRetrievalRankingAndRecordedHistory(t *testing.T) {
 	jsonlSync(t, run, "alpha", record("a.md", "Replacement revision."))
 	client = startMCPClient(t, run, "cli", false)
 	for _, s := range saved {
-		h := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": s.result["trail_id"], "retrieval_details": true, "supersession": true}, "")["historical"].(map[string]any)
-		if !reflect.DeepEqual(h[s.mode], s.facts) || h["supersession"] != nil {
+		h := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": s.result["trail_id"], "retrieval_details": true}, "")["historical"].(map[string]any)
+		if !reflect.DeepEqual(h[s.mode], s.facts) {
 			t.Fatalf("history reinterpreted current state: %v", h)
 		}
 		fresh := client.call("mousa_"+s.mode+"_query", mcpRetrievalArgs(space, s.mode, "", 40), "")
@@ -243,7 +243,7 @@ func TestMCPRetrievalStrictInputsBeforeMutation(t *testing.T) {
 			"budget_bytes":   {`true`, `0`, `-1`, `1.5`, `262145`},
 			"space_id":       {`"bad"`, `"` + strings.Repeat("A", 64) + `"`, `"` + strings.Repeat("0", 64) + `"`},
 			"packing_policy": {`"unknown"`, `false`},
-			"supersession":   {`null`, `"true"`, `0`, `{}`, `[]`}, "context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
+			"context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
 		} {
 			for _, value := range values {
 				clone := make(map[string]json.RawMessage)
@@ -355,4 +355,17 @@ func TestMCPRetrievalTokenHistorySafeProjection(t *testing.T) {
 			t.Fatal("native-created token history opt-in changed producing facts")
 		}
 	}
+}
+
+// mcpCanonicalInspectionState fingerprints exactly the tables one inspection command may read and
+// the tables a permitted authorization write may extend, so a bracket over one command separates an
+// allowed decision insert from a forbidden canonical mutation.
+func mcpCanonicalInspectionState(t *testing.T, path string) map[string]string {
+	t.Helper()
+	state := make(map[string]string, 3)
+	for _, table := range []string{"source_trails", "source_trail_candidates", "policy_decisions"} {
+		count, digest := tableDigest(t, path, table)
+		state[table] = fmt.Sprintf("%d/%s", count, digest)
+	}
+	return state
 }

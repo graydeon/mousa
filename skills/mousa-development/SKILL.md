@@ -9,19 +9,9 @@ Read the current task, repository documentation and operator-supplied workflow b
 
 ## Find the affected contract
 
-Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing. For supersession, read [SUPERSESSION_ENFORCEMENT](../../docs/SUPERSESSION_ENFORCEMENT.md): native directory/JSONL and MCP queries support explicit opt-in. Defaults remain uncurated. Read [MCP administration](../../docs/MCP_SUPERSESSION.md#source-scoped-administration) for strict drafts, separate write permission and fresh-authorized status.
+Read [CAPABILITIES](../../docs/CAPABILITIES.md) for supported interfaces and evidence limits, and the relevant implementation and callers before editing.
 
-Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection, supersession selection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
-
-For MCP administration, reuse native canonical writes and transaction-local
-verified consultation. Keep admin permission separate from ingestion and
-retrieval; authorize status before consulting hidden state. Denied status omits
-current entirely, including corruption distinctions. Allowed no-history is
-verified absence, not a damaged projection fallback. Preserve explicit nullable
-draft fields, canonical size/label limits and exact retries: an activation retry
-conflicts after its event stops being current. Historical pins with valid ancestry
-remain administrable without a current-pin or vector-enumeration gate. Caller
-actor/time/reason are assertions, distinct from authenticated HTTP identity.
+Trace changed symbols and record callers and compatibility impact using available local code intelligence. Keep policy authorization, lifecycle rejection and packing dispositions distinct. A source-scoped decision must not silently broaden to another source or caller.
 
 ## Preserve canonical behavior
 
@@ -29,7 +19,7 @@ Keep earlier schema versions, public signatures, canonical encodings and identit
 
 Reuse the supplied SQLite transaction for candidate, administrative and provenance reads. Calling a public method that opens another transaction can mix snapshots. Distinguish verified no history from damaged recorded state: a missing event named by an existing projection is corruption; an unknown identity requested directly from a historical reader can be not-found. Fail without manufacturing, repairing or committing partial records.
 
-Historical trail reads verify recorded immutable evidence and current authorization without reinterpreting selection under today's activation projection. Preserve canonical candidate sizes and ranks when withholding; suppressed candidates consume no packing budget and cannot become retained duplicates. Keep unavailable historical text verification limits explicit.
+Historical trail reads verify recorded immutable evidence and current authorization. Keep unavailable historical text verification limits explicit.
 
 For current-source manifests, follow the [closed identity recipe](../../docs/USAGE.md#canonical-identity-recipe).
 Keep content inspection and fresh authorization in the same writer transaction.
@@ -54,7 +44,7 @@ local projections must not authorize foreign payloads. Denied inspection authori
 before lookup, omits payload and hides existence/corruption. Foreign, mixed or
 unprovable scope is generic not_found. Fresh authorization, scope, verified readback
 and receipt share one writer snapshot. Explicit classification administration grants
-no ingestion, supersession or read rights; HTTP writes retain principal/scope gates.
+no ingestion or read rights; HTTP writes retain principal/scope gates.
 Use canonical historical ancestry, not current index/vector coverage. Preserve
 confidence 0, exact retries and refusal without repair. Keep parser, actual-store,
 HTTP and stdio evidence distinct. Labels are attribution, not factual truth,
@@ -68,9 +58,8 @@ The source/segment/space slot is immutable; vector identities bind supplied valu
 and canonical revision pins. Fresh authorization/current-pointer selection and v5
 trace persistence share one writer snapshot. Historical verification reads recorded
 producing embeddings rather than current vectors. Keep cosine separate from BM25,
-report coverage and reject explicit vector query-term policy. Byte-only explicit
-supersession uses v9 with the existing producing facts and consultation; source
-admission precedes masking and ranks/coverage stay unchanged. MCP
+report coverage and reject explicit vector query-term policy.
+MCP
 `mousa_vector_query` reuses that native transaction for configured JSONL sources.
 
 For hybrid changes, read [native hybrid retrieval](../../docs/CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval).
@@ -96,7 +85,7 @@ v7 retrieval details use verified safe vector/hybrid fields.
 
 For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
 and its runtime preparation/limits in the usage guide. Native token mode writes
-v7 and packet v3, v8 for lexical supersession or v10 for vector/hybrid supersession.
+v7 and packet v3.
 Count the complete proposed versioned rendering through the bounded official offline process, after fresh
 authorization and within the same writer snapshot. Reap/verify the worker before
 canonical insertion. Skipped passages neither spend released budget nor seed
@@ -115,19 +104,6 @@ Keep rejected slots and original search ordinals out of release views. Accepted
 budget/duplicate omissions still have legitimate metadata. Internal canonical
 `TokenSelection` retains all producing facts; never mutate or rehash it to filter
 an inspection. Fresh inspection may append authorization evidence.
-For combined token/supersession queries, consult through the same writer
-transaction after authorization. Pack only survivors; verify every withheld
-candidate's original canonical size/content and ancestry. Lexical v8 and
-vector/hybrid v10 bind token facts and recorded consultation using packet v3's
-full-selection wrapper, not released text alone. Project token ranking through
-suppression-aware v4 or v9 respectively. Historical reads rederive membership
-from recorded events/declarations, not current activation. Vector/hybrid full-source
-admission still precedes masking; survivor accounting cannot relax it.
-Byte-only vector/hybrid uses v9 and packet v1's released-selection binding.
-Admit the entire current source (100 items, 100 passages, 256 KiB) before
-suppression, including unembedded rows. Preserve v1–v10 identities. The retrieval
-example independently counts complete returned contexts; synthetic vectors
-establish protocol/arithmetic only. Omitted/false token supersession retains v7.
 
 ## Prove and deliver the change
 

@@ -56,8 +56,6 @@ func main() {
 		err = withdrawCommand(ctx, *storePath, rest)
 	case "classification":
 		err = classificationCommand(ctx, *storePath, rest)
-	case "supersession":
-		err = supersessionCommand(ctx, *storePath, rest)
 	case "mcp":
 		err = mcpCommand(ctx, *storePath, rest)
 	case "plugin":
@@ -103,24 +101,11 @@ commands:
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
   classification put        append one strict attributed assertion draft from stdin (JSON)
   classification get <id>   read one verified assertion; read-only, never creates a store (JSON)
-  supersession declaration put
-                            append one strict revision-pinned declaration read from stdin (JSON)
-  supersession declaration get <declaration-id>
-                            read one stored declaration; read-only, never creates a store (JSON)
-  supersession activation put
-                            apply one strict single-declaration activation transition read from
-                            stdin (JSON); the caller states the expected predecessor and selection
-  supersession activation get <activation-id>
-                            read one stored activation event; read-only, never creates a store (JSON)
-  supersession activation state <source-id>
-                            report the verified current activation event and selected declaration
-                            for one source; read-only, never creates a store (JSON)
   mcp --caller <id> --source <id>
                             serve configured JSONL sources over stdio MCP
                             --openai-extensions enables evidence mentions/resources
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; --ingest-source <id> permits ingestion/import
-                            --supersession-admin-source <id> separately permits declarations/activations
                             --classification-admin-source <id> separately permits classifications
                             --tokenizer-python <path> --tokenizer-cache <dir> enables
                             optional whole-rendering token budgets; prepared offline backend only
@@ -143,7 +128,6 @@ query options (before positional arguments):
                             cannot combine with an explicit policy flag
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
                             supports --policy; no vector-space flag
-  --supersession            withhold the exact active predecessor revision (directory or --source)
 
 trail options:
   --verify-tokens            explicitly recount retained token-aware context with the
@@ -237,7 +221,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	policy := flags.String("policy", "original", "query-term policy: original or dedup")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
-	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession")
 	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
 	hybridSpace := flags.String("hybrid-space", "", "RRF lexical/vector space identity; query text argument and vector JSON on stdin")
 	contextTokens := flags.Uint64("context-tokens", 0, "opt-in whole rendered context token cap")
@@ -292,13 +275,13 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 				return usageError{"vector mode cannot use an explicit policy"}
 			}
 		}
-		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession)
+		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache)
 	}
 	if hybridMode {
 		if vectorMode {
 			return usageError{"hybrid mode cannot be combined with vector-space"}
 		}
-		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession)
+		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing)
 	}
 	if vectorMode {
 		incompatible := false
@@ -311,7 +294,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		if incompatible {
 			return usageError{"vector mode cannot be combined with an explicit policy"}
 		}
-		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
+		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing)
 	}
 	if *policy != "original" && *policy != "dedup" {
 		return usageError{"query policy must be original or dedup"}
@@ -331,21 +314,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		return err
 	}
 	query := positional[len(positional)-1]
-	if *supersession {
-		terms, err := mousa.PrepareLexicalTerms(query, *policy == "dedup")
-		if err != nil {
-			return usageError{err.Error()}
-		}
-		expressionBytes := 0
-		for _, term := range terms {
-			expressionBytes += len(term)
-		}
-		expressionBytes += (len(terms) - 1) * len(" OR ")
-		if expressionBytes > mousa.MaxLexicalExpressionBytes {
-			return usageError{"query expression exceeds byte limit"}
-		}
-	}
-	return runQueryWithSupersession(ctx, storePath, source, label, query, *policy, *budget, *packing, *supersession)
+	return runQuery(ctx, storePath, source, label, query, *policy, *budget, *packing)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -635,29 +604,28 @@ type statusResult struct {
 	NeedsRecovery   bool   `json:"needs_recovery"`
 }
 type evidenceResult struct {
-	Query                string                       `json:"query"`
-	Source               string                       `json:"source"`
-	QueryPolicy          string                       `json:"query_policy"`
-	Expression           string                       `json:"expression"`
-	RequestID            string                       `json:"request_id"`
-	DecisionID           string                       `json:"decision_id"`
-	DecisionOutcome      string                       `json:"decision_outcome"`
-	DecisionReasons      []mousa.PolicyDecisionReason `json:"decision_reasons"`
-	EvaluatedAtUsec      int64                        `json:"evaluated_at_usec"`
-	TrailID              string                       `json:"trail_id"`
-	PacketID             string                       `json:"packet_id"`
-	Outcome              string                       `json:"outcome"`
-	MatchedCandidates    int                          `json:"matched_candidates"`
-	CandidateLimit       int                          `json:"candidate_limit"`
-	LifecycleExcluded    int                          `json:"lifecycle_excluded"`
-	BudgetOmitted        int                          `json:"budget_omitted"`
-	DuplicateOmitted     *int                         `json:"duplicate_omitted,omitempty"`
-	SupersessionExcluded *int                         `json:"supersession_excluded,omitempty"`
-	PackingPolicy        string                       `json:"packing_policy,omitempty"`
-	UsedBytes            uint64                       `json:"used_bytes"`
-	BudgetBytes          uint64                       `json:"budget_bytes"`
-	Evidence             []evidenceHit                `json:"evidence"`
-	LatencyMicros        int64                        `json:"latency_micros"`
+	Query             string                       `json:"query"`
+	Source            string                       `json:"source"`
+	QueryPolicy       string                       `json:"query_policy"`
+	Expression        string                       `json:"expression"`
+	RequestID         string                       `json:"request_id"`
+	DecisionID        string                       `json:"decision_id"`
+	DecisionOutcome   string                       `json:"decision_outcome"`
+	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	EvaluatedAtUsec   int64                        `json:"evaluated_at_usec"`
+	TrailID           string                       `json:"trail_id"`
+	PacketID          string                       `json:"packet_id"`
+	Outcome           string                       `json:"outcome"`
+	MatchedCandidates int                          `json:"matched_candidates"`
+	CandidateLimit    int                          `json:"candidate_limit"`
+	LifecycleExcluded int                          `json:"lifecycle_excluded"`
+	BudgetOmitted     int                          `json:"budget_omitted"`
+	DuplicateOmitted  *int                         `json:"duplicate_omitted,omitempty"`
+	PackingPolicy     string                       `json:"packing_policy,omitempty"`
+	UsedBytes         uint64                       `json:"used_bytes"`
+	BudgetBytes       uint64                       `json:"budget_bytes"`
+	Evidence          []evidenceHit                `json:"evidence"`
+	LatencyMicros     int64                        `json:"latency_micros"`
 }
 
 type evidenceHit struct {
@@ -678,10 +646,6 @@ type evidenceHit struct {
 
 // runQuery runs one authorized query against one resolved source.
 func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string) error {
-	return runQueryWithSupersession(ctx, storePath, source, label, query, policy, budgetBytes, packingPolicy, false)
-}
-
-func runQueryWithSupersession(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, supersession bool) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
@@ -692,7 +656,7 @@ func runQueryWithSupersession(ctx context.Context, storePath string, source mous
 	if err != nil {
 		return err
 	}
-	result, err := queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, supersession)
+	result, err := queryItemsForRequest(ctx, store, source, request, query, policy, budgetBytes, packingPolicy)
 	if err != nil {
 		return err
 	}
@@ -737,4 +701,17 @@ func deployLocalPolicy(ctx context.Context, store *sqlite.Store) error {
 		ActiveBindingID: &binding.ID, ActorID: localNamespace, ActorVersion: "1", OccurredAtUsec: 1,
 	}
 	return store.ApplyPolicyActivation(ctx, activation)
+}
+
+// readBoundedInput reads one bounded stdin payload for the named record kind. Reading at most one
+// byte past the limit rejects an oversized stream before decoding and without buffering it.
+func readBoundedInput(r io.Reader, limit int, kind string) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("%s input exceeds %d bytes", kind, limit)
+	}
+	return data, nil
 }

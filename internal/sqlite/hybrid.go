@@ -15,16 +15,10 @@ import (
 // vector in one source/space. Authorization, both branches, packing and readback
 // share the immediate writer snapshot; a denied request enumerates neither branch.
 func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, false)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil)
 }
 
-// EvaluateAndTraceSupersessionHybrid withholds exact predecessor pins after fusion
-// without changing branch ranks, coverage or the full source admission limits.
-func (store *Store) EvaluateAndTraceSupersessionHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, true)
-}
-
-func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool) (TracedVectorResult, error) {
+func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery) (TracedVectorResult, error) {
 	if err := store.requireWritable("query hybrid"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -167,17 +161,7 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 			candidates[i] = mousa.VerifiedLexicalCandidate{Segment: segment, Text: p.Text, FinalRank: i + 1, Disposition: mousa.CandidateAccepted}
 			result.Passages[i] = p
 		}
-		var trail mousa.SourceTrail
-		var consultation supersessionConsultation
-		if supersession {
-			consultation, err = consultRankedSupersession(ctx, conn, request.SourceID, decision.Outcome, candidates)
-			if err != nil {
-				return err
-			}
-			trail, err = mousa.NewHybridSourceTrailWithSupersession(request, decision, expression, h, candidates, budget, packing, consultation.state, consultation.declaration)
-		} else {
-			trail, err = mousa.NewHybridSourceTrail(request, decision, expression, h, candidates, budget, packing)
-		}
+		trail, err := mousa.NewHybridSourceTrail(request, decision, expression, h, candidates, budget, packing)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build hybrid trail", err)
 		}
@@ -193,7 +177,6 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 			return err
 		}
 		result.Decision, result.Trail = decision, written
-		clearWithheldPassages(&result)
 		return nil
 	})
 	if err != nil {

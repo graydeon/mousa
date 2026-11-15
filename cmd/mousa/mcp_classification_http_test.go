@@ -50,8 +50,8 @@ func TestHTTPClassificationPermissionMatrix(t *testing.T) {
 	}))
 	defer identity.Close()
 	config.Issuer, config.IntrospectionURL = identity.URL, identity.URL
-	for mask := range 8 {
-		application := &mcpApplication{store: store, path: run.store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source, write: mask&1 != 0, supersessionAdmin: mask&2 != 0, classificationAdmin: mask&4 != 0}}, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), http: true}
+	for mask := range 4 {
+		application := &mcpApplication{store: store, path: run.store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source, write: mask&1 != 0, classificationAdmin: mask&2 != 0}}, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), http: true}
 		server, err := application.server(t.Context())
 		if err != nil {
 			t.Fatal(err)
@@ -101,7 +101,7 @@ func TestHTTPClassificationPermissionMatrix(t *testing.T) {
 			t.Fatalf("read scope bypassed mutation gate: %v", result)
 		}
 		_, result = post("write", "mousa_classification_put", put)
-		if mask&4 == 0 {
+		if mask&2 == 0 {
 			if !strings.Contains(string(mustJSON(t, result)), "classification_admin_not_permitted") || classificationState(t, run.store) != before {
 				t.Fatalf("write scope bypassed alias gate: %v", result)
 			}
@@ -115,7 +115,7 @@ func TestHTTPClassificationPermissionMatrix(t *testing.T) {
 			if !strings.Contains(string(mustJSON(t, result)), `"classification"`) {
 				t.Fatalf("read scope could not fetch: %v", result)
 			}
-			if mask == 7 {
+			if mask == 3 {
 				run.run(false, "access", "--source", "alpha", "deny")
 				for _, id := range []any{saved["id"], strings.Repeat("a", 64)} {
 					_, denied := post("read", "mousa_classification_get", map[string]any{"source": "alpha", "classification_id": id})

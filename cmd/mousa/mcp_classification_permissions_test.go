@@ -16,8 +16,8 @@ import (
 
 func classificationState(t *testing.T, path string) string {
 	t.Helper()
-	state := adminState(t, path)
-	for _, table := range []string{"classifications", "classification_bases", "observations", "artifacts", "segments"} {
+	var state string
+	for _, table := range []string{"sources", "representations", "local_items", "classifications", "classification_bases", "observations", "artifacts", "segments"} {
 		n, digest := tableDigest(t, path, table)
 		state += fmt.Sprintf("%s:%d/%s;", table, n, digest)
 	}
@@ -35,19 +35,16 @@ func TestMCPClassificationStdioPermissionsAndRetrieval(t *testing.T) {
 	draft["basis"] = []any{map[string]any{"kind": "representation", "id": pin["representation_id"]}}
 	put := map[string]any{"source": "alpha", "classification": draft}
 	ingest.close()
-	for mask := range 8 {
+	for mask := range 4 {
 		t.Run(fmt.Sprintf("permissions-%d", mask), func(t *testing.T) {
 			var flags []string
 			if mask&2 != 0 {
-				flags = append(flags, "--supersession-admin-source", "alpha")
-			}
-			if mask&4 != 0 {
 				flags = append(flags, "--classification-admin-source", "alpha")
 			}
 			client := startMCPClient(t, run, "cli", mask&1 != 0, flags...)
 			defer client.close()
 			before := classificationState(t, run.store)
-			if mask&4 == 0 {
+			if mask&2 == 0 {
 				client.call("mousa_classification_put", put, "classification_admin_not_permitted")
 				if classificationState(t, run.store) != before {
 					t.Fatal("refused mutation changed state")
@@ -80,9 +77,6 @@ func TestMCPClassificationStdioPermissionsAndRetrieval(t *testing.T) {
 			client.call("mousa_classification_put", map[string]any{"source": "/unconfigured/path", "classification": draft}, "source_not_permitted")
 			if mask&1 == 0 {
 				client.call("mousa_sync", mcpItems("alpha", map[string]any{"id": "forbidden", "text": "no"}), "ingestion_not_permitted")
-			}
-			if mask&2 == 0 {
-				client.call("mousa_supersession_declare", map[string]any{"source": "alpha", "declaration": supersessionDraftFixture(false)}, "supersession_admin_not_permitted")
 			}
 		})
 	}

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
-	"slices"
 	"strings"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -14,9 +13,8 @@ import (
 
 // TokenQuery owns a ready query-scoped counter; callers close it on all paths.
 type TokenQuery struct {
-	Budget       mousa.TokenBudget
-	Counter      *tokenizer.Counter
-	Supersession bool
+	Budget  mousa.TokenBudget
+	Counter *tokenizer.Counter
 }
 
 func (options TokenQuery) validate() error {
@@ -69,19 +67,7 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 		if err != nil {
 			return err
 		}
-		var base mousa.SourceTrail
-		var consultation supersessionConsultation
-		if options.Supersession {
-			if enforced.Decision.Outcome == mousa.PolicyOutcomeAllow {
-				consultation, err = readSupersessionConsultation(ctx, conn, request.SourceID)
-				if err != nil {
-					return err
-				}
-			}
-			base, err = mousa.NewSourceTrailWithSupersession(request, enforced.Decision, expression, enforced.Candidates, budget, packing, consultation.state, consultation.declaration)
-		} else {
-			base, err = mousa.NewSourceTrail(request, enforced.Decision, expression, enforced.Candidates, budget, packing)
-		}
+		base, err := mousa.NewSourceTrail(request, enforced.Decision, expression, enforced.Candidates, budget, packing)
 		if err != nil {
 			return err
 		}
@@ -96,17 +82,7 @@ func (store *Store) EvaluateAndTraceTokenLexical(ctx context.Context, request mo
 		if err != nil {
 			return err
 		}
-		candidates := enforced.Candidates
-		if written.Supersession != nil && len(written.Supersession.Dispositions) > 0 {
-			candidates = slices.Clone(candidates)
-			withheld := withheldSegments(written)
-			for i := range candidates {
-				if _, ok := withheld[candidates[i].Segment.ID]; ok {
-					candidates[i].Text = ""
-				}
-			}
-		}
-		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates}
 		rendered = text
 		return nil
 	})
@@ -121,7 +97,7 @@ func (store *Store) EvaluateAndTraceTokenVector(ctx context.Context, request mou
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	return store.traceVector(ctx, request, space, values, budget, packing, &options, options.Supersession)
+	return store.traceVector(ctx, request, space, values, budget, packing, &options)
 }
 
 // EvaluateAndTraceTokenHybrid keeps token packing inside the existing fused snapshot.
@@ -129,7 +105,7 @@ func (store *Store) EvaluateAndTraceTokenHybrid(ctx context.Context, request mou
 	if err := options.validate(); err != nil {
 		return TracedVectorResult{}, err
 	}
-	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options, options.Supersession)
+	return store.traceHybrid(ctx, request, query, policy, space, values, budget, packing, &options)
 }
 
 func verifyTokenTrail(ctx context.Context, q queryer, t mousa.SourceTrail, source mousa.SourceID) error {

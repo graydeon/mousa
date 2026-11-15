@@ -283,3 +283,16 @@ func TestTokenRecordedCountRequiresExplicitRecount(t *testing.T) {
 		t.Fatalf("false measured count accepted or committed: %v", err)
 	}
 }
+
+func freshAuditCounts(t *testing.T, store *Store) map[string]int {
+	t.Helper()
+	counts := make(map[string]int)
+	for _, table := range []string{"policy_decisions", "policy_decision_inputs", "source_trails", "source_trail_candidates"} {
+		var count int
+		if err := store.db.QueryRow("SELECT count(*) FROM " + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		counts[table] = count
+	}
+	return counts
+}

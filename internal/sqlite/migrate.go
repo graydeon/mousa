@@ -426,16 +426,6 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 			return err
 		}
 	}
-	if wantVersion >= 12 {
-		if err := verifySupersessionDeclarationRecords(ctx, db); err != nil {
-			return err
-		}
-	}
-	if wantVersion >= 13 {
-		if err := verifySupersessionActivationRecords(ctx, db); err != nil {
-			return err
-		}
-	}
 	if wantVersion >= 15 {
 		if err := verifyVectorRecords(ctx, db); err != nil {
 			return err

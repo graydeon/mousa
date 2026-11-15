@@ -35,14 +35,6 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
 | MCP attributed classification administration | Source builds containing this addition | `mousa_classification_put`, `mousa_classification_get` | Separate write allowlist; all subject/basis ancestry roots in one source; fresh-authorized scoped read; strict native draft and canonical retry | [MCP example](../examples/mcp_classifications.py); synthetic attribution only, not classifier accuracy, calibrated confidence or a tagged-release claim |
-| Revision-pinned supersession declarations | Yes | `supersession declaration put`, `supersession declaration get <id>` | Strict identity/codec, immutable SQLite storage, same-source item/revision provenance, retry, restart and integrity failures; actual-CLI input bound, malformed/duplicate/unknown/trailing/oversized input, unpinned targets, missing identity, absent store, read-only read, rejected writes leaving stored bytes unchanged | None; declarations do not filter retrieval or establish factual truth |
-| Supersession activation administration | Yes | `supersession activation put`, `supersession activation get <id>`, `supersession activation state <source-id>` | Strict identity/codec, immutable SQLite events and verified current projection, initial selection, replacement, deactivation, reactivation, exact retry, stale/competing/redundant rejection, metadata replay under an existing identity, historical event reads, current-state projection with canonical identity strings, explicit null declaration and per-source isolation, corrupt history/projection rejection without repair | None; recorded activation does not move item pointers, filter retrieval or establish factual truth |
-| Transaction-local supersession consultation | Yes | Used by native opt-in queries | Verified current state and selected declaration read through the retrieval transaction; no-history, transitions, explicit snapshot ordering and corrupt recorded-state rejection | No performance measurement; verification is linear in the source's activation history |
-| Supersession selection contract | Yes | `query --supersession DIRECTORY TEXT` or `query --source ID --supersession TEXT` | Exact predecessor-representation matching, source isolation, rank/size preservation, rejected and non-matching candidates, survivor packing | Synthetic native acceptance is separate from domain tests; no semantic-quality claim |
-| Opt-in supersession trail and survivor packing | Yes | Directory/JSONL and configured MCP lexical, vector and hybrid queries, with independent byte and optional token budgets | v4 lexical bytes, v8 lexical tokens, v9 vector/hybrid bytes and v10 vector/hybrid tokens; both packers, exact pins, original ranks/coverage and survivor packing | Independent companion evidence is separate from product tests; no semantic-quality or latency claim |
-| MCP supersession opt-in | Yes | `mousa_query`, `mousa_vector_query`, `mousa_hybrid_query`, and `mousa_trail` optional `supersession` boolean | Strict arguments, omitted/false/true properties, recorded consultation, native transaction reuse and independent supersession/retrieval/token history opt-ins | Independent stdio captures retain their producing source pins; synthetic client behavior is not retrieval quality or performance |
-| MCP source-scoped supersession administration | Source builds containing the administration change | `mousa_supersession_declare`, `mousa_supersession_activate`, `mousa_supersession_status` | Closed drafts, separate startup write allowlist, optimistic transitions, verified current state under fresh authorization | Existing canonical records; caller assertions, not truth or authenticated authorship; raw historical reads remain native-only |
-| Stored v4 trail content and administration verification | Yes | `trail --source <id> <trail-id>` | Canonical read/startup verification, recorded history after transitions/revisions, recomputed duplicate-to-selected and duplicate-to-budget corruption, missing named parents as integrity, unknown IDs and legacy readers unchanged, live-store rollback without repair | Retired indexed text is unarchived; compare bytes only where retained |
 | Embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -68,7 +60,7 @@ immutable `mousa.classification.v1` primitive. A strict bounded
 `mousa.classification_input.v1` draft omits the computed ID; put derives it, validates
 all facts and writes through the existing single-store transaction. Put/get return
 the existing canonical record. No stored schema, migration, query/packet/trail
-property, canonical v1–v11 bytes or default selection changes. The separate MCP
+property, canonical v1, v2, v5–v7 or v11 bytes or default selection changes. The separate MCP
 addition below extends discovery without changing native storage semantics.
 
 Subjects and ordered basis references support source, observation, artifact,
@@ -90,7 +82,7 @@ name stable identity, not automatic approval of future content.
 Delivered value is durable, inspectable attribution with typed evidence basis.
 Classification-based filtering/authorization, secret scanning and automatic
 classification/inference remain unimplemented. Indexing, retrieval permission,
-ranking, freshness and supersession do not consume these labels.
+ranking and freshness do not consume these labels.
 
 ### Same-source MCP classification administration
 
@@ -102,7 +94,7 @@ reads return generic `not_found`, without partial records or foreign corruption
 details. Denial precedes lookup and omits classification entirely.
 
 Put requires the independent `--classification-admin-source` allowlist and HTTP
-write scope when hosted; ingestion and supersession permissions are insufficient.
+write scope when hosted; ingestion permission is insufficient.
 Get needs no write grant, but fresh retrieval authorization, ancestry proof,
 verified readback and the normal decision receipt share one writer snapshot.
 Historical/withdrawn/never-indexed parents do not require current index coverage.
@@ -145,46 +137,10 @@ reservation declarations, effective allowance, ordered selections, measured
 proposed-rendering counts, exact omissions and final digest/count/byte accounting.
 Omissions distinguish `bytes`, `tokens`, `rendered_bytes` and `duplicate`; lifecycle
 rejection remains separate. Packet v3 binds the complete token selection under
-its own domain; v1–v6 encodings, default responses and packet identities do not
+its own domain; v1, v2, v5 and v6 encodings, default responses and packet identities do not
 change. No context text is archived and no parallel canonical store is introduced.
 A denied v7 trail carries no candidates, proposed source counts or selected text;
 canonical validation rejects candidate facts even when identities are recomputed.
-
-Lexical token queries additionally accept explicit supersession enforcement:
-native directory/JSONL `query --supersession --context-tokens N` and MCP
-`mousa_query` with `supersession: true` and `context_tokens`. Both packers skip
-exact pinned predecessors before byte/token counting and duplicate retention.
-Withheld rows retain positive canonical sizes and accepted ranks, with null
-proposed counts; all-withheld empty context reports `supersession_excluded`,
-not budget omission. Successor availability never reinstates a pinned predecessor.
-Token admission retains the 100-candidate and 4,096-byte per-passage limits.
-The 262,144-byte aggregate text limit applies to accepted candidates remaining
-after exact suppression, before budget or duplicate omissions. Withheld bytes
-do not consume that capacity; their content, ancestry, sizes and ranks are
-still verified on construction and canonical readback.
-Vector/hybrid composition uses v10 and retains full-source admission before masking,
-as specified [below](#byte-only-vectorhybrid-supersession). Lexical declared support
-can compose with token budgets and supersession as v13.
-
-The composition writes `mousa.source_trail.v8`, binding the token facts and the
-closed recorded consultation. Omitted/false lexical supersession retains v7;
-byte-only supersession retains v4. Valid v1–v7 bytes and identities are unchanged.
-The v8 trail identity hashes its complete canonical record with ID zeroed, so its
-schema is an explicit version binding. Packet v3 has no separate strict packet
-decoder: its existing constructor hashes a wrapper containing the complete
-producing trail with ID zeroed and request/decision/packet fields empty. The v8
-variant keeps that construction, including schema and consultation, rather than
-hashing only returned text. Equal returned context can therefore have different
-v7/v8 packet identities. The v7 hash path is unchanged.
-
-Canonical readback/startup verifies v8 through the existing trail scan, with no
-new tables. Recorded event/declaration chains and exact suppression membership
-are checked through the supplied queryer, not today's projection; withheld
-candidates remain canonical-content verified. Packing and retained-rendering
-verification use that recorded mask. Normal history records producing counts;
-native explicit recount uses selected retained bytes only. MCP's independent
-`supersession` and `token_details` inspection opt-ins release safe recorded
-members after fresh authorization, never recounting.
 
 Canonical reads/startup validate identities, projections, policy/source parents,
 retrieval facts, packing accounting and the rendered digest when all selected
@@ -227,7 +183,7 @@ Tokenizer paths are trusted process-startup configuration only.
 The [native workflow and synthetic example](USAGE.md#caller-supplied-vector-workflow)
 exports current normalized passage bytes, imports caller-produced embeddings and
 queries one source in one explicitly named space. Lexical queries keep their
-previous default, fields, packet identities and v1–v4 trail encodings. Mousa does
+previous default, fields, packet identities and v1/v2 trail encodings. Mousa does
 not run a model, call a provider, use a GPU or need another runtime/store.
 
 `vector inputs` evaluates fresh CLI source authorization and lifecycle before
@@ -281,12 +237,12 @@ zero coverage reports `no_indexed_passages`. An empty source reports `no_passage
 Denial discloses no source coverage. Original and exact-v1 packing preserve the
 existing whole-passage, skip-if-too-large and byte-equal retained-copy rules.
 
-Without supersession enforcement, every vector query writes `mousa.source_trail.v5`, including denied and empty
+Every vector query writes `mousa.source_trail.v5`, including denied and empty
 queries. Its closed `vector` member binds the descriptor, space/query-vector
 identities, query values, observed eligible/indexed counts and every ranked
 embedding/source/segment/representation/content pin and cosine score. The usual
 candidate rows bind rank, size, selected flags and packing omissions; v5 has no
-lexical expression or supersession member. Packet v1 identities
+lexical expression. Packet v1 identities
 continue to bind the released selection rather than retrieval mode. Native `trail`
 reauthorizes before releasing v5 metadata and rechecks scores against recorded
 immutable embeddings, never today's current pointers. Resync/deletion/withdrawal
@@ -309,7 +265,6 @@ trail persistence share one immediate writer transaction.
 These bounds apply to selection, not the existing full-store startup integrity
 scan. No ANN index, automatic embeddings or authenticated model-window guarantee is implemented.
 Vector mode rejects explicit `--policy`; declared support is described below.
-Byte-only `--supersession` is described below; omission/false retains v5.
 MCP `mousa_vector_query` uses the same native transaction for configured JSONL
 sources. `mousa_trail` can release recorded vector facts with `retrieval_details`.
 OpenAI mention/resource search stays lexical. No SDK or connector framework is introduced.
@@ -322,8 +277,7 @@ a directory argument or `--source ID`, not both. See the
 [runnable example](USAGE.md#hybrid-lexical-and-vector-query). Text is an independent
 caller input; Mousa does not verify that the supplied vector was generated from it.
 Explicit hybrid mode rejects any `--vector-space` flag, including empty values.
-It accepts declared support. Byte-only `--supersession` is described below;
-omission/false retains v6. No embedding work or network call runs.
+It accepts declared support. No embedding work or network call runs.
 
 `EvaluateAndTraceHybrid` uses one immediate writer transaction for fresh policy
 and lifecycle, current passage pins, both branches, fusion, packing and trail
@@ -368,7 +322,7 @@ byte-equal passage, freeing budget for later candidates. Oversized/unselected
 passages consume no released-text budget and never seed retained duplicates.
 Packet v1 identity semantics are unchanged.
 
-Without supersession enforcement, each hybrid query writes closed `mousa.source_trail.v6` history. It binds request
+Each hybrid query writes closed `mousa.source_trail.v6` history. It binds request
 text, prepared terms/expression and term policy, fusion policy, space descriptor,
 query vector/identity, observed coverage, candidate branch membership/ranks/scores,
 canonical source/segment/representation/content pins, fused order and packing.
@@ -381,375 +335,8 @@ missing-vector absence and activation timing are recorded observations, not
 reconstructible proofs. Hashes bind those observations; they do not prove them.
 Retired passage bytes are not archived; exact byte-duplicate verification is
 limited to retained text, as in earlier versions. Startup verifies v6 without
-relaxing v1–v5 readers or canonical bytes. MCP `mousa_hybrid_query` uses the same
+relaxing v1, v2 and v5 readers or canonical bytes. MCP `mousa_hybrid_query` uses the same
 native transaction; opted-in history releases recorded branch/fusion facts.
-
-### Byte-only vector/hybrid supersession
-
-Native `query --vector-space` and `query --hybrid-space` accept `--supersession`.
-Configured MCP `mousa_vector_query` and `mousa_hybrid_query` accept the optional
-strict boolean `supersession`. Omission/false preserves the existing canonical
-version and result property set. True adds optional `supersession_excluded`,
-including zero, and writes closed `mousa.source_trail.v9`.
-
-The same writer transaction authorizes, admits the full current source, ranks,
-consults verified active administration, packs survivors and persists/readbacks
-the record. Denial consults no administration and reports zero source facts.
-Only an accepted exact predecessor item/representation pin is withheld through
-verified ancestry. Successor matching, embedding coverage, budget fit or current
-availability never gates suppression; no successor is fetched as fallback.
-
-Both byte packers retain original ranks, positive canonical sizes and producing
-pins for withheld rows. Those rows release no text, spend no released budget and
-cannot seed retained duplicates. Cosine, BM25, branch ranks, RRF(k60), identity
-ties and eligible/indexed coverage do not change. The full 100-active-item,
-100-current-passage, 256-KiB and 2,048-dimension bounds apply before masking.
-Lexical v8 survivor token admission does not relax those source limits.
-
-V9 requires exactly one existing `vector` or `hybrid` member plus the existing
-`supersession` consultation. Its identity hashes the complete canonical record
-with ID zeroed, including its schema. Packet v1 continues to bind the released
-selection and budget, not the consultation or retrieval mode: equal selections
-can share packet identity while their trails differ. Valid v1–v8 encodings and
-identities are unchanged; v5/v6 cannot carry consultation and v8 stays lexical.
-
-Existing canonical read/startup scans verify producing embeddings, pins,
-coverage bounds, order, packing and recorded event/declaration membership.
-History reads recorded administration under fresh authorization, never today's
-activation or a rerun of today's index. BM25, past completeness and absence
-cannot be reconstructed later; retired text is unarchived. An inspection may
-commit fresh authorization audit evidence; historical rows are not rewritten.
-MCP `mousa_trail` independently projects recorded consultation with `supersession`
-and ranking facts with `retrieval_details`. Defaults retain legacy projections.
-
-With `--context-tokens` or MCP `context_tokens`, true vector/hybrid supersession
-writes closed `mousa.source_trail.v10`. It combines exactly one existing
-`VectorSelection` or `HybridSelection`, `SupersessionSelection` and `TokenSelection`.
-Both packers measure complete proposed survivor renderings with the official
-offline backend, including provenance headers and separators. Withheld content
-is still verified, but has null proposed count and never enters rendering,
-released-byte accounting or retained-duplicate state. Source admission above
-still precedes masking; lexical survivor accounting cannot admit a larger vector source.
-
-Packet v3 binds the full producing selection, including schema, retrieval mode
-and recorded consultation. Equal released text need not have equal packet identity.
-Canonical validation projects ranking through suppression-aware v9, then verifies
-recorded vectors, candidate content and administration through one queryer.
-Normal history needs no Python; native explicit recount requires the original
-selected bytes. MCP `supersession`, `retrieval_details` and `token_details` remain
-independent history opt-ins under fresh authorization, with no recount.
-Ordinary v7, lexical v8 and byte-only v9 construction and all valid v1–v9 bytes
-and identities remain unchanged. Native explicit false vector/hybrid token flags,
-previously rejected, now behave like omission and retain v7. See the [runnable synthetic example](USAGE.md#vector-and-hybrid-supersession).
-
-
-## Supersession core boundary
-
-The internal Go API stores source-local declarations pinned to exact predecessor
-and successor item revisions. Separate immutable activation events select at most
-one declaration per source, with an explicit expected predecessor and a verified
-current-state projection. Deactivation retains its event in history. Actor, time
-and reason are recorded labels, not authenticated authorship.
-
-Administration does not move item pointers or filter default queries. Native directory
-queries enable enforcement with `query --supersession DIRECTORY TEXT`; JSONL queries
-use `query --source ID --supersession TEXT`. The fresh store method
-`EvaluateAndTraceSupersessionLexical` evaluates authorization and lifecycle first,
-retrieves verified source-scoped candidates, consults administration through the
-same writer transaction and records v4 before canonical readback and commit.
-Denied requests consult no administration; corrupt recorded state fails allowed
-requests without committing their decision or trail.
-
-Both `original` and `exact-v1` packing operate on survivors. Only the accepted
-candidate's own exact predecessor representation matches; item labels, equal bytes,
-ancestor pins and successor availability do not. The local stdio MCP query tool
-implements the same explicit opt-in as an optional `supersession` boolean, and its trail
-tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
-boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)). Configured JSONL aliases also
-support separately permitted declaration/activation and freshly authorized current-state inspection.
-The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
-outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
-Historical
-revision pins remain readable after item updates or deletion; canonical existence
-does not prove a revision was ever activated.
-
-### Selection contract
-
-The internal Go API also carries the pure selection half of that contract, in
-`internal/mousa/supersession_selection.go`. `SupersessionSelection` is the
-consultation member: a boolean, a nullable activation and declaration identity, and a
-non-nullable disposition array. `SupersessionDisposition` is one typed row naming the
-withheld candidate's segment identity and content digest, the applied declaration and
-that declaration's exact predecessor and successor item and representation pins.
-`BuildSupersessionSelection` derives the member from the decision source and outcome,
-already verified lexical candidates and explicitly supplied verified activation and
-declaration records; `Validate` and `ValidateAgainst` re-check a member against those
-supplied inputs.
-
-A non-allow outcome is unconsulted: no activation identity, no declaration identity and
-no row, which asserts nothing about whether activation history exists. An allow outcome
-is consulted, where a nil activation state means the caller verified no history, a state
-naming no declaration is a deactivation, and an accepted candidate is withheld only when
-its own segment representation equals the selected declaration's predecessor
-representation and its verified ancestry names the decision source. Item labels, text
-equality, segment identity, a later revision, an ancestor representation pin, another
-source's candidates and lifecycle-rejected candidates never match, and rows follow the
-original accepted `final_rank` order.
-
-This API is structural and local: it reads no store, packs nothing, blanks no text,
-releases no packet and changes no candidate rank, disposition or canonical size, and it
-proves consistency with the supplied records only. Stored existence, pinned ancestry,
-authorization, successor currency and current state remain transaction-bound store
-responsibilities, so a hash never stands in for integrity or permission. The opted-in
-store path supplies those verified inputs and records the selection in v4; default
-and opted-out MCP query paths do not invoke it.
-
-### Opt-in trail record and survivor packing
-
-The second domain half lives in `internal/mousa/trail.go` and
-`internal/mousa/packing.go`. `SourceTrailSchemaV4` is `mousa.source_trail.v4`, written
-only by the separate constructor `NewSourceTrailWithSupersession`; `NewSourceTrail` and
-every earlier public signature are unchanged, and v1 and v2 bytes and identities are
-unchanged. A v4 record requires an explicit `original` or `exact-v1` packing policy,
-must carry exactly one closed `supersession` member. Earlier versions reject the member even when it is null.
-
-The member is built by `BuildSupersessionSelection` from the request's source, the
-decision's outcome, the verified candidates and the caller's verified activation state
-and declaration, so the exact-pin match exists once rather than being reimplemented. An
-allowed decision records `consulted: true`, where a nil activation state is verified
-no-history, a state naming no declaration is a deactivation, and a selected declaration
-contributes one row per withheld candidate; a denial records `consulted: false` with
-null identities, an empty disposition array and no candidates. The consultation flag must
-agree with the outcome. Both identities are explicitly present as null or values, and the
-disposition array is required even when empty.
-
-A suppression row is explicit membership: it must name exactly one accepted candidate of
-that trail with a matching segment identity and content digest, a positive canonical
-size, no lifecycle reasons and no packing omission or duplicate reference, and rows must
-be unique and ordered by the withheld candidate's original `final_rank`. Before the
-policy is applied, every candidate is checked against the invariants both policies share:
-a segment is considered once, accepted candidates carry consecutive ranks from one with
-no lifecycle reason, and a rejected candidate carries lifecycle reasons instead of a
-packing omission, so `original` and `exact-v1` reject the same candidate set. Both packing
-policies are then reproduced over the surviving candidates only, in original order and
-with original ranks, and the result is mapped back onto the complete candidate list. A
-withheld candidate stays present, accepted and unselected, keeps its canonical size, and
-consumes no budget; a surviving candidate may still be an ordinary budget skip under
-`original` without any omission field, and under `exact-v1` a withheld copy can never be
-the retained duplicate. The v4 identity has its own version branch that binds the
-consultation, both nullable identities and every row with length-delimited empty fields;
-the packet identity keeps its existing construction and still binds only released bytes,
-so an unchanged released selection keeps its packet identity and a v4 record never
-shares the default trail's version or identity.
-
-The domain checks are structural and local: they read no store, so they prove no stored
-existence, canonical ancestry, authorization or transaction-local state. The opted-in
-store path supplies verified inputs inside its writer transaction, writes v4,
-verifies canonical readback and clears withheld text only in copied returned candidates.
-Every legacy entry point retains its behavior.
-
-### Stored v4 trail verification
-
-The canonical store read path (`internal/sqlite/trail_content.go`, `internal/sqlite/trail.go`)
-content-verifies a stored `mousa.source_trail.v4` record exactly where it already verifies v2 and v3,
-on every read through `GetSourceTrail`, trail inspection and the enforced trace read-back, and in the
-startup record scan. The verification has three parts, all read through the transaction snapshot the
-caller already holds:
-
-- Content. Every named segment still resolves to its canonical record, still carries the recorded
-  digest and the recorded byte size in its coordinates, still derives from the decision source, and
-  its retained indexed text still hashes to that digest. Retired indexed text is not archived, so the
-  immutable digest and coordinate range remain checkable there and the recorded bytes are not.
-- Packing. The recorded policy is reproduced over the surviving candidates only; a candidate that the
-  record names as withheld remains content-verified but is neither selected nor allowed to seed the
-  retained byte-equal set, so a withheld copy is never mistaken for a duplicate omission. Digests stay
-  a comparison shortlist: exact-`v1` equality is decided by the retained bytes actually available.
-- Administration and membership. The recorded activation event and declaration are read from the same
-  snapshot, not from today's activation projection: the event must verify as canonical, belong to the
-  decision source, carry the whole predecessor chain behind it and select exactly the recorded
-  declaration (or a null one). The recorded rows are then re-derived from the verified declaration's
-  exact predecessor pin through the domain `ValidateAgainst` rule, so a missing, extra, wrong-pin or
-  unrelated-candidate row is an integrity failure. A denial and a verified no-history record keep
-  their structural identity and empty-member checks and read no administration.
-
-Later activation changes, deactivation and item revisions therefore do not reinterpret a stored
-record: a replacement activation, a deactivation and a successor item revision leave an existing v4
-trail readable and identical. A record that fails any check is reported as an integrity error and is
-never repaired, rewritten or partially accepted, and the startup scan refuses to open the store. No
-new object set, schema version or migration is involved.
-
-A missing named dependency is part of that classification. A v4 record is written only after the
-store verified the records it names, so a named segment or representation the store no longer holds
-is existing corruption: the read reports an integrity error for it rather than `not_found`. An
-identity that was never stored, including an unknown trail identity, still reports `not_found`, and
-the v1–v3 readers keep the codes they already reported for the same damage. Every other storage error
-keeps its own code; a v4 read never relabels a busy, unreadable or malformed store as corruption.
-
-Source-scoped inspection first establishes ownership through the typed decision parent.
-If that parent is missing in an already-open inspector, own-source and foreign-source
-orphans remain indistinguishable from unknown IDs: all return `not_found`. The
-unscoped canonical reader and fresh-open startup verifier reject that damage as
-`integrity`. No path repairs damage or releases partial history.
-
-### Transaction-local consultation
-
-The store side of that contract is implemented in
-`internal/sqlite/supersession_activation.go`. `verifySupersessionActivationState` is the one
-verification of a source's current activation state: it reads the state projection, the event it
-names, the event's canonical bytes and projections, its declaration and predecessor references and
-the whole predecessor chain through a supplied query handle, and reports whether the source has
-activation history. `GetSupersessionActivationState` is that verification inside its own read
-transaction, with unchanged signature, reported code, message, snapshot and projection JSON.
-
-`readSupersessionConsultation` adds the declaration read, so one call inside a transaction the
-caller already holds returns the verified current state and, when the state selects one, that
-declaration's verified canonical record, in the shape `BuildSupersessionSelection` consumes. It
-opens no transaction and calls no public store method: a caller that holds the writer transaction
-reads every provenance fact from that transaction's snapshot, so a transition another connection
-commits meanwhile cannot mix into the consultation, and a verified absence of history is a nil
-state rather than an error code. Recorded state that exists but cannot be verified stays an
-integrity failure and is never repaired: a projection whose named event or selected declaration is
-missing, a broken chain, a cross-source pointer or a projection disagreeing with its event. A
-`not_found` code never leaves this reader as a successful absence, and a direct historical event read
-keeps its own `not_found` for an identity that does not exist.
-
-The fresh opted-in retrieval entry point invokes this consultation after authorization
-and candidate verification. Historical reads verify recorded immutable administration
-separately, never today's projection.
-
-### Declaration administration
-
-`supersession declaration put` reads exactly one
-`mousa.supersession_declaration.v1` object from stdin. Input above 64 KiB is rejected
-before decoding, and the strict codec refuses unknown, duplicate or missing fields,
-trailing values, malformed identities and an identity that disagrees with its
-content. The command opens the store named by `-store` writable, appends the
-declaration through the immutable store path, and prints the canonical stored
-declaration JSON. The declared source and both pinned revisions must already exist; the command
-does not create or retarget sources, items or revisions, or repair records. An exact
-retry is idempotent, and a reused identity with different content is a conflict.
-A rejected declaration transaction appends no declaration and changes no canonical
-records. Writable open may nevertheless create an absent store or upgrade an older
-supported store before target validation; rejection does not undo that creation or
-migration. Malformed or oversized input is rejected before the store opens.
-
-`supersession declaration get <declaration-id>` opens the same store read-only and
-prints the same canonical JSON. A missing record or absent store exits 1 with a
-storage error, an unparsable identity exits 2 as an invalid invocation, and a corrupt
-stored record fails integrity verification without repair. Reads never create or
-migrate a store, and a read changes no stored byte.
-
-Both commands are trusted local store administration over the store the operator
-names with `-store`. They grant no retrieval permission, change no grant, policy or
-authentication state, expose no document text, and establish nothing about who
-authored a declaration or whether its labels are true.
-
-### Activation administration
-
-`supersession activation put` reads exactly one `mousa.supersession_activation.v1`
-object from stdin. Input above 64 KiB is rejected before decoding, with the same
-strict codec rules and the same refusal of malformed, duplicate, unknown, missing or
-trailing content. Every nullable field must be present as either null or a value, so
-an absent key is never read as an explicit null. The command opens the store
-writable, applies the transition through the immutable store path, and prints the
-canonical stored event JSON.
-
-The caller states the transition rather than the command inferring it: the event
-identity, the nullable expected predecessor event and the nullable selected
-declaration. A null predecessor with a declaration is a root activation, a named
-predecessor with a declaration is a replacement or reactivation, and a named
-predecessor with a null declaration is a deactivation. The event identity covers the
-source, expected predecessor and selected declaration only, so actor, time and reason
-are recorded evidence: replaying an identity with different metadata is a conflict
-rather than an exact retry, and recording them authenticates nothing.
-
-The store enforces the semantics inside one writer transaction. A root must select a
-declaration; a replacement or deactivation must name the exact current event; a
-transition that would not change the active declaration is refused; an exact retry
-succeeds only while its event is still current; a stale expectation, a competing
-branch, a foreign-source declaration, a missing declaration and a missing source are
-rejected with a storage classification. A rejected transition transaction appends
-no event and changes no activation, declaration or canonical record. Writable open
-may still create an absent store or upgrade an older supported store before target
-validation; rejection does not undo that creation or migration. Malformed or oversized
-input is rejected before the store opens.
-
-`supersession activation get <activation-id>` opens the store read-only, prints the
-same canonical event JSON, and keeps historical reads: an event stays readable after
-later transitions advance the current state, while applying that same event again
-after the state advanced is a conflict. A missing event or absent store exits 1 with
-a storage error, an unparsable identity exits 2 as an invalid invocation, and a
-corrupt event or current projection fails integrity verification without repair.
-Reads never create or migrate a store, and a read changes no stored byte.
-
-The activation commands are trusted local store administration over the store the
-operator names with `-store`. They record which declaration is active for one source
-and grant no retrieval permission, move no item pointer, mutate no declaration and
-expose no document text. They change no default query; only native opted-in queries
-apply the recorded active declaration.
-
-### Current activation state
-
-`supersession activation state <source-id>` opens the store read-only and prints one
-JSON object with exactly `source_id`, `current_activation_id` and
-`active_declaration_id`. The identity strings are the canonical lowercase hexadecimal
-values the event and declaration records carry, and a deactivated source prints an
-explicit JSON null declaration rather than omitting the field. The object is a
-projection view over verified stored records, not a canonical record: it has no
-identity, schema, hash or event of its own and is never stored.
-
-The command parses the source identity before opening the store, so an unparsable
-identity, a missing argument and an extra argument all exit 2 as invalid invocations,
-while a store failure exits 1 with empty stdout. A source with no activation history
-reports the store's `not_found` error; recorded state that exists but cannot be verified
-reports an integrity failure instead and is not rebuilt, repaired or migrated by the read.
-That covers history whose current projection is missing, a projection naming a missing
-event or disagreeing with the event it names, a broken chain, and a missing declaration or
-pinned provenance, so `not_found` from this command means only that the source has no
-activation history. The read never creates a store, and an older supported store stays at
-its own version because
-read-only open refuses to migrate it. The reported state is a verified snapshot rather
-than a reservation: `supersession activation put` still requires the caller's explicit
-expected predecessor and can still conflict if another transition wins first. The
-verification itself is `verifySupersessionActivationState`, shared with the internal
-transaction-local consultation reader, so the command and a writer-transaction caller check the same
-records; the command keeps its signature and projection JSON, and its `not_found` code and message
-for a source with no history are unchanged.
-
-The `state` command inspects the current projection; `get <activation-id>` reads one
-historical event. There is no activation listing or per-source history command.
-Native commands use canonical source IDs. MCP declaration/activation writes and
-current-state inspection instead resolve configured JSONL aliases, as specified in
-[source-scoped administration](MCP_SUPERSESSION.md#source-scoped-administration).
-Raw historical declaration/event-by-ID reads remain native-only.
-
-Declaration storage starts at schema 12; activation history/current state at
-schema 13. Schema 14 adds a source index for history-existence checks. Writable
-open upgrades older supported stores with verified per-migration backups;
-read-only open never upgrades. Older migration bytes and canonical record
-identities are unchanged. The source index avoids scanning unrelated activation
-history for that lookup; it is not a measured latency or startup-cost claim.
-
-Missing, stale or inconsistent current state with retained history is an integrity
-failure for the state read and for new-transition writes, and neither reconstructs it.
-An exact retry succeeds only while its event is the verified
-latest tip; a projection naming an event with a successor is corrupt, not a valid
-retry. Rejected operations neither append events nor reconstruct damaged state.
-Ordinary stale expectations and historical retries against valid current state
-remain conflicts.
-
-[Published contract checks](https://github.com/graydeon/mousa-benchmarks/tree/1e8cb7f1b32d1098cd3271a80363c519006ae4ea/results/2026-10-06-supersession-core)
-cover the pinned historical implementation, not arbitrary later revisions. Current
-product regression tests cover the later integrity and source-index corrections
-plus native declaration and activation put/get CLI administration and the read-only
-current-state command.
-A [native administration capture](https://github.com/graydeon/mousa-benchmarks/tree/247928f86ed3f82468563eaec624b0fc4382da84/results/2026-10-07-native-supersession-administration)
-pins the administration commands' observed behavior against a synthetic store at that
-baseline; it is an administration-only record and does not exercise, accept or measure
-the opt-in domain records or survivor packing described on this page.
-Current product tests exercise native opt-in enforcement separately from that historical
-administration capture. Semantic evaluation, performance and full-window or actual-host
-agent acceptance remain unrun.
 
 ## Local stdio MCP
 
@@ -788,27 +375,15 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
-| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`)| Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds primary `supersession_excluded` |
-| `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10 token view that exists |
-| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields | Primary evidence, cosine/ranks, coverage and producing IDs |
-| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession and token options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
+| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs |
+| `mousa_trail` | `source`, `trail_id` | Independent `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded vector/hybrid facts or safe v7 token view that exists |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; token budget fields | Primary evidence, cosine/ranks, coverage and producing IDs |
+| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing and token options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
-| `mousa_supersession_declare` | `source`, `declaration`: closed `mousa.supersession_declaration_input.v1` | None | `declaration`: accepted canonical record |
-| `mousa_supersession_activate` | `source`, `activation`: closed `mousa.supersession_activation_input.v1` | None | `activation`: accepted canonical record |
-| `mousa_supersession_status` | `source` | None | `decision_id`, `decision_outcome`, `decision_reasons`; allowed calls add `current` with required `state`, nullable `activation` and nullable `declaration` |
 | `mousa_classification_put` | `source`, `classification`: closed `mousa.classification_input.v1` | None | `classification`: verified accepted canonical record |
 | `mousa_classification_get` | `source`, `classification_id` | None | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; `classification` only when allowed and same-source scope is proven |
 | `mousa_source_manifest` | `source` | `expected_manifest_id`: nonzero lowercase 64-hex ID | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; authorized `manifest`; `matches` only for an authorized expected-ID check |
-
-The three supersession administration tools use only configured JSONL aliases. Writes require
-the separate repeatable `--supersession-admin-source` startup allowlist, off by
-default; HTTP also requires a validated principal with `mousa:write`. Ingestion
-permission neither implies nor is required by this admin permission. Neither
-permission grants retrieval. Status authorizes and verifies in one snapshot,
-may append its authorization receipt, and omits `current` entirely on denial.
-No hidden state, history-presence or corruption distinction is released. See the
-[exact draft limits, transitions and null shapes](MCP_SUPERSESSION.md#source-scoped-administration).
 
 Export calls `ExportEmbeddingInputs` with the trusted caller's retrieval request.
 Fresh policy/lifecycle and current passage reads share its existing writer snapshot.
@@ -832,8 +407,6 @@ All three query tools accept optional `context_tokens` (integer 1..524288),
 even when zero. Nonzero reservations require a positive window; their sum must
 not exceed it. The effective limit is the lesser of the cap and window minus
 reservations, or just the cap without a window. Zero remaining allowance is valid.
-All three token modes accept supersession: true writes lexical v8 or vector/hybrid
-v10; omission/false retains v7.
 
 ### MCP measured context and recorded token details
 
@@ -845,7 +418,7 @@ No packages or vocabulary are downloaded during a query.
 
 Token execution calls `EvaluateAndTraceTokenLexical`, `EvaluateAndTraceTokenVector`
 or `EvaluateAndTraceTokenHybrid` with the configured source and trusted caller.
-The native transaction owns authorization, ranking, packing and v7/v8/v10/v11 recording.
+The native transaction owns authorization, ranking, packing and v7/v11 recording.
 The result adds exact `context` bytes and the accepted-only `TokenSelectionView`
 as `token`; the existing byte constraint still applies. Selected evidence and
 packing counts describe token-constrained survivors. The count covers headers
@@ -855,9 +428,9 @@ Without `context_tokens`, the released property set, byte selection and Python
 independence are unchanged. Refresh closed schema caches with `tools/list`.
 
 `mousa_trail` with `token_details: true` releases the verified recorded safe
-`token` view for v7/v8/v10/v11, including native-created history. Omitted/false hides it;
-legacy trails have no member. This is independent of `retrieval_details` and
-`supersession`. It does not start a tokenizer, remeasure an old count or rerank.
+`token` view for v7/v11, including native-created history. Omitted/false hides it;
+legacy trails have no member. This is independent of `retrieval_details`.
+It does not start a tokenizer, remeasure an old count or rerank.
 Fresh denial withholds history and existence. Retired text remains unarchived;
 retained digest verification and producing-count limits are unchanged.
 
@@ -866,20 +439,6 @@ not commit a successful producing decision/trail/packet. Invalid token arguments
 reject before query mutation. This does not undo server startup/store migration,
 policy deployment or legitimate fresh inspection authorization audit writes.
 See the [runnable token example](USAGE.md#mcp-token-budget-example).
-
-`mousa_query` accepts the optional `supersession` boolean, which withholds an accepted
-candidate whose own representation is the selected declaration's exact predecessor pin
-for that configured source; an opted-in response reports the declared count
-`supersession_excluded`, including zero. `mousa_trail` accepts the same boolean and
-returns the consultation member a `mousa.source_trail.v4` record carries: whether
-supersession was consulted, the nullable activation and declaration identities and the
-withholding rows. Omitted or `false` keeps the default retrieval and response property
-set, and a legacy trail has no member, so the opt-in adds none. Other values are
-`invalid_arguments`, and `mousa_sync` and `mousa_status` reject the field. The records are
-prepared by native administration or the source-scoped MCP draft tools. The client
-contract, the declared optional members and the reasons for keeping the envelope at
-`mousa.mcp_result.v1` are specified in
-[MCP supersession opt-in](MCP_SUPERSESSION.md).
 
 ### MCP supplied-vector retrieval and recorded details
 
@@ -901,11 +460,6 @@ fresh policy/lifecycle authorization and one native writer transaction. Missing
 configured source records retain the native `integrity` error; empty existing
 sources report `no_passages`. Unconfigured aliases reject before store use.
 Denial/withdrawal releases no evidence, source coverage or candidate facts.
-Vector/hybrid requests accept the optional `supersession` boolean: true withholds
-exact declared predecessors and records byte-only v9 or token-budget v10, while
-omission/false keeps the existing producing version and response properties.
-See
-[vector/hybrid supersession](#byte-only-vectorhybrid-supersession).
 Vector-only queries also reject lexical policy/query fields.
 Unknown, duplicate, missing, null and wrong-type input members reject before
 mutation. Original packing remains the default; exact-v1 uses native byte equality
@@ -923,7 +477,7 @@ embedding values or the supplied query values.
 verified recorded producing view, including native-created v5/v6 histories.
 It does not rerun ranking or reinterpret coverage under today's space/index.
 Omission or false preserves the exact default released property set; a trail
-without those facts has no added member. Supersession remains independent.
+without those facts has no added member.
 Fresh authorization precedes historical lookup; denied inspection discloses no
 history or existence. Restart and revision replacement preserve recorded facts,
 while `indexed_now` can change. Retired passage bytes remain unarchived, and
@@ -951,11 +505,6 @@ Then call `mousa_query` with:
 ```json
 {"source":"inspection-notes","query":"harbor inspection","policy":"original","budget_bytes":4096}
 ```
-
-Add `"supersession":true` to that call to withhold an accepted candidate whose own
-representation is the selected declaration's exact predecessor pin for the same source;
-the result then reports `supersession_excluded` (including `0`). The records come from
-the native `supersession declaration put` and `supersession activation put` commands.
 
 Use the returned `result.trail_id` with `mousa_trail`. Items use the same strict
 record validation, normalization, immutable revision identities and atomic
@@ -1473,9 +1022,6 @@ literal FTS5 phrases, then OR-join them. This is not a complete implementation o
 the index's `unicode61` tokenizer. Keep the leading terms whose expression fits
 4,096 bytes. An oversized first term is retained and rejected by the store rather
 than silently removed.
-Opted-in `--supersession` queries instead reject unpreparable or oversized
-expressions as usage errors before opening the store. Without that opt-in,
-including `--supersession=false`, the existing post-open error boundary remains.
 
 The candidate limit is 100, not an exhaustive match count. Default packing
 (`--packing-policy original`) walks verified rank order, skips accepted segments
@@ -1520,18 +1066,6 @@ selected `segment_id` values. Each evidence hit includes its text digest.
 `matched_candidates` counts considered candidates before packing, bounded by 100;
 use the length of `evidence` for the selected count. The old misleading
 `total_matches` field has been removed.
-
-For directory and JSONL item sources, `--supersession` explicitly enables exact pinned-predecessor
-withholding after authorization and lifecycle verification and before packing.
-The opted-in store transaction reads the verified activation and declaration and
-records v4. Withheld text is not released, its rank and canonical size
-stay unchanged, and it consumes no budget or retained duplicate slot. Successor
-availability does not gate withholding or cause replacement text to be inserted.
-See [directory pin preparation](USAGE.md#directory-supersession-example).
-MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
-boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
-the same optional boolean. Source-scoped MCP declaration, activation and status
-use the [separate administration contract](MCP_SUPERSESSION.md#source-scoped-administration).
 
 Valid queries open the store writable and may create or migrate it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not
@@ -1584,19 +1118,14 @@ bytes separately from the unchanged evidence-text budget.
 | `policy_excluded` | Source policy denied the request; no lexical search was performed. |
 | `lifecycle_excluded` | Source lifecycle blocked retrieval, or every considered candidate was lifecycle-rejected. |
 | `budget_omitted` | Accepted candidates existed, but none fit the text budget. |
-| `supersession_excluded` | Opt-in only: no evidence or surviving budget skip, and at least one accepted candidate was withheld by the exact pin. |
 
 `budget_omitted` and `lifecycle_excluded` count disjoint considered candidates.
-Exact packing returns `duplicate_omitted`, including zero. Opted-in supersession
-returns `supersession_excluded`, including zero, and records its explicit packing
-policy even under `original`; default original responses omit all three optional
-fields. Selected, duplicate, budget, lifecycle and
-supersession counts sum to `matched_candidates`, treating absent optional counts as zero.
+Exact packing returns `duplicate_omitted`, including zero; default original
+responses omit the optional fields. Selected, duplicate, budget and lifecycle
+counts sum to `matched_candidates`, treating absent optional counts as zero.
 
 Outcome precedence is denial (with the existing lifecycle override), selected evidence,
-surviving budget omission, supersession exclusion, lifecycle exclusion, then no matches.
-Suppression plus a surviving oversized candidate therefore reports `budget_omitted`
-and both counts. A withheld candidate is neither a budget nor duplicate omission.
+budget omission, lifecycle exclusion, then no matches.
 Duplicates require an earlier selected survivor, so there is no duplicate-only empty
 outcome. A source-level gate runs before search, so candidate counters are zero;
 that does not assert the corpus has no matches.
@@ -1638,6 +1167,12 @@ those missing fields.
 membership in the inspection snapshot. Retired revisions can have historical
 metadata without current index membership; neither property authorizes a new text
 release. Inspection never returns historical text.
+
+Source-scoped inspection first establishes ownership through the typed decision parent.
+If that parent is missing in an already-open inspector, own-source and foreign-source
+orphans remain indistinguishable from unknown IDs: all return `not_found`. The
+unscoped canonical reader and fresh-open startup verifier reject that damage as
+`integrity`. No path repairs damage or releases partial history.
 
 ### Versioned exact-packing explanations
 
@@ -1685,6 +1220,6 @@ correctness are separate properties; none substitutes for the others.
 
 ## Maintained agent skills
 
-The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface. Administration alone leaves default queries unchanged; an explicitly opted-in native or MCP query applies exact pinned-predecessor withholding.
+The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface.
 
 The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa. Client skills remain bundled with the plugin; they are not development startup instructions.

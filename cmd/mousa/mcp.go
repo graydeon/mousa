@@ -31,7 +31,6 @@ const (
 type mcpSource struct {
 	source              mousa.Source
 	write               bool
-	supersessionAdmin   bool
 	classificationAdmin bool
 }
 
@@ -55,10 +54,9 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	httpConfigPath := flags.String("http-config", "", "OAuth-protected loopback HTTP configuration; stdio when omitted")
 	tokenPython := flags.String("tokenizer-python", "", "operator-prepared local tiktoken==0.12.0 interpreter; token mode disabled when omitted")
 	tokenCache := flags.String("tokenizer-cache", "", "operator-prepared offline o200k_base cache")
-	var allowed, writable, administrators, classificationAdministrators []string
+	var allowed, writable, classificationAdministrators []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })
 	flags.Func("ingest-source", "permit item ingestion and embedding import into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
-	flags.Func("supersession-admin-source", "permit supersession declarations and activations for an already permitted source; repeatable", func(value string) error { administrators = append(administrators, value); return nil })
 	flags.Func("classification-admin-source", "permit classification assertions for an already permitted source; repeatable", func(value string) error {
 		classificationAdministrators = append(classificationAdministrators, value)
 		return nil
@@ -89,14 +87,6 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 			return usageError{"each --ingest-source must name a distinct permitted --source"}
 		}
 		source.write = true
-		sources[label] = source
-	}
-	for _, label := range administrators {
-		source, ok := sources[label]
-		if !ok || source.supersessionAdmin {
-			return usageError{"each --supersession-admin-source must name a distinct permitted --source"}
-		}
-		source.supersessionAdmin = true
 		sources[label] = source
 	}
 	for _, label := range classificationAdministrators {
@@ -226,12 +216,6 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
-		case "mousa_supersession_declare":
-			definition.Title = "Declare Mousa replacement"
-		case "mousa_supersession_activate":
-			definition.Title = "Select Mousa replacement state"
-		case "mousa_supersession_status":
-			definition.Title = "Inspect Mousa replacement state"
 		case "mousa_classification_put":
 			definition.Title = "Record Mousa classification"
 		case "mousa_classification_get":
@@ -283,9 +267,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	}
 	if mcpIngestionTool(operation) && !configured.write {
 		return mcpFailure(operation, args.Source, "ingestion_not_permitted", errors.New("ingestion is disabled for this source"), 0, 0)
-	}
-	if mcpSupersessionWriteTool(operation) && !configured.supersessionAdmin {
-		return mcpFailure(operation, args.Source, "supersession_admin_not_permitted", errors.New("supersession administration is disabled for this source"), 0, 0)
 	}
 	if operation == "mousa_classification_put" && !configured.classificationAdmin {
 		return mcpFailure(operation, args.Source, "classification_admin_not_permitted", errors.New("classification administration is disabled for this source"), 0, 0)
@@ -342,26 +323,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			inspection, err = a.store.InspectClassification(ctx, request, args.ClassificationID)
 			if err == nil {
 				result = mcpClassificationGetResult{DecisionID: inspection.Decision.ID, DecisionOutcome: inspection.Decision.Outcome, DecisionReasons: inspection.Decision.ReasonCodes, Classification: inspection.Classification}
-			}
-		}
-	case "mousa_supersession_declare":
-		err = a.store.PutSupersessionDeclaration(ctx, args.Declaration)
-		if err == nil {
-			result = mcpSupersessionDeclareResult{Declaration: args.Declaration}
-		}
-	case "mousa_supersession_activate":
-		err = a.store.ApplySupersessionActivation(ctx, args.Activation)
-		if err == nil {
-			result = mcpSupersessionActivateResult{Activation: args.Activation}
-		}
-	case "mousa_supersession_status":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
-		if err == nil {
-			var inspection sqlite.SupersessionInspection
-			inspection, err = a.store.InspectSupersession(ctx, request)
-			if err == nil {
-				result = mcpSupersessionStatusResult{DecisionID: inspection.Decision.ID, DecisionOutcome: inspection.Decision.Outcome, DecisionReasons: inspection.Decision.ReasonCodes, Current: inspection.Current}
 			}
 		}
 	case "mousa_sync":
@@ -427,15 +388,15 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			var rendered string
 			if args.TokenBudget != nil {
 				var traced sqlite.TracedLexicalResult
-				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession})
+				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter})
 				if err == nil {
-					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced, args.Supersession)
+					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced)
 					if err == nil {
 						result = mcpLexicalResult{evidence, &rendered, mousa.ReleasedTokenSelection(traced.Trail)}
 					}
 				}
 			} else {
-				evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, args.Supersession)
+				evidence, err = queryItemsForRequest(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy)
 				result = evidence
 			}
 			if err == nil {
@@ -449,20 +410,14 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var traced sqlite.TracedVectorResult
 			if args.TokenBudget != nil {
-				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession}
+				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter}
 				if operation == "mousa_vector_query" {
 					traced, err = a.store.EvaluateAndTraceTokenVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				} else {
 					traced, err = a.store.EvaluateAndTraceTokenHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				}
 			} else if operation == "mousa_vector_query" {
-				if args.Supersession {
-					traced, err = a.store.EvaluateAndTraceSupersessionVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
-				} else {
-					traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
-				}
-			} else if args.Supersession {
-				traced, err = a.store.EvaluateAndTraceSupersessionHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+				traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			} else {
 				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			}
@@ -476,12 +431,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var inspection sqlite.TrailInspection
 			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
-			// The recorded member is filtered here, at the client boundary: the store
-			// read verifies it either way, and an opted-out caller keeps the property
-			// set it had before the opt-in existed.
-			if inspection.Historical != nil && !args.Supersession {
-				inspection.Historical.Supersession = nil
-			}
 			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails, args.TokenDetails)
 		}
 	default:

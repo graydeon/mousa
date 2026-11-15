@@ -24,29 +24,14 @@ On supported desktop hosts, explain that composer mentions search Mousa evidence
 
 Do not create a tunnel, deploy an endpoint, install credentials, publish a plugin, run a model/provider test or change host configuration without explicit authorization. The local generated package is not a public directory submission. Connection and actual host extension rendering must be checked on the host, not inferred from this skill.
 
-Check the configured tool schema before promising an interface. Discovered query
-`supersession: true` enables exact predecessor withholding; omission/false preserves
-defaults. Discovered `mousa_trail` supersession
-returns recorded consultation, not today's activation. Composer mentions/resources
-keep fixed defaults.
-
-For explicitly authorized replacement administration, discover
-`mousa_supersession_declare`, `mousa_supersession_activate` and
-`mousa_supersession_status`. Mutations require the separate startup
-`--supersession-admin-source` allowlist, off by default, and HTTP `mousa:write`.
-The flag accepts only distinct configured JSONL aliases. It grants neither
-ingestion nor retrieval; `--ingest-source` alone cannot authorize these writes.
-An existing source needs no ingestion permission for admin-only operation.
-Status needs fresh retrieval authorization, not an admin flag or write scope,
-and denial omits current state entirely. Do not infer state from a denied result.
-Policy, lifecycle and raw historical declaration/event-by-ID administration
-remain native-only. Do not enable an admin allowlist implicitly.
+Check the configured tool schema before promising an interface. Composer
+mentions/resources keep fixed defaults.
 
 For explicit attributed labels, discover `mousa_classification_put` and
 `mousa_classification_get`. Put requires the separate repeatable
 `--classification-admin-source` allowlist of distinct configured JSONL aliases,
-off by default, plus HTTP `mousa:write`. It grants neither ingestion,
-supersession administration nor retrieval. Get requires fresh retrieval
+off by default, plus HTTP `mousa:write`. It grants neither ingestion
+nor retrieval. Get requires fresh retrieval
 authorization, not an admin flag. Subject and every ordered basis entry must
 have all canonical ancestry roots in the selected source; native cross-source
 storage remains outside this MCP slice.

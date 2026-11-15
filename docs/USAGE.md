@@ -114,7 +114,7 @@ Unknown-source denials have fresh decision IDs but no persisted receipt: the
 decision's storage foreign key requires an existing source. Known-source decisions
 are persisted only when inspection completes; failed inspection rolls them back.
 Null, coerced, duplicate, unknown and malformed argument fields are rejected.
-This read needs no ingestion, classification or supersession administration flag;
+This read needs no ingestion or classification administration flag;
 HTTP retains validated-principal and `mousa:read` admission. MCP accepts configured
 JSONL aliases, not directory paths. Native directory roots and JSONL aliases have
 different source identities; identical text does not make them interchangeable.
@@ -137,8 +137,8 @@ JSONL omission leaves an item unchanged; delete it explicitly with
 Fresh authorization and all current-content verification share one writer
 snapshot. A match is not a lease or an atomic guard on a later query. It neither
 records action completion nor guarantees query-result stability, semantic truth,
-authenticated authorship or full model-window safety. Embeddings, classifications,
-supersession activation and authorization receipts are outside the
+authenticated authorship or full model-window safety. Embeddings, classifications
+and authorization receipts are outside the
 content identity. An allowed policy change need not change the ID.
 
 Limits apply together: 1,000 active items, 10,000 current segments, 16 MiB of
@@ -268,7 +268,7 @@ facts with accepted candidates, including unselected budget/duplicate omissions.
 Lexical ranks count only accepted order, not original search positions. A null
 proposed count means that accepted passage was not counted (for example, a
 duplicate); a lifecycle-rejected candidate has no slot at all. Query and history
-use this filtered view, not the full canonical v7/v8/v10 producing record.
+use this filtered view, not the full canonical v7 producing record.
 
 For externally supplied vectors, use the same exported passages, immutable
 space and query-vector JSON from the [vector workflow](#caller-supplied-vector-workflow):
@@ -338,10 +338,9 @@ declarations: application prompt/tool/JSON framing outside the returned string
 is not counted, and no universal model-window safety is claimed.
 
 Token mode caps the released-text budget at 262144 bytes and candidate count at
-100, including withheld candidates. Each accepted passage remains at most 4096
-bytes. Aggregate accepted candidate text after exact supersession suppression
-is capped at 262144 bytes, before budget/duplicate omissions; withheld bytes
-remain verified but do not consume survivor capacity. Rendered text is capped
+100. Each accepted passage remains at most 4096
+bytes. Aggregate accepted candidate text
+is capped at 262144 bytes, before budget/duplicate omissions. Rendered text is capped
 at 524288 bytes, aggregate counter input at 32 MiB, and counter lifetime at 15 seconds
 (including writer-lock waits after initialization). Every attempted addition
 counts the entire proposed rendering; passage counts are never summed.
@@ -349,8 +348,7 @@ Oversized passages are skipped and later candidates are tried. `exact-v1`
 deduplicates against selected byte-equal passages only; skipped passages consume
 no released budget and do not suppress later copies.
 
-Token-specific options without `--context-tokens` reject. Supersession true
-writes lexical v8 or vector/hybrid v10; omitted or false writes v7.
+Token-specific options without `--context-tokens` reject. Token queries write v7.
 Vector-only mode still rejects explicit query-term policy; hybrid permits it.
 Missing/wrong-version runtime, missing/corrupt cache, invalid backend output,
 timeout or cancellation fail closed without a partial successful response or
@@ -358,47 +356,6 @@ partially committed query decision/trail. MCP queries expose the same token core
 with explicit startup configuration and optional token fields described below;
 OpenAI mention/resources remain byte-only.
 
-
-## Lexical supersession with token budgets
-
-After [preparing the external tokenizer](#prepare-the-optional-runtime), build
-the executable and run the synthetic example from the repository root:
-
-```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 examples/token_supersession.py --mousa ./mousa \
-  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
-```
-
-The example imports JSONL, discovers exact revision pins, writes real native
-declaration and activation records, and queries both packers through native and
-MCP clients. Each printed result has one withheld predecessor, one retained
-successor, and an independent official count of the complete returned context.
-It checks the exact token boundary and independently opted-in v8 history.
-
-For a synced directory, the same composition uses:
-
-```sh
-./mousa -store local.sqlite query --supersession --context-tokens 512 \
-  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE" \
-  --packing-policy exact-v1 ./documents 'harbor inspection'
-```
-
-Prepare declaration/activation using that directory's own source and exact
-revision pins as in the [directory example](#directory-supersession-example).
-MCP uses a configured JSONL alias and operator-only startup backend; a query
-adds `"supersession": true` to its existing token arguments. Query results add
-`supersession_excluded`, including zero. All-withheld empty context reports
-`supersession_excluded`; an unsuppressed survivor that cannot fit reports
-`budget_omitted`. Withheld candidates remain accepted metadata with positive
-size/rank and null proposed count, not rejected slots or replacement passages.
-
-Vector/hybrid composition uses v10. Normal/recount native history uses the recorded selection,
-not today's activation. MCP history independently
-accepts `supersession: true` and `token_details: true`, returning producing
-observations without recounting. Retired selected text cannot be reconstructed;
-application/model framing is unknown and remains outside these counts.
-This synthetic example makes no semantic-quality, performance or full-window claim.
 
 ## Byte packing
 
@@ -414,25 +371,9 @@ nothing. Each duplicate keeps its own provenance and references the retained
 segment in the trail. Equal text is not independent corroboration or shared
 authorization. Default `--packing-policy original` retains repeated passages.
 
-For a directory or JSONL source with a separately stored and activated declaration:
-
-```sh
-./mousa -store local.sqlite query --supersession ./documents 'harbor inspection'
-./mousa -store local.sqlite query --source inspection-notes --supersession 'harbor inspection'
-./mousa -store local.sqlite query --source inspection-notes --supersession --packing-policy exact-v1 'harbor inspection'
-```
-
-Flags precede query text. Opted-in responses add `supersession_excluded`, including
-zero; defaults omit it. Suppression is distinct from lifecycle, budget and duplicate
-omissions, and an empty result reports budget omission before supersession exclusion,
-then lifecycle exclusion. Directory queries use their own
-source namespace, not JSONL `--source`; passing a directory path to `--source`
-queries a different source.
 A valid query uses writable open and can create or migrate a store before a later operation fails;
-rollback does not undo that open boundary. Only the opted-in query prepares and
-size-checks its expression before opening the store: a default or
-`--supersession=false` query keeps the established post-open expression error, and
-the store's own limit rejects an oversized expression after the store is opened.
+rollback does not undo that open boundary. The store's own limit rejects an
+oversized expression after the store is opened.
 
 ### Caller-supplied vector workflow
 
@@ -520,7 +461,7 @@ vectors without rewriting them; re-export and import vectors for the new passage
 pins. Partial coverage is explicit in `eligible`, `indexed` and `missing`; it never
 triggers a lexical fallback. Both `--packing-policy original` and `exact-v1` work
 with vector queries. Explicit query-term policy rejects.
-Supersession with byte or token budgets is an opt-in described below. MCP has a separate
+MCP has a separate
 `mousa_vector_query` tool and recorded retrieval-details inspection; resource search stays lexical.
 
 ### Hybrid lexical and vector query
@@ -537,7 +478,7 @@ After importing embeddings, combine text and a supplied vector explicitly:
 `query-vector.json` uses the existing `mousa.vector_query.v1` object. Query text
 does not attest which text generated that vector. Unknown/mismatched spaces and
 invalid input reject; zero current vectors is reported as hybrid coverage, not a fallback.
-Vector-only flags cannot be combined with hybrid mode; supersession with byte or token budgets is supported. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
+Vector-only flags cannot be combined with hybrid mode. The [capability contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
 defines candidate bounds, rank domains, errors and historical verification limits.
 
 This runnable example creates lexical-only `c`, vector-only `b` and overlapping
@@ -594,67 +535,6 @@ PY
 Native v6 history records both branch contributions and the fixed
 `rrf-equal-k60-v1` policy. Both byte packers apply after fusion; exact-v1 handles
 byte-equal passages with different identities separately from the identity union.
-
-### Vector and hybrid supersession
-
-Build the executable, then run the synthetic external-vector import, selection
-and recorded-history example:
-
-```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 examples/vector_supersession.py --mousa ./mousa
-```
-
-It imports supplied two-dimensional vectors, deliberately leaves the successor
-without a vector, and compares ordinary versus enforced queries through native
-JSONL and configured MCP. Under both packers, the ordinary predecessor wins;
-enforcement withholds it and selects later surviving guidance within the same
-byte budget. Producing history records the original ranks and consultation.
-These synthetic values establish protocol/arithmetic, not semantic quality.
-
-After preparing a directory or JSONL source and importing external vectors, add
-`--supersession` to either byte query:
-
-```sh
-printf '%s' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
-  ./mousa -store local.sqlite query --vector-space SPACE_ID --supersession ./documents
-printf '%s' '{"schema":"mousa.vector_query.v1","values":[1,0]}' |
-  ./mousa -store local.sqlite query --hybrid-space SPACE_ID --supersession --source SOURCE_ID 'Drain'
-```
-
-Replace placeholders with the imported space and configured source. Administer
-the exact declaration and activation through the native commands first; merely
-recording them changes no default query. MCP uses `supersession: true` on
-`mousa_vector_query` or `mousa_hybrid_query`. Both report
-`supersession_excluded`, including zero. Omission/false retains ordinary response
-properties and v5/v6 history; true writes v9 even without history or on denial.
-All-withheld is `supersession_excluded`, not a budget omission. Coverage remains
-the admitted producing source coverage, not the survivor count.
-
-Inspect natively with `trail`, or request MCP `mousa_trail` with independent
-`supersession: true` and `retrieval_details: true` to see both verified recorded
-members. Later activation, deactivation and revision changes do not rerank history.
-Fresh authorization can deny it and can append audit evidence. Retired text is
-not reconstructed. Add `--context-tokens N --tokenizer-python "$TOKEN_PY"
---tokenizer-cache "$TOKEN_CACHE"` before positional arguments to combine either
-mode with measured tokens and retain the independent byte budget. True records
-v10; omitted/false records v7. Full vector-source admission remains before masking.
-
-The same runnable example has an optional token mode:
-
-```sh
-python3 examples/vector_supersession.py --mousa ./mousa \
-  --tokenizer-python "$TOKEN_PY" --tokenizer-cache "$TOKEN_CACHE"
-```
-
-It independently counts the exact returned rendering with official
-`encode_ordinary`, checks exact-fit and one-token-short contexts, and verifies
-v10 history. Without these options, the byte-only run needs no tokenizer.
-Configured MCP uses `context_tokens` and the existing reservations alongside
-`supersession: true`; history's `token_details` remains independent of the
-consultation and retrieval-details opt-ins. No MCP recount or byte fallback occurs.
-No automatic embeddings, retrieval-quality, semantic-truth or model-window claim
-follows. MCP also exposes explicit vector/hybrid tools; resource search stays lexical.
 
 ### CLI client example
 
@@ -811,7 +691,7 @@ identity or projections return an integrity error without repair or success JSON
 Invalid invocation/ID exits 2; rejected input/storage operations exit 1.
 
 These are local store-owner administration commands, not MCP/hosted writes. Labels
-do not affect indexing, serving permission, ranking, freshness or supersession.
+do not affect indexing, serving permission, ranking or freshness.
 Asserter strings do not authenticate authorship and label/confidence does not prove
 truth. Representation/segment subjects pin specific revisions: after resync, an old
 assertion retains its own pins without relabeling replacement evidence or recovering
@@ -853,8 +733,8 @@ Its result contains `decision_id`, `decision_outcome` and `decision_reasons`;
 Denied get omits the payload and does not reveal existence or corruption.
 
 The repeatable startup flag `--classification-admin-source` accepts only configured
-`--source` aliases and defaults off. It grants neither ingestion nor supersession
-administration or retrieval visibility. Those permissions do not grant classification
+`--source` aliases and defaults off. It grants neither ingestion
+nor retrieval visibility. Those permissions do not grant classification
 writes. HTTP put also requires the validated transport principal's existing
 `mousa:write` scope; the asserted asserter is not that principal. Get needs no admin
 flag but always evaluates fresh retrieval authorization and may persist its normal
@@ -876,190 +756,7 @@ Confidence is an asserted integer, not a calibrated probability; labels do not
 establish factual truth, authenticate authorship, approve future revisions or
 recover retired text. Default query/trail payloads and selection remain unchanged.
 
-### Supersession administration
-
-`supersession declaration put` appends one strict revision-pinned declaration read
-from stdin, and `supersession declaration get <declaration-id>` reads one stored
-declaration back. Both print the canonical stored declaration JSON:
-
-```sh
-./mousa -store local.sqlite supersession declaration put < declaration.json
-./mousa -store local.sqlite supersession declaration get DECLARATION_ID
-```
-
-A declaration names its source plus the exact predecessor and successor item and
-representation revisions, so item labels alone cannot pin a revision. It is
-immutable history, not an activation pointer and not an access grant: storing one
-does not filter queries, suppress the predecessor or authorize anything. The input
-is one `mousa.supersession_declaration.v1` object limited to 64 KiB before decoding;
-the codec rejects unknown or duplicate fields, trailing values, malformed identities
-and an identity that disagrees with its content. The declared source and both pinned revisions must already exist; the command
-does not create or retarget sources, items or revisions, or repair records.
-Writable open may create an absent store or upgrade an older supported store
-before target validation rejects a declaration. Such a rejection appends no
-declaration; it does not undo store creation or migration. An exact retry is idempotent; a reused identity with different
-content is a conflict. `get` opens the store read-only, so an invalid identity, a
-missing record, an absent store and a corrupt stored record all fail without
-creating, migrating or repairing anything.
-
-`supersession activation put` applies one strict activation transition read from
-stdin, and `supersession activation get <activation-id>` reads one stored event
-back. Both print the canonical stored event JSON, and
-`supersession activation state <source-id>` reports the verified current state for
-one source as a projection object:
-
-```sh
-./mousa -store local.sqlite supersession activation put < activation.json
-./mousa -store local.sqlite supersession activation get ACTIVATION_ID
-./mousa -store local.sqlite supersession activation state SOURCE_ID
-```
-
-The input is one `mousa.supersession_activation.v1` object limited to 64 KiB before
-decoding, with the same strict codec rules. The caller states the transition: the
-event identity, the nullable expected predecessor event and the nullable selected
-declaration. A null predecessor with a declaration is a first activation, a named
-predecessor with a declaration is a replacement or reactivation, and a named
-predecessor with a null declaration is a deactivation. Nothing infers the current
-predecessor or invents a transition. The transition identity covers only the source,
-expected predecessor and selected declaration, so actor, time and reason are
-recorded labels: replaying an identity with different metadata is a conflict, not an
-exact retry, and recording them authenticates nothing.
-
-The store enforces the transition semantics inside one writer transaction: a first
-activation must be a root, a replacement or deactivation must name the exact current
-event, a transition that would not change the active declaration is refused, an exact
-retry succeeds only while its event is still current, and a stale or competing
-expectation is a conflict. A rejected transition transaction appends no event and
-changes no activation, declaration or canonical record. Writable open may still
-create an absent store or upgrade an older supported store before target validation
-rejects the transition; rejection does not undo that creation or migration. Malformed
-or oversized input is rejected before the store opens.
-`get` opens the store read-only and keeps historical reads: an event stays readable
-after later transitions, while a retry of that event is rejected. Activation is
-recorded local administration; it grants no access, moves no
-item pointer, mutates no declaration and changes no default query. Only an explicitly
-opted-in query applies it.
-
-`state` opens the store read-only and prints one JSON object with exactly
-`source_id`, `current_activation_id` and `active_declaration_id`. The identity
-strings are the same canonical lowercase hexadecimal values the event and declaration
-records carry, and a deactivated source reports an explicit JSON null declaration.
-The object is a current-state projection: it carries no identity, schema or hash of
-its own and is not stored. A source with no activation history reports the store's
-`not_found` error, while history whose current projection is missing or inconsistent
-with the event it names fails integrity verification and is never rebuilt or repaired
-by the read. The state is a verified snapshot rather than a reservation: a caller that
-transitions next still states its own expected predecessor and can still conflict if
-another caller wins first. Use `state` for the current projection and `get` for one historical event. There is
-no activation listing or per-source history command. MCP `mousa_query` and `mousa_trail`
-accept an optional `supersession` boolean; declaration and activation administration
-remain unavailable over MCP.
-
-The declaration and activation command groups are trusted local store administration,
-and none of them claims to authenticate a recorded actor or author. See the
-[supersession boundary](CAPABILITIES.md#supersession-core-boundary).
-
-### Directory supersession example
-
-Build `./mousa` as above. This Python 3 example runs native commands against a fresh
-temporary directory and store. It discovers exact item and representation pins from
-default query evidence, then submits explicit declaration and activation JSON through
-the existing administration commands. No database access or model is involved.
-
-The CLI accepts complete records, not identity-free drafts. For these records, each
-identity is SHA-256 over an ordered tuple: each field has an unsigned 8-byte big-endian
-byte-length prefix. Schema and label fields are UTF-8; identity fields are raw 32-byte
-digests, not their hexadecimal display strings. A directory source uses the tuple
-`("mousa.source.v1", "mousa-local", absolute_directory_path)`; JSONL uses
-`"mousa-jsonl"` instead. Do not resolve symlinks or substitute the stream namespace.
-The preparation below implements only these existing encodings for this example;
-the native commands validate both the identities and stored pin ancestry.
-
-```sh
-python3 - <<'PY'
-import hashlib
-import json
-import os
-from pathlib import Path
-import subprocess
-import tempfile
-
-binary = str(Path("./mousa").absolute())
-with tempfile.TemporaryDirectory(prefix="mousa-directory-example-") as temporary:
-    root = Path(temporary) / "documents"
-    root.mkdir()
-    store = Path(temporary) / "evidence.sqlite"
-    (root / "old.md").write_text("cedar predecessor evidence", encoding="utf-8")
-    (root / "new.txt").write_text("cedar successor evidence", encoding="utf-8")
-
-    def command(*args, record=None):
-        result = subprocess.run(
-            [binary, "-store", str(store), *map(str, args)],
-            input=None if record is None else json.dumps(record),
-            text=True, capture_output=True, check=True)
-        return json.loads(result.stdout)
-
-    def identity(*fields):
-        digest = hashlib.sha256()
-        for field in fields:
-            value = field.encode("utf-8") if isinstance(field, str) else field
-            digest.update(len(value).to_bytes(8, "big"))
-            digest.update(value)
-        return digest.hexdigest()
-
-    command("sync", root)
-    baseline = command("query", root, "cedar")
-    pins = {hit["item"]: hit["representation_id"] for hit in baseline["evidence"]}
-    source = identity("mousa.source.v1", "mousa-local", os.path.abspath(root))
-    declaration = dict(
-        schema="mousa.supersession_declaration.v1", source_id=source,
-        predecessor_item_id="old.md", predecessor_representation_id=pins["old.md"],
-        successor_item_id="new.txt", successor_representation_id=pins["new.txt"],
-        author="example.operator", basis="new.txt explicitly replaces old.md")
-    declaration["id"] = identity(
-        declaration["schema"], bytes.fromhex(source), "old.md",
-        bytes.fromhex(pins["old.md"]), "new.txt", bytes.fromhex(pins["new.txt"]),
-        declaration["author"], declaration["basis"])
-    command("supersession", "declaration", "put", record=declaration)
-    activation = dict(
-        schema="mousa.supersession_activation.v1", source_id=source,
-        expected_previous_activation_id=None, declaration_id=declaration["id"],
-        actor_id="example.operator", actor_version="1", occurred_at_usec=1,
-        reason="explicit directory replacement")
-    activation["id"] = identity(
-        activation["schema"], bytes.fromhex(source), b"",
-        bytes.fromhex(declaration["id"]))
-    command("supersession", "activation", "put", record=activation)
-    disabled = command("query", "--supersession=false", root, "cedar")
-    assert disabled["evidence"] == baseline["evidence"]
-    for packing in ("original", "exact-v1"):
-        selected = command("query", "--supersession", "--packing-policy", packing,
-                           root, "cedar")
-        assert [hit["item"] for hit in selected["evidence"]] == ["new.txt"]
-        inspected = command("trail", root, selected["trail_id"])
-        print(json.dumps(inspected["historical"]["supersession"], indent=2))
-    (root / "old.md").write_text("cedar revised predecessor evidence", encoding="utf-8")
-    command("sync", root)
-    revised = command("query", "--supersession", root, "cedar")
-    assert revised["supersession_excluded"] == 0
-    assert {hit["item"] for hit in revised["evidence"]} == {"old.md", "new.txt"}
-    historical = command("trail", root, selected["trail_id"])
-    assert historical["historical"]["supersession"]["activation_id"] == activation["id"]
-PY
-```
-
-Each printed v4 member names the producing activation, declaration, predecessor and
-successor pins. Declaration alone changes no selection; activation affects only
-opted-in queries. An updated predecessor has a different representation and is not
-withheld by the old pin. Removing or updating the successor does not revoke the
-declaration. A later deactivation names the current activation as
-`expected_previous_activation_id` and sets `declaration_id` to null; reactivation
-names that deactivation and the declaration. Null identity tuple fields are empty
-bytes. Read `supersession activation state SOURCE_ID` before preparing a subsequent
-transition; a competing transition can still cause a conflict. Historical `trail`
-inspection reauthorizes access and preserves the producing pins, not today's state.
-
-Integrity checks, authorization, current activation, and factual truth are separate
+Integrity checks, authorization and factual truth are separate
 properties. Classification records are not automatic categorization or
 classification-based authorization.
 
@@ -1086,19 +783,13 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The thirteen tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+The ten tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
 `mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`, `mousa_vector_import`,
-`mousa_supersession_declare`, `mousa_supersession_activate`, `mousa_supersession_status`,
 `mousa_classification_put` and `mousa_classification_get`.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
-Supersession writes default off and separately require
-`--supersession-admin-source inspection-notes`. This flag grants no ingestion or
-retrieval permission; status requires fresh retrieval authorization but no admin
-flag. HTTP mutations also require the validated principal's `mousa:write` scope.
-See [exact draft/result shapes and permission examples](MCP_SUPERSESSION.md#source-scoped-administration).
-Raw historical declaration/event-by-ID reads remain native-only. Classification
+Classification
 has a separate [same-source MCP interface](#mcp-classification-administration).
 
 
@@ -1186,7 +877,7 @@ Call `mousa_trail` with the same configured source, returned `trail_id` and
 `retrieval_details:true` for verified producing vector/hybrid facts, including
 native-created v5/v6 records. Omission/false keeps default history unchanged.
 Current authorization can withhold history; later index/revision changes never
-rerank the original record. The independent `supersession` opt-in still works.
+rerank the original record.
 Native v7 vector/hybrid facts can also be inspected. The independent
 `token_details` opt-in returns safe recorded token facts without recounting.
 
@@ -1234,8 +925,6 @@ Window/reservation fields require it even when zero. Caps are positive integers
 up to 524288; declarations are integers 0..1000000000. Nonzero reservations
 require a positive window and cannot exceed it together. Null, booleans,
 fractional/overflow numbers, duplicate and unknown fields reject before mutation.
-All three token modes accept supersession: true records lexical v8 or
-vector/hybrid v10; byte-only vector/hybrid remains v9.
 Tool inputs cannot set interpreter, cache, store or caller paths/identity.
 
 Without a configured usable backend, token mode returns `tokenizer_unavailable`;

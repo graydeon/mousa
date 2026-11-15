@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"reflect"
-	"slices"
 
 	"github.com/graydeon/mousa/internal/mousa"
 )
@@ -27,23 +26,17 @@ type TracedLexicalResult struct {
 // one writer transaction. A stored deny decision is data, not an error: it produces a trail with no
 // candidates and an empty selection. Tracing writes, so a read-only store cannot trace.
 func (store *Store) TraceEnforcedLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string) (TracedLexicalResult, error) {
-	return store.traceLexical(ctx, request, expression, limit, budgetBytes, false, packingPolicy, false)
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, false, packingPolicy)
 }
 
 // EvaluateAndTraceLexical evaluates current policy, retrieves and packs verified
 // candidates, and stores the decision and Source Trail in one writer transaction.
 // It requires a new request identity; it never reuses a historical decision.
 func (store *Store) EvaluateAndTraceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string) (TracedLexicalResult, error) {
-	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, false)
+	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy)
 }
 
-// EvaluateAndTraceSupersessionLexical evaluates fresh authorization and records an
-// opted-in v4 trail, consulting supersession only for an allow in the same transaction.
-func (store *Store) EvaluateAndTraceSupersessionLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, packingPolicy string) (TracedLexicalResult, error) {
-	return store.traceLexical(ctx, request, expression, limit, budgetBytes, true, packingPolicy, true)
-}
-
-func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool, packingPolicy string, supersession bool) (TracedLexicalResult, error) {
+func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvaluationRequest, expression string, limit int, budgetBytes uint64, evaluateCurrent bool, packingPolicy string) (TracedLexicalResult, error) {
 	if packingPolicy != mousa.PackingOriginal && packingPolicy != mousa.PackingExactV1 {
 		return TracedLexicalResult{}, wrap(CodeInvalidQuery, "trace enforced lexical", errors.New("packing policy must be original or exact-v1"))
 	}
@@ -70,19 +63,7 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 		if err != nil {
 			return err
 		}
-		var trail mousa.SourceTrail
-		var consultation supersessionConsultation
-		if supersession {
-			if enforced.Decision.Outcome == mousa.PolicyOutcomeAllow {
-				consultation, err = readSupersessionConsultation(ctx, conn, request.SourceID)
-				if err != nil {
-					return err
-				}
-			}
-			trail, err = mousa.NewSourceTrailWithSupersession(request, enforced.Decision, expression, enforced.Candidates, budgetBytes, packingPolicy, consultation.state, consultation.declaration)
-		} else {
-			trail, err = mousa.NewSourceTrail(request, enforced.Decision, expression, enforced.Candidates, budgetBytes, packingPolicy)
-		}
+		trail, err := mousa.NewSourceTrail(request, enforced.Decision, expression, enforced.Candidates, budgetBytes, packingPolicy)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "trace enforced lexical", err)
 		}
@@ -96,22 +77,7 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 		if !reflect.DeepEqual(written, trail) {
 			return integrity("trace enforced lexical", "exact read-back disagrees with write")
 		}
-		candidates := enforced.Candidates
-		if supersession && len(written.Supersession.Dispositions) > 0 {
-			candidates = slices.Clone(candidates)
-			rows := written.Supersession.Dispositions
-			withheld := 0
-			for index := range candidates {
-				if withheld == len(rows) {
-					break
-				}
-				if candidates[index].Segment.ID == rows[withheld].SegmentID {
-					candidates[index].Text = ""
-					withheld++
-				}
-			}
-		}
-		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: candidates}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates}
 		return nil
 	})
 	if err != nil {
@@ -318,7 +284,7 @@ func getSourceTrail(ctx context.Context, q queryer, id mousa.SourceTrailID) (mou
 			return mousa.SourceTrail{}, lexicalStructuralError("verify vector trail content", err)
 		}
 	}
-	if trail.Schema == mousa.SourceTrailSchemaV2 || trail.Schema == mousa.SourceTrailSchemaV4 {
+	if trail.Schema == mousa.SourceTrailSchemaV2 {
 		if err := verifyTrailContent(ctx, q, trail, decision.Request.SourceID); err != nil {
 			return mousa.SourceTrail{}, err
 		}

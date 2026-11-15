@@ -11,10 +11,9 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source includes native attributed classification administration,
-measured token budgets, and native/MCP lexical/vector/hybrid supersession.
-Accepted PR109 and PR110 add source-scoped MCP supersession
-and classification administration. These source capabilities are not a claim
+Accepted source includes native attributed classification administration
+and measured token budgets. Accepted PR110 adds source-scoped MCP
+classification administration. These source capabilities are not a claim
 about a tagged release; independent captures retain their own producing commits.
 
 Source builds containing native `classification put|get` also record immutable
@@ -61,50 +60,9 @@ The native [vector](USAGE.md#caller-supplied-vector-workflow) and
 JSONL sources. Generation stays external; synthetic examples do not establish
 embedding-model quality, semantic equivalence or factual truth.
 
-The internal Go core now stores source-local supersession declarations pinned to
-exact predecessor and successor item revisions, plus immutable activation history
-and a verified current-state projection. Declaration and activation-event
-administration are reachable natively through `supersession declaration put|get`
-and `supersession activation put|get`, and the verified current state for one source
-is inspectable read-only through `supersession activation state <source-id>`.
-
-Native directory queries (`query --supersession DIRECTORY TEXT`) and JSONL queries
-(`query --source ID --supersession TEXT`) can opt into exact revision-pin suppression.
-The local stdio MCP `mousa_query` tool takes the same opt-in as an optional boolean. The MCP `mousa_trail` tool takes that
-boolean too and returns the recorded consultation member of a v4 trail. The fresh store
-entry point
-`EvaluateAndTraceSupersessionLexical` evaluates authorization, verifies candidates,
-consults administration and records a v4 trail inside one writer transaction.
-Only an accepted candidate whose own representation is the active declaration's
-exact predecessor pin is withheld. Successor availability does not gate suppression,
-and no successor passage is manufactured. Both packing policies apply to survivors.
-
-Vector and hybrid queries also accept explicit supersession, natively and through
-configured MCP aliases. Byte selection records v9; measured token composition
-records v10. Both retain producing ranks and consultation,
-with unchanged full-source admission before withholding. See the
-[runnable example](USAGE.md#vector-and-hybrid-supersession).
-
-Defaults are unchanged: recording an activation alone does not filter a default
-query, reinterpret a recorded member or move item pointers. MCP declaration, activation and
-current-state inspection use configured JSONL aliases; mutations require the
-separate `--supersession-admin-source` startup allowlist. Status authorizes before
-consulting state and may persist an authorization receipt. Raw historical
-record-by-ID reads and policy administration remain native-only. Classification
+Raw historical record-by-ID reads and policy administration remain native-only. Classification
 put/get also have the bounded same-source MCP interface described above.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
-
-A query prepares and size-checks its expression before opening the store only when it
-opts in. Default and `--supersession=false` queries, including directory queries, keep
-the established post-open failure and writable-open boundary.
-
-Stored v4 trails verify their recorded event, declaration and canonical candidate
-content rather than today's activation or item pointers. Later transitions and item
-revisions do not reinterpret history. Damaged administration fails a fresh allowed
-request without committing its decision or trail; a denied request consults no
-administration. See the [enforcement contract](SUPERSESSION_ENFORCEMENT.md),
-[capability boundary](CAPABILITIES.md#supersession-core-boundary) and
-[evidence record](RESEARCH.md#supersession-contract-evidence).
 
 ## The nine-stage retrieval backbone
 
@@ -118,7 +76,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, conflicts, and supersession. | Partially implemented: source lifecycle and deployment policy decisions, revision-pinned supersession administration and explicit directory/JSONL and configured MCP lexical/vector/hybrid enforcement with byte or token budgets. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **7. Verify** | Check authority, freshness, sensitivity, and conflicts. | Partially implemented: source lifecycle and deployment policy decisions. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
 
@@ -132,18 +90,10 @@ search expression, byte budget, packet identity, and ordered candidate
 dispositions. Opt-in exact-content packing writes v2, which also binds
 duplicate omissions and retained-segment relationships. Older trail bytes and identities remain unchanged.
 
-A byte-only opted-in directory or JSONL query always writes
-`mousa.source_trail.v4`, including denial, verified no-history and deactivation.
-Its closed `supersession` member binds consultation, nullable activation and
-declaration identities, and each withheld candidate's exact pins. Withheld candidates
-keep their accepted disposition, original rank and canonical size, but release no text,
-consume no budget and seed no retained duplicate set. The packet identity still binds
-the released selection, so an unchanged selection has the same packet identity.
-
 Native vector queries write `mousa.source_trail.v5` instead. Its closed `vector`
 member records the declared space, exact query vector and identity, current eligible
 and indexed counts, and ordered embedding/source/content pins and cosine scores.
-It has no lexical expression or supersession consultation. Original
+It has no lexical expression. Original
 and exact-v1 byte packing use the same packet v1 identity domain for the released
 selection. Native history reauthorizes and checks recorded producing embeddings,
 not today's vectors or current item pointers. Lexical defaults and earlier bytes
@@ -163,21 +113,10 @@ CLI and MCP token queries write `mousa.source_trail.v7` and packet v3, binding e
 retrieval facts, the versioned rendering/backend, declared allowances, selections,
 precise omissions and measured digest/count. A prepared local Python process
 counts proposed whole renderings inside the authorized writer snapshot and is
-reaped before insertion. Default queries and v1–v6 remain unchanged.
+reaped before insertion. Default queries and v1, v2, v5 and v6 remain unchanged.
 See [token packing](CAPABILITIES.md#native-token-aware-packing).
 
-Lexical token queries with supersession write v8. Vector/hybrid token queries
-with supersession write v10. Both bind recorded
-consultation and token selection, verify withheld canonical content and pack
-survivors. Omitted/false token supersession stays v7; byte-only enforcement
-stays lexical v4 or vector/hybrid v9. Full vector-source admission precedes
-masking. Packet v3 binds the complete producing selection: equal returned text
-does not establish equal v7/v8/v10 packet identities. See the
-[source status](#source-and-release-status).
-
-Canonical read and startup verification check the recorded administration and candidate
-content. A missing canonical parent named by v4 is an integrity failure; an unknown
-requested identity remains `not_found`, and legacy readers retain their behavior.
+An unknown requested identity remains `not_found`, and legacy readers retain their behavior.
 Source-scoped inspection is narrower: if a missing decision parent prevents ownership
 verification in an already-open inspector, it returns `not_found` for own and foreign
 orphans alike. Fresh-open verification rejects the store instead. Successful denied
@@ -221,7 +160,6 @@ Compatibility will be documented as a tested matrix. Mousa will not claim suppor
 A content digest identifies bytes, not factual authority. Keep source identity,
 logical item identity and physical revision pins separate when importing versions;
 a repeated upstream ID alone does not establish a replacement relationship.
-Explicit supersession is a source-local declaration, not inferred truth.
 
 Current item pointers and immutable trails do not provide arbitrary historical
 text retrieval. A future historical adapter must declare knowledge cutoff K,
@@ -246,7 +184,7 @@ Implemented and planned capabilities, marked per item:
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned current indexed-source manifests with fresh-authorized native/MCP comparison (source builds containing `manifest`); full-store interchange and action-completion tracking (not implemented);
-- authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical/vector/hybrid enforcement with byte or token budgets and v4/v8/v9/v10 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- authority, freshness, sensitivity and status metadata (lifecycle status and deployment policy implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
