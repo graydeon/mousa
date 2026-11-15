@@ -11,6 +11,15 @@ Use the user's explicit existing authorization for the configured source labels 
 
 Use mousa_status for each approved configured source to check collection/recovery state. Do not claim evidence is available merely because a tool is discovered. If a source is empty, unavailable, denied or withdrawn, explain the state and ask the user to handle ingestion or policy through their local Mousa setup. Do not silently enable writes or remove a deny.
 
+For work resumption against a saved content fingerprint, first discover
+`mousa_source_manifest` and call it with the approved configured JSONL `source`
+and saved `expected_manifest_id`. Require an allowed decision, a complete
+manifest and `matches: true`; stop on mismatch, denial or error. Export without
+an expectation only establishes a new caller-owned baseline. This requires read
+authorization, not an ingestion or administration allowlist. The result describes
+current indexed content in that inspection snapshot: unsynced files, completed
+actions, later queries and full model-window safety are outside its scope.
+
 On supported desktop hosts, explain that composer mentions search Mousa evidence and attach resource links. Resource reads reauthorize access; old links may become unavailable after policy or source changes. On CLI or hosts without mentions, use mousa_query and mousa_trail through the mousa-evidence skill.
 
 Do not create a tunnel, deploy an endpoint, install credentials, publish a plugin, run a model/provider test or change host configuration without explicit authorization. The local generated package is not a public directory submission. Connection and actual host extension rendering must be checked on the host, not inferred from this skill.

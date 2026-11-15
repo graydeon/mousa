@@ -21,26 +21,27 @@ import (
 const mcpResultVersion = "mousa.mcp_result.v1"
 
 type mcpArguments struct {
-	Source           string
-	Items            []json.RawMessage
-	SegmentPolicy    string
-	Query            string
-	Policy           string
-	BudgetBytes      uint64
-	PackingPolicy    string
-	TrailID          mousa.SourceTrailID
-	Supersession     bool
-	RetrievalDetails bool
-	SpaceID          mousa.SHA256
-	Values           []float64
-	TokenBudget      *mousa.TokenBudget
-	TokenDetails     bool
-	VectorImport     mousa.VectorImport
-	Associations     []mousa.AssociationDeclaration
-	Declaration      mousa.SupersessionDeclaration
-	Activation       mousa.SupersessionActivation
-	Classification   mousa.Classification
-	ClassificationID mousa.ClassificationID
+	Source             string
+	Items              []json.RawMessage
+	SegmentPolicy      string
+	Query              string
+	Policy             string
+	BudgetBytes        uint64
+	PackingPolicy      string
+	TrailID            mousa.SourceTrailID
+	Supersession       bool
+	RetrievalDetails   bool
+	SpaceID            mousa.SHA256
+	Values             []float64
+	TokenBudget        *mousa.TokenBudget
+	TokenDetails       bool
+	VectorImport       mousa.VectorImport
+	Associations       []mousa.AssociationDeclaration
+	Declaration        mousa.SupersessionDeclaration
+	Activation         mousa.SupersessionActivation
+	Classification     mousa.Classification
+	ClassificationID   mousa.ClassificationID
+	ExpectedManifestID *mousa.SHA256
 }
 
 type mcpToolError struct {
@@ -121,6 +122,8 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	allowed := []string{"source"}
 	required := []string{"source"}
 	switch operation {
+	case "mousa_source_manifest":
+		allowed = append(allowed, "expected_manifest_id")
 	case "mousa_classification_put":
 		allowed = append(allowed, "classification")
 		required = append(required, "classification")
@@ -262,6 +265,12 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 				return args, fmt.Errorf("%s must be a lossless JSON string", key)
 			}
 			switch key {
+			case "expected_manifest_id":
+				id, err := mousa.ParseSourceManifestID(text)
+				if err != nil {
+					return args, err
+				}
+				args.ExpectedManifestID = &id
 			case "source":
 				if _, err := streamSource(text); err != nil {
 					return args, err
@@ -365,6 +374,8 @@ func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
 		reflect.TypeFor[mousa.RepresentationID]():          hexID,
 		reflect.TypeFor[mousa.SourceID]():                  hexID,
 		reflect.TypeFor[mousa.ClassificationID]():          hexID,
+		reflect.TypeFor[mousa.ObservationID]():             hexID,
+		reflect.TypeFor[mousa.ArtifactID]():                hexID,
 		reflect.TypeFor[mousa.ClassificationSubject]():     mcpClassificationSubjectSchema(),
 	}})
 	if err != nil {
@@ -510,5 +521,10 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		return nil, err
 	}
 	definitions = append(definitions, classifications...)
+	manifest, err := mcpSourceManifestTool(source)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, manifest)
 	return definitions, nil
 }

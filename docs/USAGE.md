@@ -79,6 +79,133 @@ released-text budget, defaulting to 8,192 bytes; JSON overhead and model tokens 
 not covered. Queries distinguish no matches, policy/lifecycle exclusion, and budget
 omission. See the [query and inspection contract](CAPABILITIES.md#query-policy-packing-and-tracing).
 
+## Current-source manifests
+
+Build a revision containing `manifest`, then export the current indexed state:
+
+```sh
+./mousa -store local.sqlite manifest ./documents
+./mousa -store local.sqlite manifest --source inspection-notes
+./mousa -store local.sqlite manifest --expect MANIFEST_ID ./documents
+./mousa -store local.sqlite manifest --source inspection-notes --expect MANIFEST_ID
+python3 examples/source_manifest.py --mousa ./mousa
+```
+
+Replace `MANIFEST_ID` with the returned `manifest.id`. Keep that baseline in
+caller-owned state; Mousa does not persist a manifest or work-completion record.
+Authorized export exits 0 and returns decision metadata plus `manifest`.
+An expected-ID check additionally returns `matches`; only an authorized complete
+match exits 0. Mismatch, denial and operational failure exit 1; invalid command
+syntax exits 2. Denial omits `manifest` and `matches`, including on export. Treat
+every nonzero exit as refusal to resume, not as an empty or matching source.
+Expected IDs must be nonzero lowercase 64-hex strings.
+
+For a configured MCP JSONL alias, discover `mousa_source_manifest` and call:
+
+```json
+{"name":"mousa_source_manifest","arguments":{"source":"inspection-notes","expected_manifest_id":"REPLACE_WITH_SAVED_MANIFEST_ID"}}
+```
+
+Omit `expected_manifest_id` to export a new baseline. A mismatch is a normal
+structured result with `matches: false`, not a malformed-request error. Require
+`decision_outcome: "allow"`, `manifest`, and `matches: true` before resuming.
+Denial returns only existing decision metadata. The expected ID grants no access.
+Unknown-source denials have fresh decision IDs but no persisted receipt: the
+decision's storage foreign key requires an existing source. Known-source decisions
+are persisted only when inspection completes; failed inspection rolls them back.
+Null, coerced, duplicate, unknown and malformed argument fields are rejected.
+This read needs no ingestion, classification or supersession administration flag;
+HTTP retains validated-principal and `mousa:read` admission. MCP accepts configured
+JSONL aliases, not directory paths. Native directory roots and JSONL aliases have
+different source identities; identical text does not make them interchangeable.
+
+The example uses temporary stores and shows export, match, a changed file without
+sync (still a match), sync (mismatch and a new ID), explicit deletion, JSONL
+omission versus deletion, and MCP authorized/denied checks. It refuses to resume
+on mismatch or denial. No tokenizer, embedding producer or model call is needed.
+
+### Scope and bounds
+
+The manifest describes **current indexed local-adapter content**, not live files.
+It contains ordered active-item identities and current observation, artifact and
+representation pins, raw/normalized digests and lengths, normalizer/segmentation
+identity, and a count/digest of each exact ordered segment inventory. It contains
+no passage text or retired bodies. Both `fixed-v1` and `passage-v1` are supported.
+JSONL omission leaves an item unchanged; delete it explicitly with
+`{"id":"note@draft","deleted":true}`.
+
+Fresh authorization and all current-content verification share one writer
+snapshot. A match is not a lease or an atomic guard on a later query. It neither
+records action completion nor guarantees query-result stability, semantic truth,
+authenticated authorship or full model-window safety. Embeddings, classifications,
+associations, supersession activation and authorization receipts are outside the
+content identity. An allowed policy change need not change the ID.
+
+Limits apply together: 1,000 active items, 10,000 current segments, 16 MiB of
+normalized indexed bytes inspected, 512 KiB of canonical encoded manifest, and
+4,096 bytes per item identifier. Fewer than 1,000 items can exceed another limit.
+Excess, corruption, incomplete current indexes and unsupported recovery state fail
+closed: no truncation, partial digest or successful match. A valid active empty
+source has an empty inventory; denial or an unknown source is not such a source.
+Synchronizing an untouched empty directory does not create an active source.
+A previously ingested source remains valid after all its items are deleted.
+MCP also bounds the serialized result, including its duplicated text block, below
+2 MiB with framing space reserved. Escaping can make an otherwise valid canonical
+manifest exceed that transport bound; it returns `resource_limit`, not a partial
+manifest. Manifest calls require a JSON-encoded JSON-RPC request ID of at most
+1,024 bytes. Oversized IDs close stdio with a diagnostic or receive HTTP 400,
+before inspection; these transport rejections do not echo the oversized ID.
+No raw archive, migration or new persisted manifest state is introduced.
+
+Exact retries and input-order permutations preserve identity. Revision,
+segmentation and active-membership changes alter it; restoring identical pins may
+restore an earlier ID. This is a state fingerprint, not a monotonic event counter.
+Fresh stores reproduce full IDs only with the same source identity and current
+pins; separate temporary directory roots must not be normalized into equality.
+
+### Canonical identity recipe
+
+The closed payload has fields in this order: `schema`, `id`, `source_id`, `items`.
+The schema is `mousa.source_manifest.v1`. Items are strictly ordered by their
+UTF-8 item-identifier bytes. Each item has exactly these fields, in order:
+`item`, `observation_id`, `artifact_id`, `representation_id`, `raw_sha256`,
+`raw_byte_length`, `normalized_sha256`, `normalized_byte_length`, `processor_id`,
+`processor_version`, `parameters_sha256`, `segmentation_policy`, `segment_count`,
+`segments_sha256`. IDs and SHA-256 values are lowercase 64-hex strings; lengths
+and counts are JSON integers.
+
+Let `J(x)` be compact UTF-8 JSON with the listed object-member order, no spaces,
+no HTML escaping, U+2028/U+2029 escaped, and one trailing LF. Arrays retain order
+and empty inventories encode as `[]`, not `null`. Let
+`T(a,b) = u64be(len(a)) || a || u64be(len(b)) || b`, with lengths in bytes.
+Then `manifest.id` is lowercase hex SHA-256 of:
+
+```text
+T(UTF8("mousa.source_manifest.v1"), J({"source_id":SOURCE_ID,"items":ITEMS}))
+```
+
+The manifest ID excludes its own `schema`/`id` members from the JSON payload;
+the schema is the tuple's domain separator. Fresh decision metadata is outside
+this payload. Canonical encoded-manifest size includes its final LF.
+
+For each item, reconstruct every current segment in contiguous byte-range order.
+The segment-inventory entry is `{"segment_id":ID,"selector":SELECTOR,
+"content_sha256":DIGEST}` in that member order. `SELECTOR` is
+`{"schema":"mousa.selector.text_byte_range.v1","start":START,"end":END}`,
+with half-open normalized UTF-8 byte coordinates. The segment ID and content
+digest are the existing canonical segment identity and SHA-256 of that exact
+normalized slice. `segments_sha256` is lowercase hex SHA-256 of:
+
+```text
+T(UTF8("mousa.source_manifest_segments.v1"), J(ORDERED_SEGMENT_ENTRIES))
+```
+
+The normalizer is `mousa.text.normalize_utf8`, version `1`. Parameters are
+SHA-256 of empty bytes for `fixed-v1`, or of the exact UTF-8 bytes
+`{"segmentation":"passage-v1"}` (without LF) for `passage-v1`. This recipe binds
+actual provenance and selectors, not just names and counts.
+
+
 ## Native token-aware context packing
 
 `query --context-tokens N` selects whole evidence passages against the token

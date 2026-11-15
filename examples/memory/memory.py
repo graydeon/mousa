@@ -144,9 +144,9 @@ class Client:
         self.request("notifications/initialized", {}, notification=True)
         tools, _ = self.request("tools/list", {})
         entries = tools.get("tools") if isinstance(tools, dict) else None
-        if not isinstance(entries, list) or len(entries) != 13 or any(
+        if not isinstance(entries, list) or len(entries) != 14 or any(
                 not isinstance(tool, dict) or not isinstance(tool.get("name"), str) for tool in entries) or {
-                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail", "mousa_vector_query", "mousa_hybrid_query", "mousa_vector_inputs", "mousa_vector_import", "mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status", "mousa_classification_put", "mousa_classification_get"}:
+                tool["name"] for tool in entries} != {"mousa_sync", "mousa_status", "mousa_query", "mousa_trail", "mousa_vector_query", "mousa_hybrid_query", "mousa_vector_inputs", "mousa_vector_import", "mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status", "mousa_classification_put", "mousa_classification_get", "mousa_source_manifest"}:
             raise ValueError("unexpected native MCP tools")
         return elapsed
 
@@ -172,7 +172,7 @@ class Client:
         vector_schemas = {"mousa_vector_inputs": "mousa.embedding_inputs.v1",
                           "mousa_vector_import": "mousa.vector_import_result.v1"}
         if (name in vector_schemas and result.get("schema") != vector_schemas[name]) or (
-                name not in vector_schemas and not name.startswith(("mousa_supersession_", "mousa_classification_")) and result.get("source") != self.source):
+                name not in vector_schemas and name != "mousa_source_manifest" and not name.startswith(("mousa_supersession_", "mousa_classification_")) and result.get("source") != self.source):
             raise ValueError("invalid MCP operation result")
         if name == "mousa_query" and (
                 result.get("query") != arguments.get("query") or

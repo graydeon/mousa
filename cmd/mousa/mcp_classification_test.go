@@ -160,7 +160,7 @@ func TestMCPClassificationDiscoveryBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(baseline.Tools) != 11 || len(listed.Tools) != 13 {
+	if len(baseline.Tools) != 11 || len(listed.Tools) != 14 {
 		t.Fatal("unexpected discovery counts")
 	}
 	current := map[string]map[string]any{}
