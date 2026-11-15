@@ -549,10 +549,6 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 		return err
 	}
 	defer store.Close()
-	if err := deployLocalPolicy(ctx, store); err != nil {
-		return fmt.Errorf("deploy policy: %w", err)
-	}
-
 	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: selection.Skipped, SegmentPolicy: segmentPolicy}
 	var sequence uint64
 	selected := make(map[string]struct{}, len(selection.Items))
@@ -665,37 +661,6 @@ func emit(value any) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
-}
-
-// deployLocalPolicy supplies the CLI caller's deployment-level allow. A source
-// policy can deny retrieval, and an allow never overrides lifecycle withdrawal.
-func deployLocalPolicy(ctx context.Context, store *sqlite.Store) error {
-	definition, err := putLocalPolicyDefinition(ctx, store, mousa.SourceRetrievalEffectAllow)
-	if err != nil {
-		return err
-	}
-	scope := mousa.NewDeploymentPolicyScope()
-	bindingID, err := mousa.NewPolicyBindingID(localNamespace, "deployment", "1", scope, definition.ID)
-	if err != nil {
-		return err
-	}
-	binding := mousa.PolicyBinding{
-		Schema: mousa.PolicyBindingSchema, ID: bindingID, Namespace: localNamespace,
-		ExternalBindingID: "deployment", ExternalBindingVersion: "1", Scope: scope, PolicyDefinitionID: definition.ID,
-	}
-	if err := store.PutPolicyBinding(ctx, binding); err != nil {
-		return err
-	}
-	activationID, err := mousa.NewPolicyActivationID(localNamespace, "deployment", "activate")
-	if err != nil {
-		return err
-	}
-	activation := mousa.PolicyActivation{
-		Schema: mousa.PolicyActivationSchema, ID: activationID, Namespace: localNamespace,
-		ExternalBindingID: "deployment", ExternalActivationID: "activate",
-		ActiveBindingID: &binding.ID, ActorID: localNamespace, ActorVersion: "1", OccurredAtUsec: 1,
-	}
-	return store.ApplyPolicyActivation(ctx, activation)
 }
 
 // readBoundedInput reads one bounded stdin payload for the named record kind. Reading at most one

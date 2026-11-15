@@ -106,26 +106,18 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	}
 	application := &mcpApplication{store: store, path: storePath, caller: *caller, sources: sources, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), openai: *openai, http: httpConfig != nil}
 	application.tokenizerPython, application.tokenizerCache = *tokenPython, *tokenCache
-	// This is the same fixed caller and deployment policy used by CLI sync.
-	// Source-scoped deny and lifecycle withdrawal still take precedence.
-	if *caller == "cli" {
-		err = deployLocalPolicy(ctx, store)
-	}
+	server, err := application.server(ctx)
 	if err == nil {
-		var server *mcp.Server
-		server, err = application.server(ctx)
-		if err == nil {
-			if httpConfig != nil {
-				err = runMCPHTTP(ctx, server, httpConfig)
-			} else {
-				err = server.Run(ctx, &mcpDisconnectTransport{Transport: &mcp.StdioTransport{MaxLineLength: mcpMaxFrameBytes}, cancel: cancel})
-			}
-			cause := context.Cause(ctx)
-			if errors.Is(cause, io.EOF) || errors.Is(cause, context.Canceled) {
-				err = nil
-			} else if cause != nil {
-				err = cause
-			}
+		if httpConfig != nil {
+			err = runMCPHTTP(ctx, server, httpConfig)
+		} else {
+			err = server.Run(ctx, &mcpDisconnectTransport{Transport: &mcp.StdioTransport{MaxLineLength: mcpMaxFrameBytes}, cancel: cancel})
+		}
+		cause := context.Cause(ctx)
+		if errors.Is(cause, io.EOF) || errors.Is(cause, context.Canceled) {
+			err = nil
+		} else if cause != nil {
+			err = cause
 		}
 	}
 	return errors.Join(err, store.Close())

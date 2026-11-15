@@ -682,77 +682,6 @@ func TestFailedPolicyDefinitionMigrationRollsBackAllState(t *testing.T) {
 	}
 }
 
-func TestInterruptedPolicyDefinitionWriteRollsBackOnReopen(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "interrupted-policy-definition-write.sqlite")
-	createCurrent(t, path)
-	record := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-	runCrashHelper(t, "policy-definition-record", path)
-	store, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	if _, err := store.GetPolicyDefinition(ctx, record.ID); !IsCode(err, CodeNotFound) {
-		t.Fatalf("interrupted policy definition write = %v, want not_found", err)
-	}
-}
-
-func TestInterruptedPolicyBindingAndActivationWritesRollBackOnReopen(t *testing.T) {
-	ctx := context.Background()
-	t.Run("binding", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "interrupted-policy-binding-write.sqlite")
-		store, err := Open(ctx, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		definition := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-		if err := store.PutPolicyDefinition(ctx, definition); err != nil {
-			t.Fatal(err)
-		}
-		binding := testPolicyBinding(t, "crash", "series", "1", definition.ID)
-		store.Close()
-		runCrashHelper(t, "policy-binding-record", path)
-		store, err = Open(ctx, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer store.Close()
-		if _, err := store.GetPolicyBinding(ctx, binding.ID); !IsCode(err, CodeNotFound) {
-			t.Fatalf("interrupted policy binding write = %v, want not_found", err)
-		}
-	})
-	t.Run("activation", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "interrupted-policy-activation-write.sqlite")
-		store, err := Open(ctx, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		definition := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-		binding := testPolicyBinding(t, "crash", "series", "1", definition.ID)
-		if err := store.PutPolicyDefinition(ctx, definition); err != nil {
-			t.Fatal(err)
-		}
-		if err := store.PutPolicyBinding(ctx, binding); err != nil {
-			t.Fatal(err)
-		}
-		activation := testPolicyActivation(t, "crash", "series", "activate", nil, &binding.ID)
-		store.Close()
-		runCrashHelper(t, "policy-activation-record", path)
-		store, err = Open(ctx, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer store.Close()
-		if _, err := store.GetPolicyActivation(ctx, activation.ID); !IsCode(err, CodeNotFound) {
-			t.Fatalf("interrupted policy activation write = %v, want not_found", err)
-		}
-		if _, err := store.GetPolicyBindingState(ctx, "crash", "series"); !IsCode(err, CodeNotFound) {
-			t.Fatalf("interrupted policy binding state = %v, want not_found", err)
-		}
-	})
-}
-
 func TestInterruptedAndCommittedPolicyDefinitionMigrationRecoverOnReopen(t *testing.T) {
 	ctx := context.Background()
 	t.Run("interrupted after every migration write", func(t *testing.T) {
@@ -953,39 +882,6 @@ func TestCrashHelper(t *testing.T) {
 		}
 		if _, err := conn.ExecContext(context.Background(), `INSERT INTO sources(id, record_json) VALUES(?, ?)`, id[:], data); err != nil {
 			os.Exit(9)
-		}
-	case "policy-definition-record":
-		record := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-		data, err := mousa.EncodePolicyDefinition(record)
-		if err != nil {
-			os.Exit(22)
-		}
-		if _, err := conn.ExecContext(context.Background(), `INSERT INTO policy_definitions(id, namespace, external_policy_id, external_policy_version, record_json) VALUES(?, ?, ?, ?, ?)`, record.ID[:], record.Namespace, record.ExternalPolicyID, record.ExternalPolicyVersion, data); err != nil {
-			os.Exit(23)
-		}
-	case "policy-binding-record":
-		definition := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-		record := testPolicyBinding(t, "crash", "series", "1", definition.ID)
-		data, err := mousa.EncodePolicyBinding(record)
-		if err != nil {
-			os.Exit(24)
-		}
-		if _, err := conn.ExecContext(context.Background(), `INSERT INTO policy_bindings(id, namespace, external_binding_id, external_binding_version, scope_kind, subject_id, policy_definition_id, record_json) VALUES(?, ?, ?, ?, ?, NULL, ?, ?)`, record.ID[:], record.Namespace, record.ExternalBindingID, record.ExternalBindingVersion, record.Scope.Kind(), record.PolicyDefinitionID[:], data); err != nil {
-			os.Exit(25)
-		}
-	case "policy-activation-record":
-		definition := testPolicyDefinition(t, "crash", "policy", "1", "opaque", "opaque", "definition")
-		binding := testPolicyBinding(t, "crash", "series", "1", definition.ID)
-		record := testPolicyActivation(t, "crash", "series", "activate", nil, &binding.ID)
-		data, err := mousa.EncodePolicyActivation(record)
-		if err != nil {
-			os.Exit(26)
-		}
-		if _, err := conn.ExecContext(context.Background(), `INSERT INTO policy_activations(id, namespace, external_binding_id, external_activation_id, expected_previous_activation_id, active_binding_id, record_json) VALUES(?, ?, ?, ?, NULL, ?, ?)`, record.ID[:], record.Namespace, record.ExternalBindingID, record.ExternalActivationID, binding.ID[:], data); err != nil {
-			os.Exit(27)
-		}
-		if _, err := conn.ExecContext(context.Background(), `INSERT INTO policy_binding_state(namespace, external_binding_id, current_activation_id, active_binding_id) VALUES(?, ?, ?, ?)`, record.Namespace, record.ExternalBindingID, record.ID[:], binding.ID[:]); err != nil {
-			os.Exit(28)
 		}
 	case "ingest":
 		sequence := uint64(3)

@@ -145,6 +145,10 @@ var requiredObjectsV15 = append(append([]string(nil), requiredObjectsV14...),
 	"table:vector_spaces",
 )
 
+var requiredObjectsV16 = append(append([]string(nil), requiredObjectsV15...),
+	"table:source_access",
+)
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -345,6 +349,8 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 		requiredObjects = requiredObjectsV14
 	} else if wantVersion == 15 {
 		requiredObjects = requiredObjectsV15
+	} else if wantVersion == 16 {
+		requiredObjects = requiredObjectsV16
 	}
 	if !equalStringSets(objects, requiredObjects) {
 		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
@@ -389,16 +395,6 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 			if err := checkLexicalIndexIntegrity(ctx, db); err != nil {
 				return err
 			}
-		}
-	}
-	if wantVersion >= 5 {
-		if err := verifyPolicyDefinitionRecords(ctx, db); err != nil {
-			return err
-		}
-	}
-	if wantVersion >= 6 {
-		if err := verifyPolicyBindingRecords(ctx, db); err != nil {
-			return err
 		}
 	}
 	if wantVersion >= 7 {

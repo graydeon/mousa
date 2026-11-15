@@ -91,14 +91,14 @@ func TestOpenAIMentionEvidenceAuthorization(t *testing.T) {
 	if _, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: links[0].URI}); err == nil {
 		t.Fatal("previous link bypassed current source deny")
 	}
+	other := connect(run.store, "other-caller")
+	if got := mentions(other, "cedar"); len(got) != 0 {
+		t.Fatalf("denied source exposed to another caller: %+v", got)
+	}
+	if _, err := other.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: links[0].URI}); err == nil {
+		t.Fatal("link bypassed source deny for another caller")
+	}
 	run.run(false, "access", "--source", "alpha", "allow")
-	unknown := connect(run.store, "unknown")
-	if got := mentions(unknown, "cedar"); len(got) != 0 {
-		t.Fatalf("unprovisioned caller exposed: %+v", got)
-	}
-	if _, err := unknown.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: links[0].URI}); err == nil {
-		t.Fatal("link granted authority to another caller")
-	}
 	session.Close()
 	session = connect(run.store, "cli")
 	if got := mentions(session, "cedar"); len(got) != 1 || got[0].URI != links[0].URI {

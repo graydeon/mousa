@@ -353,9 +353,11 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 		t.Fatalf("unknown tool protocol error: %v", err)
 	}
 	client.close()
-	client = startMCPClient(t, run, "unprovisioned", false)
+	// Access is per source: a deny applies to every startup identity.
+	run.run(false, "access", "--source", "beta", "deny")
+	client = startMCPClient(t, run, "other-caller", false)
 	if denied := client.call("mousa_query", mcpQuery("beta", "cedar", 256), ""); len(hits(denied)) != 0 || denied["decision_outcome"] == "allow" {
-		t.Fatalf("startup identity inherited CLI access: %v", denied)
+		t.Fatalf("source deny did not apply to another caller: %v", denied)
 	}
 	client.close()
 	// Opening through the supported CLI performs canonical/index integrity checks.

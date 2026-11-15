@@ -624,9 +624,10 @@ The suite does not run comparisons or benchmarks. Ad hoc `unittest`
 discovery may still skip the real-CLI test when `MOUSA_EXECUTABLE` is unset;
 it is not a substitute for this required command.
 
-`access ./documents deny` blocks this CLI caller's retrieval and trail inspection;
-`access ./documents allow` restores that policy permission. Both also accept
-`--source <id>`. `withdraw ./documents` changes source lifecycle state: policy allow
+`access ./documents deny` blocks retrieval and trail inspection of that source for
+every caller; `access ./documents allow` restores it. A source is allowed until
+denied. Both also accept `--source <id>`. `withdraw ./documents` changes source
+lifecycle state: access allow
 does not undo withdrawal, and the CLI has no resume command. These controls are not
 secure erasure or a replacement for filesystem access controls.
 
@@ -658,7 +659,7 @@ The nine tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
 and `mousa_source_manifest`.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
-The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
+The default stdio mode has no listener, directory import, shell, access administration or withdrawal tool.
 
 
 `mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed
@@ -798,7 +799,7 @@ Tool inputs cannot set interpreter, cache, store or caller paths/identity.
 Without a configured usable backend, token mode returns `tokenizer_unavailable`;
 byte tools remain available. The query-scoped offline worker is bounded and
 reaped before successful v7 persistence. Counting failure and cancellation leave
-no successful producing trail/packet. Startup/migration/policy writes and the
+no successful producing trail/packet. Startup/migration writes and the
 fresh authorization audit on a legitimate inspection are not rolled back by
 that guarantee.
 

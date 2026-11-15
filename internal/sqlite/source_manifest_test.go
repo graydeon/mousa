@@ -393,36 +393,17 @@ func TestSourceManifestMissingRootAndForeignCurrentPointer(t *testing.T) {
 	})
 }
 
-func TestSourceManifestExcludesAllowPolicyReplacement(t *testing.T) {
+func TestSourceManifestExcludesAccessChanges(t *testing.T) {
 	store, source := manifestFixture(t)
 	seedLocalItem(t, store, source, "a", "policy independent")
 	before := inspectManifest(t, store, source, "before-policy", nil)
-	definition := seedEvaluationFixture(t, store)
-	definition.ExternalPolicyVersion = "2"
-	var err error
-	definition.ID, err = mousa.NewPolicyDefinitionID(definition.Namespace, definition.ExternalPolicyID, definition.ExternalPolicyVersion, definition.DefinitionMediaType, definition.DefinitionSchema, definition.DefinitionSHA256)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.PutPolicyDefinition(t.Context(), definition); err != nil {
-		t.Fatal(err)
-	}
-	scope := mousa.NewDeploymentPolicyScope()
-	bindingID, err := mousa.NewPolicyBindingID("example", "deployment", "2", scope, definition.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	binding := mousa.PolicyBinding{Schema: mousa.PolicyBindingSchema, ID: bindingID, Namespace: "example", ExternalBindingID: "deployment", ExternalBindingVersion: "2", Scope: scope, PolicyDefinitionID: definition.ID}
-	if err := store.PutPolicyBinding(t.Context(), binding); err != nil {
-		t.Fatal(err)
-	}
-	previous := testPolicyActivation(t, "example", "deployment", "activate", nil, nil)
-	activation := testPolicyActivation(t, "example", "deployment", "manifest-replacement", &previous.ID, &binding.ID)
-	if err := store.ApplyPolicyActivation(t.Context(), activation); err != nil {
-		t.Fatal(err)
+	for _, access := range []mousa.SourceAccess{mousa.SourceAccessDeny, mousa.SourceAccessAllow} {
+		if _, err := store.SetSourceAccess(t.Context(), source.ID, access); err != nil {
+			t.Fatal(err)
+		}
 	}
 	after := inspectManifest(t, store, source, "after-policy", &before.Manifest.ID)
 	if !*after.Matches || after.Decision.ID == before.Decision.ID {
-		t.Fatal("allow-policy replacement changed content identity or reused authorization")
+		t.Fatal("access change altered content identity or reused authorization")
 	}
 }

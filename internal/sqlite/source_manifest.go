@@ -224,7 +224,7 @@ func evaluateManifestRetrieval(ctx context.Context, conn *sql.Conn, request mous
 	if err := requireUnusedExternalRequest(ctx, conn, request); err != nil {
 		return mousa.PolicyDecision{}, err
 	}
-	snapshot := mousa.PolicyEvaluationSnapshot{Inputs: []mousa.PolicyEvaluationInput{}}
+	var snapshot mousa.PolicyEvaluationSnapshot
 	state, err := getIngestState(ctx, conn, request.SourceID)
 	if err == nil {
 		collection := state.CollectionState
@@ -234,12 +234,8 @@ func evaluateManifestRetrieval(ctx context.Context, conn *sql.Conn, request mous
 	} else if !IsCode(err, CodeNotFound) {
 		return mousa.PolicyDecision{}, err
 	}
-	for _, layer := range []mousa.PolicyDecisionLayer{mousa.PolicyLayerDeployment, mousa.PolicyLayerSource} {
-		inputs, err := readActivePolicyInputs(ctx, conn, layer, request.SourceID)
-		if err != nil {
-			return mousa.PolicyDecision{}, err
-		}
-		snapshot.Inputs = append(snapshot.Inputs, inputs...)
+	if snapshot.Access, err = getSourceAccess(ctx, conn, request.SourceID); err != nil {
+		return mousa.PolicyDecision{}, err
 	}
 	decision, err := mousa.EvaluateSourceRetrieval(request, snapshot, time.Now().UnixMicro())
 	if err != nil {

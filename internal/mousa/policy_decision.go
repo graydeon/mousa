@@ -1,35 +1,23 @@
 package mousa
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 )
 
 const (
 	// PolicyEvaluationRequestSchema names one validated transient policy evaluation request.
 	PolicyEvaluationRequestSchema = "mousa.policy_evaluation_request.v1"
 	// PolicyDecisionSchema names one immutable stored policy decision.
-	PolicyDecisionSchema = "mousa.policy_decision.v1"
-	// SourceRetrievalAction is the only action the source retrieval policy evaluator accepts.
+	PolicyDecisionSchema = "mousa.policy_decision.v2"
+	// SourceRetrievalAction is the only action the source retrieval evaluator accepts.
 	SourceRetrievalAction = "source.retrieve"
-	// SourceRetrievalPolicyMediaType is the only supported policy definition media type.
-	SourceRetrievalPolicyMediaType = "application/vnd.mousa.source-retrieval-policy+json"
-	// SourceRetrievalPolicySchema is the only supported policy definition inner schema.
-	SourceRetrievalPolicySchema = "mousa.policy.source_retrieval.v1"
 	// PolicyEvaluatorID and PolicyEvaluatorVersion identify the source-retrieval evaluator.
 	PolicyEvaluatorID      = "mousa.policy.source_retrieval"
-	PolicyEvaluatorVersion = "1"
-)
-
-// PolicyDecisionLayer names the closed set of applicable binding layers.
-type PolicyDecisionLayer string
-
-const (
-	PolicyLayerDeployment PolicyDecisionLayer = "deployment"
-	PolicyLayerSource     PolicyDecisionLayer = "source"
+	PolicyEvaluatorVersion = "2"
 )
 
 // PolicyDecisionOutcome names the closed set of decision outcomes.
@@ -44,34 +32,28 @@ const (
 type PolicyDecisionReason string
 
 const (
-	PolicyReasonAllow                       PolicyDecisionReason = "allow"
-	PolicyReasonMissingSourceState          PolicyDecisionReason = "missing_source_state"
-	PolicyReasonSourceWithdrawn             PolicyDecisionReason = "source_withdrawn"
-	PolicyReasonMissingDeploymentPolicy     PolicyDecisionReason = "missing_deployment_policy"
-	PolicyReasonPolicyDeny                  PolicyDecisionReason = "policy_deny"
-	PolicyReasonPolicyRequestMismatch       PolicyDecisionReason = "policy_request_mismatch"
-	PolicyReasonUnsupportedPolicyDefinition PolicyDecisionReason = "unsupported_policy_definition"
-	PolicyReasonMalformedPolicyDefinition   PolicyDecisionReason = "malformed_policy_definition"
+	PolicyReasonAllow              PolicyDecisionReason = "allow"
+	PolicyReasonMissingSourceState PolicyDecisionReason = "missing_source_state"
+	PolicyReasonSourceWithdrawn    PolicyDecisionReason = "source_withdrawn"
+	PolicyReasonAccessDenied       PolicyDecisionReason = "access_denied"
 )
 
-// PolicyInputResult names the closed set of per-input result codes.
-type PolicyInputResult string
+// SourceAccess is the one stored access decision for a source. A source with no
+// stored decision is allowed.
+type SourceAccess string
 
 const (
-	PolicyInputAllow                 PolicyInputResult = "allow"
-	PolicyInputDeny                  PolicyInputResult = "deny"
-	PolicyInputRequestMismatch       PolicyInputResult = "request_mismatch"
-	PolicyInputUnsupportedDefinition PolicyInputResult = "unsupported_definition"
-	PolicyInputMalformedDefinition   PolicyInputResult = "malformed_definition"
+	SourceAccessAllow SourceAccess = "allow"
+	SourceAccessDeny  SourceAccess = "deny"
 )
 
-// SourceRetrievalEffect names the closed set of inner policy effects.
-type SourceRetrievalEffect string
-
-const (
-	SourceRetrievalEffectAllow SourceRetrievalEffect = "allow"
-	SourceRetrievalEffectDeny  SourceRetrievalEffect = "deny"
-)
+// Validate rejects any value outside the closed access vocabulary.
+func (access SourceAccess) Validate() error {
+	if access != SourceAccessAllow && access != SourceAccessDeny {
+		return newValidationError("access", ValidationCodeInvalidEnum, "must be allow or deny", nil)
+	}
+	return nil
+}
 
 type PolicyEvaluationRequestID [sha256.Size]byte
 
@@ -221,105 +203,12 @@ func DecodePolicyEvaluationRequest(data []byte) (PolicyEvaluationRequest, error)
 	return request, nil
 }
 
-// SourceRetrievalPolicy is the one supported inner policy definition format.
-type SourceRetrievalPolicy struct {
-	Schema            string                `json:"schema"`
-	Action            string                `json:"action"`
-	CallerNamespace   string                `json:"caller_namespace"`
-	ExternalCallerID  string                `json:"external_caller_id"`
-	PurposeNamespace  string                `json:"purpose_namespace"`
-	ExternalPurposeID string                `json:"external_purpose_id"`
-	Effect            SourceRetrievalEffect `json:"effect"`
-}
-
-// Validate enforces the closed inner vocabulary and identity field rules.
-func (policy SourceRetrievalPolicy) Validate() error {
-	if policy.Schema != SourceRetrievalPolicySchema {
-		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy.source_retrieval.v1", nil)
-	}
-	if policy.Action != SourceRetrievalAction {
-		return newValidationError("action", ValidationCodeInvalidEnum, "must be source.retrieve", nil)
-	}
-	for _, value := range []struct{ field, value string }{
-		{"caller_namespace", policy.CallerNamespace},
-		{"external_caller_id", policy.ExternalCallerID},
-		{"purpose_namespace", policy.PurposeNamespace},
-		{"external_purpose_id", policy.ExternalPurposeID},
-	} {
-		if err := validateIdentityInput(value.field, value.value); err != nil {
-			return err
-		}
-	}
-	switch policy.Effect {
-	case SourceRetrievalEffectAllow, SourceRetrievalEffectDeny:
-	default:
-		return newValidationError("effect", ValidationCodeInvalidEnum, "must be allow or deny", nil)
-	}
-	return nil
-}
-
-// EncodeSourceRetrievalPolicy returns the exact canonical inner definition bytes.
-func EncodeSourceRetrievalPolicy(policy SourceRetrievalPolicy) ([]byte, error) {
-	if err := policy.Validate(); err != nil {
-		return nil, err
-	}
-	return encodeJSONContract(policy, "source retrieval policy")
-}
-
-// DecodeSourceRetrievalPolicy rejects any inner bytes whose decode/re-encode round trip is not exact.
-func DecodeSourceRetrievalPolicy(data []byte) (SourceRetrievalPolicy, error) {
-	if err := rejectDuplicateJSONKeys(data); err != nil {
-		return SourceRetrievalPolicy{}, err
-	}
-	var wire struct {
-		Schema            string `json:"schema"`
-		Action            string `json:"action"`
-		CallerNamespace   string `json:"caller_namespace"`
-		ExternalCallerID  string `json:"external_caller_id"`
-		PurposeNamespace  string `json:"purpose_namespace"`
-		ExternalPurposeID string `json:"external_purpose_id"`
-		Effect            string `json:"effect"`
-	}
-	if err := decodeJSONContract(data, &wire); err != nil {
-		return SourceRetrievalPolicy{}, err
-	}
-	policy := SourceRetrievalPolicy{
-		Schema:            wire.Schema,
-		Action:            wire.Action,
-		CallerNamespace:   wire.CallerNamespace,
-		ExternalCallerID:  wire.ExternalCallerID,
-		PurposeNamespace:  wire.PurposeNamespace,
-		ExternalPurposeID: wire.ExternalPurposeID,
-		Effect:            SourceRetrievalEffect(wire.Effect),
-	}
-	if err := policy.Validate(); err != nil {
-		return SourceRetrievalPolicy{}, err
-	}
-	canonical, err := EncodeSourceRetrievalPolicy(policy)
-	if err != nil {
-		return SourceRetrievalPolicy{}, err
-	}
-	if !bytes.Equal(canonical, data) {
-		return SourceRetrievalPolicy{}, newValidationError("", ValidationCodeInvalidJSON, "inner definition bytes are not canonical", nil)
-	}
-	return policy, nil
-}
-
-// PolicyEvaluationInput is one verified active policy input read by the store.
-type PolicyEvaluationInput struct {
-	Layer        PolicyDecisionLayer
-	ActivationID PolicyActivationID
-	BindingID    PolicyBindingID
-	DefinitionID PolicyDefinitionID
-	Definition   PolicyDefinition
-}
-
-// PolicyEvaluationSnapshot is the verified read-only policy and lifecycle input for one evaluation.
+// PolicyEvaluationSnapshot is the verified read-only access and lifecycle input for one evaluation.
 type PolicyEvaluationSnapshot struct {
 	StatePresent        bool
 	CollectionState     *CollectionState
 	CurrentWithdrawalID *WithdrawalID
-	Inputs              []PolicyEvaluationInput
+	Access              SourceAccess
 }
 
 type PolicyDecisionID [sha256.Size]byte
@@ -335,25 +224,16 @@ type PolicyDecision struct {
 	StatePresent        bool                    `json:"state_present"`
 	CollectionState     *CollectionState        `json:"collection_state"`
 	CurrentWithdrawalID *WithdrawalID           `json:"current_withdrawal_id"`
+	Access              SourceAccess            `json:"access"`
 	Outcome             PolicyDecisionOutcome   `json:"outcome"`
 	ReasonCodes         []PolicyDecisionReason  `json:"reason_codes"`
-	PolicyInputs        []PolicyDecisionInput   `json:"policy_inputs"`
-}
-
-// PolicyDecisionInput records one evaluated active policy input.
-type PolicyDecisionInput struct {
-	Layer              PolicyDecisionLayer `json:"layer"`
-	PolicyActivationID PolicyActivationID  `json:"policy_activation_id"`
-	PolicyBindingID    PolicyBindingID     `json:"policy_binding_id"`
-	PolicyDefinitionID PolicyDefinitionID  `json:"policy_definition_id"`
-	Result             PolicyInputResult   `json:"result"`
 }
 
 // NewPolicyDecisionID derives the decision identity from the decision schema, request identity,
-// evaluator identity, evaluation time, lifecycle evidence, outcome, and every ordered input.
+// evaluator identity, evaluation time, lifecycle evidence, source access, outcome and reasons.
 func NewPolicyDecisionID(decision PolicyDecision) (PolicyDecisionID, error) {
 	if decision.Schema != PolicyDecisionSchema {
-		return PolicyDecisionID{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v1", nil)
+		return PolicyDecisionID{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
 	}
 	if decision.Request.ID == (PolicyEvaluationRequestID{}) {
 		return PolicyDecisionID{}, newValidationError("request.id", ValidationCodeInvalidID, "must not be zero", nil)
@@ -372,18 +252,9 @@ func NewPolicyDecisionID(decision PolicyDecision) (PolicyDecisionID, error) {
 	binary.BigEndian.PutUint64(time[:], uint64(decision.EvaluatedAtUsec))
 	fields = append(fields, time[:])
 	fields = append(fields, lifecycleFields(decision)...)
-	fields = append(fields, []byte(decision.Outcome))
+	fields = append(fields, []byte(decision.Access), []byte(decision.Outcome))
 	for _, reason := range decision.ReasonCodes {
 		fields = append(fields, []byte(reason))
-	}
-	for _, input := range decision.PolicyInputs {
-		fields = append(fields,
-			[]byte(input.Layer),
-			input.PolicyActivationID[:],
-			input.PolicyBindingID[:],
-			input.PolicyDefinitionID[:],
-			[]byte(input.Result),
-		)
 	}
 	writeTuple(digest, fields...)
 	return PolicyDecisionID(digest.Sum(nil)), nil
@@ -408,10 +279,10 @@ func lifecycleFields(decision PolicyDecision) [][]byte {
 }
 
 // Validate recomputes the decision identity and enforces the closed decision vocabulary and the
-// derivable relation between lifecycle evidence, per-input results, outcome, and reason order.
+// derivable relation between lifecycle evidence, source access, outcome, and reason order.
 func (decision PolicyDecision) Validate() error {
 	if decision.Schema != PolicyDecisionSchema {
-		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v1", nil)
+		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
 	}
 	if decision.ID == (PolicyDecisionID{}) {
 		return newValidationError("id", ValidationCodeInvalidID, "must not be zero", nil)
@@ -423,7 +294,7 @@ func (decision PolicyDecision) Validate() error {
 		return newValidationError("evaluator_id", ValidationCodeInvalidValue, "must be mousa.policy.source_retrieval", nil)
 	}
 	if decision.EvaluatorVersion != PolicyEvaluatorVersion {
-		return newValidationError("evaluator_version", ValidationCodeInvalidValue, "must be 1", nil)
+		return newValidationError("evaluator_version", ValidationCodeInvalidValue, "must be 2", nil)
 	}
 	if decision.EvaluatedAtUsec <= 0 {
 		return newValidationError("evaluated_at_usec", ValidationCodeInvalidRange, "must be positive", nil)
@@ -449,53 +320,20 @@ func (decision PolicyDecision) Validate() error {
 			return newValidationError("collection_state", ValidationCodeInvalidEnum, "must be active or withdrawn", nil)
 		}
 	}
+	if err := decision.Access.Validate(); err != nil {
+		return err
+	}
 	switch decision.Outcome {
 	case PolicyOutcomeAllow, PolicyOutcomeDeny:
 	default:
 		return newValidationError("outcome", ValidationCodeInvalidEnum, "must be allow or deny", nil)
 	}
-	if len(decision.ReasonCodes) == 0 {
-		return newValidationError("reason_codes", ValidationCodeInvalidRange, "must not be empty", nil)
-	}
-	wantOutcome, wantReasons := deriveDecisionOutcome(decision.StatePresent, decision.CurrentWithdrawalID, decision.PolicyInputs)
+	wantOutcome, wantReasons := deriveDecisionOutcome(decision.StatePresent, decision.CurrentWithdrawalID, decision.Access)
 	if decision.Outcome != wantOutcome {
-		return newValidationError("outcome", ValidationCodeInvalidValue, "does not follow lifecycle evidence and policy inputs", nil)
+		return newValidationError("outcome", ValidationCodeInvalidValue, "does not follow lifecycle evidence and source access", nil)
 	}
-	if len(decision.ReasonCodes) != len(wantReasons) {
-		return newValidationError("reason_codes", ValidationCodeInvalidValue, "do not follow lifecycle evidence and policy inputs", nil)
-	}
-	for index, reason := range decision.ReasonCodes {
-		if reason != wantReasons[index] {
-			return newValidationError("reason_codes", ValidationCodeInvalidValue, "do not follow lifecycle evidence and policy inputs", nil)
-		}
-	}
-	for index, input := range decision.PolicyInputs {
-		field := "policy_inputs"
-		if input.Layer != PolicyLayerDeployment && input.Layer != PolicyLayerSource {
-			return newValidationError(field+".layer", ValidationCodeInvalidEnum, "must be deployment or source", nil)
-		}
-		if index > 0 && decision.PolicyInputs[index-1].Layer == PolicyLayerSource && input.Layer == PolicyLayerDeployment {
-			return newValidationError(field+".layer", ValidationCodeInvalidRange, "deployment inputs must precede source inputs", nil)
-		}
-		if input.PolicyActivationID == (PolicyActivationID{}) {
-			return newValidationError(field+".policy_activation_id", ValidationCodeInvalidID, "must not be zero", nil)
-		}
-		if input.PolicyBindingID == (PolicyBindingID{}) {
-			return newValidationError(field+".policy_binding_id", ValidationCodeInvalidID, "must not be zero", nil)
-		}
-		if input.PolicyDefinitionID == (PolicyDefinitionID{}) {
-			return newValidationError(field+".policy_definition_id", ValidationCodeInvalidID, "must not be zero", nil)
-		}
-		switch input.Result {
-		case PolicyInputAllow, PolicyInputDeny, PolicyInputRequestMismatch, PolicyInputUnsupportedDefinition, PolicyInputMalformedDefinition:
-		default:
-			return newValidationError(field+".result", ValidationCodeInvalidEnum, "must be a closed policy input result", nil)
-		}
-		for _, previous := range decision.PolicyInputs[:index] {
-			if previous.Layer == input.Layer && previous.PolicyActivationID == input.PolicyActivationID && previous.PolicyBindingID == input.PolicyBindingID && previous.PolicyDefinitionID == input.PolicyDefinitionID {
-				return newValidationError(field, ValidationCodeInvalidValue, "must not repeat one active policy input", nil)
-			}
-		}
+	if !slices.Equal(decision.ReasonCodes, wantReasons) {
+		return newValidationError("reason_codes", ValidationCodeInvalidValue, "do not follow lifecycle evidence and source access", nil)
 	}
 	expected, err := NewPolicyDecisionID(decision)
 	if err != nil {
@@ -507,10 +345,9 @@ func (decision PolicyDecision) Validate() error {
 	return nil
 }
 
-// deriveDecisionOutcome computes the outcome and ordered reason codes from lifecycle evidence and
-// per-input results. Reason order is lifecycle checks, missing deployment authorization, then first
-// occurrence in deterministic policy-input order.
-func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, inputs []PolicyDecisionInput) (PolicyDecisionOutcome, []PolicyDecisionReason) {
+// deriveDecisionOutcome computes the outcome and ordered reason codes: lifecycle checks first,
+// then source access. Any reason other than allow denies.
+func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, access SourceAccess) (PolicyDecisionOutcome, []PolicyDecisionReason) {
 	var reasons []PolicyDecisionReason
 	if !statePresent {
 		reasons = append(reasons, PolicyReasonMissingSourceState)
@@ -518,43 +355,13 @@ func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, inputs [
 	if withdrawal != nil {
 		reasons = append(reasons, PolicyReasonSourceWithdrawn)
 	}
-	deployment := false
-	for _, input := range inputs {
-		if input.Layer == PolicyLayerDeployment {
-			deployment = true
-			break
-		}
-	}
-	if !deployment {
-		reasons = append(reasons, PolicyReasonMissingDeploymentPolicy)
-	}
-	seen := make(map[PolicyDecisionReason]struct{}, len(reasons))
-	for _, reason := range reasons {
-		seen[reason] = struct{}{}
-	}
-	for _, input := range inputs {
-		reason, ok := inputResultReason[input.Result]
-		if !ok || reason == PolicyReasonAllow {
-			continue
-		}
-		if _, duplicate := seen[reason]; duplicate {
-			continue
-		}
-		seen[reason] = struct{}{}
-		reasons = append(reasons, reason)
+	if access != SourceAccessAllow {
+		reasons = append(reasons, PolicyReasonAccessDenied)
 	}
 	if len(reasons) == 0 {
 		return PolicyOutcomeAllow, []PolicyDecisionReason{PolicyReasonAllow}
 	}
 	return PolicyOutcomeDeny, reasons
-}
-
-var inputResultReason = map[PolicyInputResult]PolicyDecisionReason{
-	PolicyInputAllow:                 PolicyReasonAllow,
-	PolicyInputDeny:                  PolicyReasonPolicyDeny,
-	PolicyInputRequestMismatch:       PolicyReasonPolicyRequestMismatch,
-	PolicyInputUnsupportedDefinition: PolicyReasonUnsupportedPolicyDefinition,
-	PolicyInputMalformedDefinition:   PolicyReasonMalformedPolicyDefinition,
 }
 
 // EvaluateSourceRetrieval evaluates one validated request against one verified snapshot. It never
@@ -566,21 +373,10 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 	if evaluatedAtUsec <= 0 {
 		return PolicyDecision{}, newValidationError("evaluated_at_usec", ValidationCodeInvalidRange, "must be positive", nil)
 	}
-	inputs := make([]PolicyDecisionInput, 0, len(snapshot.Inputs))
-	for _, candidate := range snapshot.Inputs {
-		result, err := evaluatePolicyInput(request, candidate)
-		if err != nil {
-			return PolicyDecision{}, err
-		}
-		inputs = append(inputs, PolicyDecisionInput{
-			Layer:              candidate.Layer,
-			PolicyActivationID: candidate.ActivationID,
-			PolicyBindingID:    candidate.BindingID,
-			PolicyDefinitionID: candidate.DefinitionID,
-			Result:             result,
-		})
+	if err := snapshot.Access.Validate(); err != nil {
+		return PolicyDecision{}, err
 	}
-	outcome, reasons := deriveDecisionOutcome(snapshot.StatePresent, snapshot.CurrentWithdrawalID, inputs)
+	outcome, reasons := deriveDecisionOutcome(snapshot.StatePresent, snapshot.CurrentWithdrawalID, snapshot.Access)
 	decision := PolicyDecision{
 		Schema:              PolicyDecisionSchema,
 		Request:             request,
@@ -590,9 +386,9 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 		StatePresent:        snapshot.StatePresent,
 		CollectionState:     cloneCollectionState(snapshot.CollectionState),
 		CurrentWithdrawalID: cloneWithdrawalID(snapshot.CurrentWithdrawalID),
+		Access:              snapshot.Access,
 		Outcome:             outcome,
 		ReasonCodes:         reasons,
-		PolicyInputs:        inputs,
 	}
 	id, err := NewPolicyDecisionID(decision)
 	if err != nil {
@@ -603,29 +399,6 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 		return PolicyDecision{}, err
 	}
 	return decision, nil
-}
-
-func evaluatePolicyInput(request PolicyEvaluationRequest, input PolicyEvaluationInput) (PolicyInputResult, error) {
-	if input.Layer != PolicyLayerDeployment && input.Layer != PolicyLayerSource {
-		return "", newValidationError("layer", ValidationCodeInvalidEnum, "must be deployment or source", nil)
-	}
-	if input.BindingID == (PolicyBindingID{}) || input.DefinitionID == (PolicyDefinitionID{}) || input.Definition.ID != input.DefinitionID {
-		return "", newValidationError("definition_id", ValidationCodeInvalidID, "must match the evaluated definition", nil)
-	}
-	if input.Definition.DefinitionMediaType != SourceRetrievalPolicyMediaType || input.Definition.DefinitionSchema != SourceRetrievalPolicySchema {
-		return PolicyInputUnsupportedDefinition, nil
-	}
-	policy, err := DecodeSourceRetrievalPolicy([]byte(input.Definition.Definition))
-	if err != nil {
-		return PolicyInputMalformedDefinition, nil
-	}
-	if policy.CallerNamespace != request.CallerNamespace || policy.ExternalCallerID != request.ExternalCallerID || policy.PurposeNamespace != request.PurposeNamespace || policy.ExternalPurposeID != request.ExternalPurposeID {
-		return PolicyInputRequestMismatch, nil
-	}
-	if policy.Effect == SourceRetrievalEffectAllow {
-		return PolicyInputAllow, nil
-	}
-	return PolicyInputDeny, nil
 }
 
 func cloneCollectionState(value *CollectionState) *CollectionState {
@@ -650,24 +423,24 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 		return PolicyDecision{}, err
 	}
 	var wire struct {
-		Schema              string                    `json:"schema"`
-		ID                  string                    `json:"id"`
-		Request             json.RawMessage           `json:"request"`
-		EvaluatorID         string                    `json:"evaluator_id"`
-		EvaluatorVersion    string                    `json:"evaluator_version"`
-		EvaluatedAtUsec     int64                     `json:"evaluated_at_usec"`
-		StatePresent        bool                      `json:"state_present"`
-		CollectionState     *string                   `json:"collection_state"`
-		CurrentWithdrawalID *string                   `json:"current_withdrawal_id"`
-		Outcome             string                    `json:"outcome"`
-		ReasonCodes         []string                  `json:"reason_codes"`
-		PolicyInputs        []policyDecisionInputWire `json:"policy_inputs"`
+		Schema              string          `json:"schema"`
+		ID                  string          `json:"id"`
+		Request             json.RawMessage `json:"request"`
+		EvaluatorID         string          `json:"evaluator_id"`
+		EvaluatorVersion    string          `json:"evaluator_version"`
+		EvaluatedAtUsec     int64           `json:"evaluated_at_usec"`
+		StatePresent        bool            `json:"state_present"`
+		CollectionState     *string         `json:"collection_state"`
+		CurrentWithdrawalID *string         `json:"current_withdrawal_id"`
+		Access              string          `json:"access"`
+		Outcome             string          `json:"outcome"`
+		ReasonCodes         []string        `json:"reason_codes"`
 	}
 	if err := decodeJSONContract(data, &wire); err != nil {
 		return PolicyDecision{}, err
 	}
 	if wire.Schema != PolicyDecisionSchema {
-		return PolicyDecision{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v1", nil)
+		return PolicyDecision{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
 	}
 	id, err := ParsePolicyDecisionID(wire.ID)
 	if err != nil {
@@ -694,14 +467,6 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 	for _, code := range wire.ReasonCodes {
 		reasons = append(reasons, PolicyDecisionReason(code))
 	}
-	inputs := make([]PolicyDecisionInput, 0, len(wire.PolicyInputs))
-	for _, raw := range wire.PolicyInputs {
-		input, err := raw.input()
-		if err != nil {
-			return PolicyDecision{}, err
-		}
-		inputs = append(inputs, input)
-	}
 	decision := PolicyDecision{
 		Schema:              wire.Schema,
 		ID:                  id,
@@ -712,44 +477,14 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 		StatePresent:        wire.StatePresent,
 		CollectionState:     collectionState,
 		CurrentWithdrawalID: withdrawal,
+		Access:              SourceAccess(wire.Access),
 		Outcome:             PolicyDecisionOutcome(wire.Outcome),
 		ReasonCodes:         reasons,
-		PolicyInputs:        inputs,
 	}
 	if err := decision.Validate(); err != nil {
 		return PolicyDecision{}, err
 	}
 	return decision, nil
-}
-
-type policyDecisionInputWire struct {
-	Layer              string `json:"layer"`
-	PolicyActivationID string `json:"policy_activation_id"`
-	PolicyBindingID    string `json:"policy_binding_id"`
-	PolicyDefinitionID string `json:"policy_definition_id"`
-	Result             string `json:"result"`
-}
-
-func (wire policyDecisionInputWire) input() (PolicyDecisionInput, error) {
-	activationID, err := ParsePolicyActivationID(wire.PolicyActivationID)
-	if err != nil {
-		return PolicyDecisionInput{}, validationErrorForField(err, "policy_activation_id")
-	}
-	bindingID, err := ParsePolicyBindingID(wire.PolicyBindingID)
-	if err != nil {
-		return PolicyDecisionInput{}, validationErrorForField(err, "policy_binding_id")
-	}
-	definitionID, err := ParsePolicyDefinitionID(wire.PolicyDefinitionID)
-	if err != nil {
-		return PolicyDecisionInput{}, validationErrorForField(err, "policy_definition_id")
-	}
-	return PolicyDecisionInput{
-		Layer:              PolicyDecisionLayer(wire.Layer),
-		PolicyActivationID: activationID,
-		PolicyBindingID:    bindingID,
-		PolicyDefinitionID: definitionID,
-		Result:             PolicyInputResult(wire.Result),
-	}, nil
 }
 
 func (id PolicyDecisionID) String() string { return hex.EncodeToString(id[:]) }

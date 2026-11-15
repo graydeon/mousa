@@ -32,37 +32,13 @@ func testTrailRequest(t *testing.T) PolicyEvaluationRequest {
 
 func trailDecision(t *testing.T, request PolicyEvaluationRequest, outcome PolicyDecisionOutcome) PolicyDecision {
 	t.Helper()
-	inputs := []PolicyDecisionInput{{
-		Layer:              PolicyLayerDeployment,
-		PolicyActivationID: mustActivationIDForTrail(t),
-		PolicyBindingID:    mustBindingIDForTrail(t),
-		PolicyDefinitionID: mustDefinitionIDForTrail(t),
-		Result:             PolicyInputAllow,
-	}}
-	reasons := []PolicyDecisionReason{PolicyReasonAllow}
+	access := SourceAccessAllow
 	if outcome == PolicyOutcomeDeny {
-		inputs[0].Result = PolicyInputDeny
-		reasons = []PolicyDecisionReason{PolicyReasonPolicyDeny}
+		access = SourceAccessDeny
 	}
-	decision := PolicyDecision{
-		Schema:           PolicyDecisionSchema,
-		Request:          request,
-		EvaluatorID:      "mousa.policy.source_retrieval",
-		EvaluatorVersion: "1",
-		EvaluatedAtUsec:  2000,
-		StatePresent:     true,
-		CollectionState:  collectionStatePtr(CollectionActive),
-		Outcome:          outcome,
-		ReasonCodes:      reasons,
-		PolicyInputs:     inputs,
-	}
-	id, err := NewPolicyDecisionID(decision)
+	decision, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: collectionStatePtr(CollectionActive), Access: access}, 2000)
 	if err != nil {
-		t.Fatalf("NewPolicyDecisionID: %v", err)
-	}
-	decision.ID = id
-	if err := decision.Validate(); err != nil {
-		t.Fatalf("decision validate: %v", err)
+		t.Fatalf("EvaluateSourceRetrieval: %v", err)
 	}
 	return decision
 }
@@ -238,33 +214,6 @@ func mustSourceIDForTrail(t *testing.T) SourceID {
 	id, err := NewSourceID("example.corpus", "doc:trail")
 	if err != nil {
 		t.Fatal(err)
-	}
-	return id
-}
-
-func mustActivationIDForTrail(t *testing.T) PolicyActivationID {
-	t.Helper()
-	var id PolicyActivationID
-	for index := range id {
-		id[index] = byte(index + 1)
-	}
-	return id
-}
-
-func mustBindingIDForTrail(t *testing.T) PolicyBindingID {
-	t.Helper()
-	var id PolicyBindingID
-	for index := range id {
-		id[index] = byte(index + 2)
-	}
-	return id
-}
-
-func mustDefinitionIDForTrail(t *testing.T) PolicyDefinitionID {
-	t.Helper()
-	var id PolicyDefinitionID
-	for index := range id {
-		id[index] = byte(index + 3)
 	}
 	return id
 }

@@ -28,7 +28,7 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
 | Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
-| Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
+| Source lifecycle and per-source access decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
@@ -301,13 +301,13 @@ An operator may configure an opaque source ID that looks like a path; it still
 does not grant filesystem access. Protect the executable invocation, store,
 WAL, backups and released output with local filesystem controls.
 
-`--caller cli` installs the same deployment-level allow used by CLI sync. It
-does not override a source-scoped deny or resume a withdrawn source. Other
-caller IDs use namespace `mousa-local.caller` and purpose
-`mousa-local.purpose` / `retrieval`, and require an applicable policy provisioned
-through the core separately. MCP does not expose policy administration or
-authenticate the startup identity. CLI `access --source ID allow|deny` and
-`withdraw --source ID` remain operator controls for their existing caller.
+Every caller sees the same per-source access decision. A source is allowed
+unless `access` has set it to deny, and no access value resumes a withdrawn
+source. Caller IDs use namespace `mousa-local.caller` and purpose
+`mousa-local.purpose` / `retrieval`; the caller is recorded in each decision but
+does not change it. MCP does not expose access administration or authenticate
+the startup identity. CLI `access --source ID allow|deny` and
+`withdraw --source ID` remain operator controls.
 
 ### Protocol and tools
 
@@ -381,8 +381,8 @@ retained digest verification and producing-count limits are unchanged.
 
 Failed counting, failed worker completion and cancellation during counting do
 not commit a successful producing decision/trail/packet. Invalid token arguments
-reject before query mutation. This does not undo server startup/store migration,
-policy deployment or legitimate fresh inspection authorization audit writes.
+reject before query mutation. This does not undo server startup/store migration
+or legitimate fresh inspection authorization audit writes.
 See the [runnable token example](USAGE.md#mcp-token-budget-example).
 
 ### MCP supplied-vector retrieval and recorded details
@@ -1146,14 +1146,13 @@ historical equality cannot be re-proved from this text-free record alone.
 Neither a trail ID nor a content digest is a signature against an attacker who
 can rewrite the entire store. Inspection still requires fresh source authorization.
 
-`access` manages a source-scoped allow/deny binding for the fixed CLI caller and
-retrieval purpose. Concurrent changes use the core compare-and-swap activation
-contract; conflicts are errors, not silent overwrites. This is an operator control,
-not caller authentication or protection against someone who can directly read or
-modify the store.
+`access` stores one allow or deny decision per source; a source with none is
+allowed. Each query or trail inspection records the access value it used in its
+decision. This is an operator control, not caller authentication or protection
+against someone who can directly read or modify the store.
 
 `withdraw` changes source lifecycle state without erasing index or canonical
-records. Policy allow does not resume a withdrawn source. The CLI has no resume
+records. Access allow does not resume a withdrawn source. The CLI has no resume
 command, and sync does not implicitly resume it. Item deletion/restoration is a
 different operation from source withdrawal.
 

@@ -13,7 +13,7 @@ import (
 )
 
 // inspectionRows includes WAL-visible rows from every table. Only the response-bound
-// decision and its input children may be excluded from the post-command comparison.
+// decision may be excluded from the post-command comparison.
 func inspectionRows(t *testing.T, path string, exclude []byte) map[string][]string {
 	t.Helper()
 	db := openRawStore(t, path)
@@ -37,12 +37,8 @@ func inspectionRows(t *testing.T, path string, exclude []byte) map[string][]stri
 	for _, name := range names {
 		query := `SELECT * FROM "` + strings.ReplaceAll(name, `"`, `""`) + `"`
 		var args []any
-		if exclude != nil && (name == "policy_decisions" || name == "policy_decision_inputs") {
-			column := "id"
-			if name == "policy_decision_inputs" {
-				column = "decision_id"
-			}
-			query += " WHERE " + column + " != ?"
+		if exclude != nil && name == "policy_decisions" {
+			query += " WHERE id != ?"
 			args = append(args, exclude)
 		}
 		rows, err := db.Query(query, args...)
@@ -101,25 +97,7 @@ func requireInspectionAudit(t *testing.T, run testRun, before map[string][]strin
 	if mcpCanonicalJSON(t, decision.ReasonCodes) != mcpCanonicalJSON(t, result["authorization_reasons"]) {
 		t.Fatal("authorization reasons differ from committed decision")
 	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM policy_decision_inputs WHERE decision_id = ?`, id).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != len(decision.PolicyInputs) {
-		t.Fatalf("authorization input count = %d, want %d", count, len(decision.PolicyInputs))
-	}
-	for ordinal, input := range decision.PolicyInputs {
-		var layer, result string
-		var activation, binding, definition []byte
-		if err := db.QueryRow(`SELECT layer, activation_id, binding_id, definition_id, result FROM policy_decision_inputs WHERE decision_id = ? AND ordinal = ?`, id, ordinal).Scan(&layer, &activation, &binding, &definition, &result); err != nil {
-			t.Fatal(err)
-		}
-		if layer != string(input.Layer) || result != string(input.Result) || hex.EncodeToString(activation) != input.PolicyActivationID.String() ||
-			hex.EncodeToString(binding) != input.PolicyBindingID.String() || hex.EncodeToString(definition) != input.PolicyDefinitionID.String() {
-			t.Fatalf("input %d differs from the committed decision", ordinal)
-		}
-	}
-	logMCPReceipt(t, map[string]any{"audit_decision": decision, "input_rows": count, "other_rows_unchanged": true})
+	logMCPReceipt(t, map[string]any{"audit_decision": decision, "other_rows_unchanged": true})
 }
 
 func TestMCPTrailDeniedAudit(t *testing.T) {

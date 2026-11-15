@@ -70,9 +70,11 @@ func TestMCPManifestStdioSnapshotAndPermissions(t *testing.T) {
 		}
 		client.close()
 	}
-	unauthorized := startMCPClient(t, run, "untrusted", true)
+	run.run(false, "access", "--source", "alpha", "deny")
+	unauthorized := startMCPClient(t, run, "other-caller", true)
 	assertManifestDenied(t, unauthorized.call("mousa_source_manifest", map[string]any{"source": "alpha", "expected_manifest_id": id}, ""))
 	unauthorized.close()
+	run.run(false, "access", "--source", "alpha", "allow")
 	client := startMCPClient(t, run, "cli", false)
 	defer client.close()
 	before := manifestAdapterState(t, run.store)

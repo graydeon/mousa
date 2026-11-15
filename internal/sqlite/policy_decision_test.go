@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -36,59 +35,11 @@ func testEvaluationRequest(t testing.TB, sourceID mousa.SourceID, externalReques
 	return request
 }
 
-func seedEvaluationFixture(t testing.TB, store *Store) mousa.PolicyDefinition {
+func seedEvaluationFixture(t testing.TB, store *Store) {
 	t.Helper()
-	ctx := context.Background()
-	source := testSource(t)
-	if err := store.PutSource(ctx, source); err != nil {
+	if err := store.PutSource(context.Background(), testSource(t)); err != nil {
 		t.Fatalf("PutSource: %v", err)
 	}
-	inner := mousa.SourceRetrievalPolicy{
-		Schema:            mousa.SourceRetrievalPolicySchema,
-		Action:            mousa.SourceRetrievalAction,
-		CallerNamespace:   "example.caller",
-		ExternalCallerID:  "caller-1",
-		PurposeNamespace:  "example.purpose",
-		ExternalPurposeID: "purpose-1",
-		Effect:            mousa.SourceRetrievalEffectAllow,
-	}
-	data, err := mousa.EncodeSourceRetrievalPolicy(inner)
-	if err != nil {
-		t.Fatalf("EncodeSourceRetrievalPolicy: %v", err)
-	}
-	digest := mousa.SHA256(sha256.Sum256(data))
-	definitionID, err := mousa.NewPolicyDefinitionID("example", "allow", "1", mousa.SourceRetrievalPolicyMediaType, mousa.SourceRetrievalPolicySchema, digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definition := mousa.PolicyDefinition{
-		Schema:                mousa.PolicyDefinitionSchema,
-		ID:                    definitionID,
-		Namespace:             "example",
-		ExternalPolicyID:      "allow",
-		ExternalPolicyVersion: "1",
-		DefinitionMediaType:   mousa.SourceRetrievalPolicyMediaType,
-		DefinitionSchema:      mousa.SourceRetrievalPolicySchema,
-		DefinitionSHA256:      digest,
-		Definition:            string(data),
-	}
-	if err := store.PutPolicyDefinition(ctx, definition); err != nil {
-		t.Fatalf("PutPolicyDefinition: %v", err)
-	}
-	scope := mousa.NewDeploymentPolicyScope()
-	bindingID, err := mousa.NewPolicyBindingID("example", "deployment", "1", scope, definition.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	binding := mousa.PolicyBinding{Schema: mousa.PolicyBindingSchema, ID: bindingID, Namespace: "example", ExternalBindingID: "deployment", ExternalBindingVersion: "1", Scope: scope, PolicyDefinitionID: definition.ID}
-	if err := store.PutPolicyBinding(ctx, binding); err != nil {
-		t.Fatalf("PutPolicyBinding: %v", err)
-	}
-	activation := testPolicyActivation(t, "example", "deployment", "activate", nil, &binding.ID)
-	if err := store.ApplyPolicyActivation(ctx, activation); err != nil {
-		t.Fatalf("ApplyPolicyActivation: %v", err)
-	}
-	return definition
 }
 
 func TestPolicyDecisionEvaluationAllowDenyAndRetry(t *testing.T) {
@@ -115,8 +66,8 @@ func TestPolicyDecisionEvaluationAllowDenyAndRetry(t *testing.T) {
 	if decision.StatePresent || decision.CollectionState != nil || decision.CurrentWithdrawalID != nil {
 		t.Fatalf("lifecycle evidence = %#v", decision)
 	}
-	if len(decision.PolicyInputs) != 1 || decision.PolicyInputs[0].Layer != mousa.PolicyLayerDeployment || decision.PolicyInputs[0].Result != mousa.PolicyInputAllow {
-		t.Fatalf("inputs = %#v", decision.PolicyInputs)
+	if decision.Access != mousa.SourceAccessAllow {
+		t.Fatalf("access without a stored decision = %q, want allow", decision.Access)
 	}
 	if decision.EvaluatedAtUsec <= 0 {
 		t.Fatalf("evaluated_at_usec = %d", decision.EvaluatedAtUsec)
@@ -167,9 +118,6 @@ func TestPolicyDecisionEvaluationAllowWithActiveIngestState(t *testing.T) {
 	}
 	if len(decision.ReasonCodes) != 1 || decision.ReasonCodes[0] != mousa.PolicyReasonAllow {
 		t.Fatalf("allow reasons = %v", decision.ReasonCodes)
-	}
-	if len(decision.PolicyInputs) != 1 || decision.PolicyInputs[0].Result != mousa.PolicyInputAllow {
-		t.Fatalf("inputs = %#v", decision.PolicyInputs)
 	}
 }
 
@@ -225,32 +173,6 @@ func TestPolicyDecisionEvaluationRejectsInvalidAndReadOnly(t *testing.T) {
 	missingSource[0] = 1
 	if _, err := writable.EvaluateSourceRetrieval(ctx, testEvaluationRequest(t, missingSource, "request-missing")); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("missing typed source = %v", err)
-	}
-}
-
-func TestPolicyDecisionInputProjectionTamperIsIntegrity(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "tampered-decisions.sqlite")
-	store, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seedEvaluationFixture(t, store)
-	sequence := uint64(1)
-	batch := testPushBatch(t, "decision-tamper", &sequence)
-	if err := store.ApplyIngest(ctx, batch); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.EvaluateSourceRetrieval(ctx, testEvaluationRequest(t, batch.Source.ID, "request-1")); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	execPolicyTamper(t, path, `DELETE FROM policy_decision_inputs WHERE ordinal = 0`)
-	if _, err := Open(ctx, path); !IsCode(err, CodeIntegrity) {
-		t.Fatalf("missing input row = %v, want integrity", err)
 	}
 }
 
@@ -390,15 +312,12 @@ func TestPolicyDecisionConcurrentExactRetriesProduceOneDecision(t *testing.T) {
 			t.Fatalf("decision %#v differs from worker 0 %#v", decision, decisions[0])
 		}
 	}
-	var decisionRows, inputRows int
+	var decisionRows int
 	if err := stores[0].db.QueryRow(`SELECT count(*) FROM policy_decisions`).Scan(&decisionRows); err != nil {
 		t.Fatal(err)
 	}
-	if err := stores[0].db.QueryRow(`SELECT count(*) FROM policy_decision_inputs`).Scan(&inputRows); err != nil {
-		t.Fatal(err)
-	}
-	if decisionRows != 1 || inputRows != 1 {
-		t.Fatalf("rows = %d decisions, %d inputs, want exactly one of each", decisionRows, inputRows)
+	if decisionRows != 1 {
+		t.Fatalf("rows = %d decisions, want exactly one", decisionRows)
 	}
 	stored, err := stores[0].GetPolicyDecision(ctx, decisions[0].ID)
 	if err != nil || !reflect.DeepEqual(stored, decisions[0]) {

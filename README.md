@@ -119,8 +119,7 @@ records branch contributions in v6. Native and MCP token-aware lexical/vector/hy
 selection records measured rendering and reservation facts in v7. MCP `mousa_trail`
 exposes those recorded facts only with `token_details: true`, without recounting.
 Inspection reauthorizes access, including a committed decision on denial without
-historical disclosure. Historical record-by-ID reads and policy administration
-remain native-only.
+historical disclosure. Historical record-by-ID reads remain native-only.
 Automatic embedding generation and secret filtering remain pending.
 Caller-declared reservations do not prove full model-window safety.
 

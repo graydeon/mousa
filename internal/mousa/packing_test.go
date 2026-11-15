@@ -143,7 +143,7 @@ func TestHistoricalV1Golden(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, err := EncodeSourceTrail(created)
-	if err != nil || !bytes.Equal(current, golden) || created.ID.String() != "ec013c770fa45717522dd32f3ed3a02e7fef67738f59d7b4cd3958b2ca0172de" {
+	if err != nil || !bytes.Equal(current, golden) || created.ID.String() != "1c220bbcb2be3f29d585e9e927dc601ac08b4d53994c3b166abd5e2c0cefb902" {
 		t.Fatal("default v1 constructor changed historical bytes or identity")
 	}
 }

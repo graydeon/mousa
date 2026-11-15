@@ -12,7 +12,7 @@ import (
 )
 
 // EvaluateSourceRetrieval evaluates one source.retrieve action and stores one immutable decision.
-// It reads one verified policy and lifecycle snapshot inside the writer transaction, returns the
+// It reads one verified access and lifecycle snapshot inside the writer transaction, returns the
 // exact stored decision for an exact retry, and never calls retrieval or enforces the decision.
 func (store *Store) EvaluateSourceRetrieval(ctx context.Context, request mousa.PolicyEvaluationRequest) (mousa.PolicyDecision, error) {
 	if err := store.requireWritable("evaluate source retrieval"); err != nil {
@@ -71,7 +71,7 @@ func evaluateSourceRetrieval(ctx context.Context, conn *sql.Conn, request mousa.
 	return written, nil
 }
 
-// GetPolicyDecision returns one stored decision with verified relational and ordered input projections.
+// GetPolicyDecision returns one stored decision with its verified relational projection.
 func (store *Store) GetPolicyDecision(ctx context.Context, id mousa.PolicyDecisionID) (mousa.PolicyDecision, error) {
 	return getPolicyDecision(ctx, store.db, id)
 }
@@ -105,7 +105,7 @@ func requireUnusedExternalRequest(ctx context.Context, q queryRower, request mou
 }
 
 func readPolicyEvaluationSnapshot(ctx context.Context, q queryer, request mousa.PolicyEvaluationRequest) (mousa.PolicyEvaluationSnapshot, error) {
-	snapshot := mousa.PolicyEvaluationSnapshot{Inputs: []mousa.PolicyEvaluationInput{}}
+	var snapshot mousa.PolicyEvaluationSnapshot
 	if _, err := getSource(ctx, q, request.SourceID); err != nil {
 		if IsCode(err, CodeNotFound) {
 			return snapshot, integrity("evaluate source retrieval", "request source does not exist")
@@ -125,105 +125,12 @@ func readPolicyEvaluationSnapshot(ctx context.Context, q queryer, request mousa.
 	default:
 		return snapshot, err
 	}
-	for _, layer := range []mousa.PolicyDecisionLayer{mousa.PolicyLayerDeployment, mousa.PolicyLayerSource} {
-		inputs, err := readActivePolicyInputs(ctx, q, layer, request.SourceID)
-		if err != nil {
-			return snapshot, err
-		}
-		snapshot.Inputs = append(snapshot.Inputs, inputs...)
+	access, err := getSourceAccess(ctx, q, request.SourceID)
+	if err != nil {
+		return snapshot, err
 	}
+	snapshot.Access = access
 	return snapshot, nil
-}
-
-func readActivePolicyInputs(ctx context.Context, q queryer, layer mousa.PolicyDecisionLayer, sourceID mousa.SourceID) ([]mousa.PolicyEvaluationInput, error) {
-	var rows *sql.Rows
-	var err error
-	if layer == mousa.PolicyLayerDeployment {
-		rows, err = q.QueryContext(ctx, `SELECT s.namespace, s.external_binding_id, s.current_activation_id, s.active_binding_id, b.policy_definition_id FROM policy_binding_state AS s JOIN policy_bindings AS b ON b.id = s.active_binding_id WHERE b.scope_kind = 'deployment' AND b.subject_id IS NULL ORDER BY b.namespace, b.external_binding_id, s.current_activation_id`)
-	} else {
-		rows, err = q.QueryContext(ctx, `SELECT s.namespace, s.external_binding_id, s.current_activation_id, s.active_binding_id, b.policy_definition_id FROM policy_binding_state AS s JOIN policy_bindings AS b ON b.id = s.active_binding_id WHERE b.scope_kind = 'source' AND b.subject_id = ? ORDER BY b.namespace, b.external_binding_id, s.current_activation_id`, sourceID[:])
-	}
-	if err != nil {
-		return nil, classify("read policy inputs", err)
-	}
-	defer rows.Close()
-	inputs := []mousa.PolicyEvaluationInput{}
-	for rows.Next() {
-		var namespace, externalBindingID string
-		var activationRaw, bindingRaw, definitionRaw []byte
-		if err := rows.Scan(&namespace, &externalBindingID, &activationRaw, &bindingRaw, &definitionRaw); err != nil {
-			rows.Close()
-			return nil, classify("read policy inputs", err)
-		}
-		activation, binding, definition, err := readPolicyInputParents(ctx, q, activationRaw, bindingRaw, definitionRaw)
-		if err != nil {
-			return nil, err
-		}
-		if activation.Namespace != namespace || activation.ExternalBindingID != externalBindingID || binding.Namespace != namespace || binding.ExternalBindingID != externalBindingID {
-			return nil, integrity("read policy inputs", "activation or binding belongs to another series")
-		}
-		if activation.ActiveBindingID == nil || *activation.ActiveBindingID != binding.ID {
-			return nil, integrity("read policy inputs", "active binding disagrees with activation chain")
-		}
-		if binding.Scope.Kind() != mousa.PolicyScopeKind(layer) {
-			return nil, integrity("read policy inputs", "binding scope disagrees with requested layer")
-		}
-		if layer == mousa.PolicyLayerSource {
-			id, ok := binding.Scope.SourceID()
-			if !ok || id != sourceID {
-				return nil, integrity("read policy inputs", "binding scope disagrees with requested source")
-			}
-		}
-		state, err := getPolicyBindingState(ctx, q, namespace, externalBindingID)
-		if err != nil || state.CurrentActivationID != activation.ID || state.ActiveBindingID == nil || *state.ActiveBindingID != binding.ID {
-			return nil, integrity("read policy inputs", "binding state projection disagrees with activation")
-		}
-		inputs = append(inputs, mousa.PolicyEvaluationInput{
-			Layer:        layer,
-			ActivationID: activation.ID,
-			BindingID:    binding.ID,
-			DefinitionID: binding.PolicyDefinitionID,
-			Definition:   definition,
-		})
-	}
-	return inputs, nil
-}
-
-func readPolicyInputParents(ctx context.Context, q queryer, activationRaw, bindingRaw, definitionRaw []byte) (mousa.PolicyActivation, mousa.PolicyBinding, mousa.PolicyDefinition, error) {
-	if len(activationRaw) != 32 || len(bindingRaw) != 32 || len(definitionRaw) != 32 {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, integrity("read policy inputs", "invalid typed parent length")
-	}
-	var activationID mousa.PolicyActivationID
-	var bindingID mousa.PolicyBindingID
-	var definitionID mousa.PolicyDefinitionID
-	copy(activationID[:], activationRaw)
-	copy(bindingID[:], bindingRaw)
-	copy(definitionID[:], definitionRaw)
-	activation, err := getPolicyActivation(ctx, q, activationID)
-	if IsCode(err, CodeNotFound) {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, integrity("read policy inputs", "typed activation parent is missing")
-	}
-	if err != nil {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, err
-	}
-	binding, err := getPolicyBinding(ctx, q, bindingID)
-	if IsCode(err, CodeNotFound) {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, integrity("read policy inputs", "typed binding parent is missing")
-	}
-	if err != nil {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, err
-	}
-	definition, err := getPolicyDefinition(ctx, q, binding.PolicyDefinitionID)
-	if IsCode(err, CodeNotFound) {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, integrity("read policy inputs", "typed definition parent is missing")
-	}
-	if err != nil {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, err
-	}
-	if binding.PolicyDefinitionID != definitionID {
-		return mousa.PolicyActivation{}, mousa.PolicyBinding{}, mousa.PolicyDefinition{}, integrity("read policy inputs", "definition projection disagrees with binding")
-	}
-	return activation, binding, definition, nil
 }
 
 func insertPolicyDecision(ctx context.Context, conn *sql.Conn, decision mousa.PolicyDecision) error {
@@ -251,18 +158,6 @@ func insertPolicyDecision(ctx context.Context, conn *sql.Conn, decision mousa.Po
 	if err := oneRow(result); err != nil {
 		return wrap(CodeIntegrity, "insert policy decision", err)
 	}
-	for ordinal, input := range decision.PolicyInputs {
-		result, err := conn.ExecContext(ctx, `INSERT INTO policy_decision_inputs(decision_id, ordinal, layer, activation_id, binding_id, definition_id, result) VALUES(?, ?, ?, ?, ?, ?, ?)`, decision.ID[:], ordinal, string(input.Layer), input.PolicyActivationID[:], input.PolicyBindingID[:], input.PolicyDefinitionID[:], string(input.Result))
-		if err != nil {
-			if sqliteForeignKey(err) {
-				return integrity("insert policy decision input", "typed parent is missing")
-			}
-			return classify("insert policy decision input", err)
-		}
-		if err := oneRow(result); err != nil {
-			return wrap(CodeIntegrity, "insert policy decision input", err)
-		}
-	}
 	return nil
 }
 
@@ -282,31 +177,6 @@ func getPolicyDecision(ctx context.Context, q queryer, id mousa.PolicyDecisionID
 	if record.ID != id || !bytes.Equal(requestID, record.Request.ID[:]) || record.Request.CallerNamespace != callerNamespace || record.Request.ExternalCallerID != externalCallerID || record.Request.ExternalRequestID != externalRequestID || !bytes.Equal(sourceID, wantSource[:]) || outcome != string(record.Outcome) || evaluatedAt != record.EvaluatedAtUsec || !nullableBytesEqual(withdrawal, withdrawalIDBytes(record.CurrentWithdrawalID)) {
 		return mousa.PolicyDecision{}, integrity("get policy decision", "relational projection disagrees with record")
 	}
-	rows, err := q.QueryContext(ctx, `SELECT ordinal, layer, activation_id, binding_id, definition_id, result FROM policy_decision_inputs WHERE decision_id = ? ORDER BY ordinal`, id[:])
-	if err != nil {
-		return mousa.PolicyDecision{}, classify("get policy decision inputs", err)
-	}
-	defer rows.Close()
-	for ordinal, want := range record.PolicyInputs {
-		if !rows.Next() {
-			return mousa.PolicyDecision{}, integrity("get policy decision inputs", "missing ordered input")
-		}
-		var gotOrdinal int
-		var layer, result string
-		var activation, binding, definition []byte
-		if err := rows.Scan(&gotOrdinal, &layer, &activation, &binding, &definition, &result); err != nil {
-			return mousa.PolicyDecision{}, classify("get policy decision inputs", err)
-		}
-		if gotOrdinal != ordinal || layer != string(want.Layer) || !bytes.Equal(activation, want.PolicyActivationID[:]) || !bytes.Equal(binding, want.PolicyBindingID[:]) || !bytes.Equal(definition, want.PolicyDefinitionID[:]) || result != string(want.Result) {
-			return mousa.PolicyDecision{}, integrity("get policy decision inputs", "ordered input projection disagrees with record")
-		}
-	}
-	if rows.Next() {
-		return mousa.PolicyDecision{}, integrity("get policy decision inputs", "extra ordered input")
-	}
-	if err := rows.Err(); err != nil {
-		return mousa.PolicyDecision{}, classify("get policy decision inputs", err)
-	}
 	return record, nil
 }
 
@@ -322,8 +192,8 @@ func sqliteForeignKey(err error) bool {
 	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == 19 && sqliteErr.Code() != 19
 }
 
-// verifyPolicyDecisionRecords verifies every stored decision, its ordered inputs, typed parents,
-// withdrawal ownership, and that no input row exists outside the canonical records.
+// verifyPolicyDecisionRecords verifies every stored decision, its typed source parent and
+// withdrawal ownership.
 func verifyPolicyDecisionRecords(ctx context.Context, db *sql.DB) error {
 	rows, err := db.QueryContext(ctx, `SELECT id FROM policy_decisions ORDER BY id`)
 	if err != nil {
@@ -341,7 +211,6 @@ func verifyPolicyDecisionRecords(ctx context.Context, db *sql.DB) error {
 	if err := rows.Close(); err != nil {
 		return startupError("scan policy decisions", err)
 	}
-	inputCount := 0
 	for _, raw := range ids {
 		if len(raw) != 32 {
 			return integrity("scan policy decisions", "invalid ID length")
@@ -357,21 +226,6 @@ func verifyPolicyDecisionRecords(ctx context.Context, db *sql.DB) error {
 		} else if err != nil {
 			return err
 		}
-		for _, input := range record.PolicyInputs {
-			if _, _, _, err := readPolicyInputParents(ctx, db, input.PolicyActivationID[:], input.PolicyBindingID[:], input.PolicyDefinitionID[:]); err != nil {
-				return err
-			}
-			if input.Layer == mousa.PolicyLayerSource {
-				binding, err := getPolicyBinding(ctx, db, input.PolicyBindingID)
-				if err != nil {
-					return err
-				}
-				id, ok := binding.Scope.SourceID()
-				if !ok || id != record.Request.SourceID {
-					return integrity("verify policy decisions", "source input belongs to another source")
-				}
-			}
-		}
 		if record.CurrentWithdrawalID != nil {
 			withdrawal, err := getSourceWithdrawal(ctx, db, *record.CurrentWithdrawalID)
 			if err != nil {
@@ -384,14 +238,6 @@ func verifyPolicyDecisionRecords(ctx context.Context, db *sql.DB) error {
 				return integrity("verify policy decisions", "withdrawal belongs to another source")
 			}
 		}
-		inputCount += len(record.PolicyInputs)
-	}
-	var total int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM policy_decision_inputs`).Scan(&total); err != nil {
-		return startupError("scan policy decision inputs", err)
-	}
-	if total != inputCount {
-		return integrity("verify policy decisions", "input row count disagrees with canonical records")
 	}
 	return nil
 }
@@ -402,4 +248,8 @@ func cloneWithdrawal(value *mousa.WithdrawalID) *mousa.WithdrawalID {
 	}
 	copied := *value
 	return &copied
+}
+
+func nullableBytesEqual(left, right []byte) bool {
+	return (left == nil && right == nil) || bytes.Equal(left, right)
 }

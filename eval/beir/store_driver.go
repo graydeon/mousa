@@ -109,10 +109,6 @@ func IngestCorpusWithPolicy(ctx context.Context, dataset *Dataset, storePath str
 		}
 	}
 	ingested.IndexingSeconds = time.Since(started).Seconds()
-	if err := deployHarnessPolicy(ctx, ingested.Store); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("deploy policy: %w", err)
-	}
 	info, err := os.Stat(storePath)
 	if err == nil {
 		ingested.IndexBytes = info.Size()
@@ -618,61 +614,6 @@ func BuildExpression(query string) (string, error) {
 // into. It is generous enough to pack every accepted candidate for most BEIR
 // queries; smaller budgets are exercised by the ablation runs.
 const packBudgetBytes = 1 << 20
-
-// deployHarnessPolicy stores the deployment-scoped allow policy the enforced and
-// traced modes evaluate against: caller beir-eval.caller/harness with purpose
-// beir-eval.purpose/ranking may retrieve any source.
-func deployHarnessPolicy(ctx context.Context, store *sqlite.Store) error {
-	inner := mousa.SourceRetrievalPolicy{
-		Schema:            mousa.SourceRetrievalPolicySchema,
-		Action:            mousa.SourceRetrievalAction,
-		CallerNamespace:   "beir-eval.caller",
-		ExternalCallerID:  "harness",
-		PurposeNamespace:  "beir-eval.purpose",
-		ExternalPurposeID: "ranking",
-		Effect:            mousa.SourceRetrievalEffectAllow,
-	}
-	data, err := mousa.EncodeSourceRetrievalPolicy(inner)
-	if err != nil {
-		return err
-	}
-	digest := mousa.SHA256(sha256.Sum256(data))
-	definitionID, err := mousa.NewPolicyDefinitionID("beir-eval", "allow", "1", mousa.SourceRetrievalPolicyMediaType, mousa.SourceRetrievalPolicySchema, digest)
-	if err != nil {
-		return err
-	}
-	definition := mousa.PolicyDefinition{
-		Schema: mousa.PolicyDefinitionSchema, ID: definitionID, Namespace: "beir-eval",
-		ExternalPolicyID: "allow", ExternalPolicyVersion: "1",
-		DefinitionMediaType: mousa.SourceRetrievalPolicyMediaType, DefinitionSchema: mousa.SourceRetrievalPolicySchema,
-		DefinitionSHA256: digest, Definition: string(data),
-	}
-	if err := store.PutPolicyDefinition(ctx, definition); err != nil {
-		return err
-	}
-	scope := mousa.NewDeploymentPolicyScope()
-	bindingID, err := mousa.NewPolicyBindingID("beir-eval", "deployment", "1", scope, definition.ID)
-	if err != nil {
-		return err
-	}
-	binding := mousa.PolicyBinding{
-		Schema: mousa.PolicyBindingSchema, ID: bindingID, Namespace: "beir-eval",
-		ExternalBindingID: "deployment", ExternalBindingVersion: "1", Scope: scope, PolicyDefinitionID: definition.ID,
-	}
-	if err := store.PutPolicyBinding(ctx, binding); err != nil {
-		return err
-	}
-	activationID, err := mousa.NewPolicyActivationID("beir-eval", "deployment", "activate")
-	if err != nil {
-		return err
-	}
-	activation := mousa.PolicyActivation{
-		Schema: mousa.PolicyActivationSchema, ID: activationID, Namespace: "beir-eval",
-		ExternalBindingID: "deployment", ExternalActivationID: "activate",
-		ActiveBindingID: &binding.ID, ActorID: "beir-eval", ActorVersion: "1", OccurredAtUsec: 1,
-	}
-	return store.ApplyPolicyActivation(ctx, activation)
-}
 
 // OpenExisting opens an already-indexed store and rebuilds the segment→document
 // mapping from the dataset, so search-only reruns skip reindexing.

@@ -47,7 +47,7 @@ The native [vector](USAGE.md#caller-supplied-vector-workflow) and
 JSONL sources. Generation stays external; synthetic examples do not establish
 embedding-model quality, semantic equivalence or factual truth.
 
-Raw historical record-by-ID reads and policy administration remain native-only.
+Raw historical record-by-ID reads remain native-only.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 ## The nine-stage retrieval backbone
@@ -62,7 +62,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, and conflicts. | Partially implemented: source lifecycle and deployment policy decisions. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **7. Verify** | Check authority, freshness, sensitivity, and conflicts. | Partially implemented: source lifecycle and per-source access decisions. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
 
@@ -170,7 +170,7 @@ Implemented and planned capabilities, marked per item:
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned current indexed-source manifests with fresh-authorized native/MCP comparison (source builds containing `manifest`); full-store interchange and action-completion tracking (not implemented);
-- authority, freshness, sensitivity and status metadata (lifecycle status and deployment policy implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
+- authority, freshness, sensitivity and status metadata (lifecycle status and per-source access implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);

@@ -1124,7 +1124,10 @@ func TestReadOnlyStoreRejectsEveryWriteMethodFirst(t *testing.T) {
 		{"PutArtifact", func() error { return store.PutArtifact(ctx, mousa.Artifact{}) }},
 		{"PutRepresentation", func() error { return store.PutRepresentation(ctx, mousa.Representation{}) }},
 		{"PutSegment", func() error { return store.PutSegment(ctx, mousa.Segment{}) }},
-		{"PutPolicyDefinition", func() error { return store.PutPolicyDefinition(ctx, mousa.PolicyDefinition{}) }},
+		{"SetSourceAccess", func() error {
+			_, err := store.SetSourceAccess(ctx, mousa.SourceID{1}, mousa.SourceAccessDeny)
+			return err
+		}},
 		{"Checkpoint", func() error { return store.Checkpoint(ctx) }},
 		{"Backup", func() error { return store.Backup(ctx, filepath.Join(t.TempDir(), "backup.sqlite")) }},
 	} {
