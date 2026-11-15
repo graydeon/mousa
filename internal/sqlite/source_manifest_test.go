@@ -182,6 +182,25 @@ func TestSourceManifestRejectsExtraHistoricalIndex(t *testing.T) {
 	}
 }
 
+// Indexed text that reaches the source only through another representation
+// must fail completeness exactly as a directly derived extra row does.
+func TestSourceManifestRejectsExtraDerivedIndex(t *testing.T) {
+	store, source := manifestFixture(t)
+	seedLocalItem(t, store, source, "a", "current")
+	inspectManifest(t, store, source, "before-derived", nil)
+	current, err := store.GetLocalItem(t.Context(), source.ID, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Unindexed derived history stays permitted; its indexed descendant does not.
+	hop := putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(current.RepresentationID)}, "manifest.hop", []byte("derived unindexed"), false)
+	inspectManifest(t, store, source, "unindexed-derived", nil)
+	putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(hop.representation.ID)}, "manifest.leaf", []byte("derived indexed"), true)
+	if _, err := store.InspectSourceManifest(t.Context(), testEvaluationRequest(t, source.ID, "derived-index"), nil); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("extra indexed derived row: %v", err)
+	}
+}
+
 func TestSourceManifestBoundsAndVectorIndependence(t *testing.T) {
 	store, source := manifestFixture(t)
 	for i := range 101 {

@@ -171,13 +171,24 @@ func currentSourceManifest(ctx context.Context, q queryer, source mousa.SourceID
 	// Every indexed row under this source must be one of the verified current
 	// segments. Canonical historical segments remain unrestricted and untouched.
 	var indexed int
-	err = q.QueryRowContext(ctx, `SELECT count(*) FROM (
-		SELECT r.rowid FROM segment_lexical_rows r
-		JOIN segments s ON s.id=r.segment_id
-		JOIN representation_inputs ri ON ri.representation_id=s.representation_id
+	// Ownership follows the same recursive ancestry as sourceLexicalCandidateQuery,
+	// so retrieval and inspection agree on which indexed rows belong to a source.
+	// The IN subquery counts each indexed row once however many paths reach it.
+	err = q.QueryRowContext(ctx, `WITH RECURSIVE source_representations(id) AS (
+		SELECT ri.representation_id
+		FROM representation_inputs ri
 		JOIN artifacts a ON a.id=ri.artifact_id
 		JOIN observations o ON o.id=a.observation_id
-		WHERE o.source_id=? LIMIT ?
+		WHERE o.source_id=?
+		UNION
+		SELECT ri.representation_id
+		FROM representation_inputs ri
+		JOIN source_representations sr ON sr.id=ri.input_representation_id
+	)
+	SELECT count(*) FROM (
+		SELECT r.rowid FROM segment_lexical_rows r
+		JOIN segments s ON s.id=r.segment_id
+		WHERE s.representation_id IN (SELECT id FROM source_representations) LIMIT ?
 	)`, source[:], mousa.MaxSourceManifestSegments+1).Scan(&indexed)
 	if err != nil {
 		return mousa.SourceManifest{}, classify("manifest index completeness", err)
