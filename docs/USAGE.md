@@ -114,7 +114,7 @@ Unknown-source denials have fresh decision IDs but no persisted receipt: the
 decision's storage foreign key requires an existing source. Known-source decisions
 are persisted only when inspection completes; failed inspection rolls them back.
 Null, coerced, duplicate, unknown and malformed argument fields are rejected.
-This read needs no ingestion or classification administration flag;
+This read needs no ingestion flag;
 HTTP retains validated-principal and `mousa:read` admission. MCP accepts configured
 JSONL aliases, not directory paths. Native directory roots and JSONL aliases have
 different source identities; identical text does not make them interchangeable.
@@ -137,7 +137,7 @@ JSONL omission leaves an item unchanged; delete it explicitly with
 Fresh authorization and all current-content verification share one writer
 snapshot. A match is not a lease or an atomic guard on a later query. It neither
 records action completion nor guarantees query-result stability, semantic truth,
-authenticated authorship or full model-window safety. Embeddings, classifications
+authenticated authorship or full model-window safety. Embeddings
 and authorization receipts are outside the
 content identity. An allowed policy change need not change the ID.
 
@@ -552,10 +552,6 @@ from pinned Python documentation, accepts caller-authored fact judgments, and
 reports coverage, unresolved facts, or one requested follow-up retrieval.
 Citation consistency is separate from the caller's assessment of semantic support.
 
-For native attributed labels on existing evidence, run the
-[classification example](#native-classification-administration). It checks
-canonical retry/readback and retired revision pins without changing retrieval.
-
 Run the maintained Python standard-library example against the built CLI:
 
 ```sh
@@ -634,132 +630,6 @@ it is not a substitute for this required command.
 does not undo withdrawal, and the CLI has no resume command. These controls are not
 secure erasure or a replacement for filesystem access controls.
 
-### Native classification administration
-
-Source builds containing these commands can persist a caller-reviewed label
-against existing evidence and retrieve the immutable assertion by its computed ID:
-
-```sh
-./mousa -store local.sqlite classification put < assertion-input.json
-./mousa -store local.sqlite classification get CLASSIFICATION_ID
-```
-
-Put accepts exactly one `mousa.classification_input.v1` draft, not a canonical
-record and not a caller-supplied `id`. Replace the sample pins below with existing
-IDs from your store (for example, the segment and representation returned by query):
-
-```json
-{
-  "schema": "mousa.classification_input.v1",
-  "subject": {"kind": "segment", "id": "SEGMENT_ID"},
-  "taxonomy": "example.caller-review",
-  "taxonomy_version": "1",
-  "label": "synthetic-caller-reviewed",
-  "asserter_id": "example.caller",
-  "asserter_version": "1",
-  "basis": [{"kind": "representation", "id": "REPRESENTATION_ID"}],
-  "asserted_at_usec": 1,
-  "confidence_ppm": 0
-}
-```
-
-Every field is required and non-null. The subject and each basis entry contain
-exactly `kind` and `id`; kinds are `source`, `observation`, `artifact`,
-`representation` and `segment`. IDs are the existing kind's lowercase hex identity.
-Taxonomy, version, label and asserter strings must be nonempty UTF-8. Basis has
-1–4096 unique typed entries, in caller order. The explicit timestamp is a positive
-signed 64-bit integer in microseconds; confidence is an integer from 0 to 1000000,
-including 0. It is caller attribution, not a calibrated probability.
-Input is limited to 1 MiB including whitespace, enough for 4096 ordinary typed basis
-entries; stored-record size limits still apply. Unknown, repeated or case-aliased
-keys at any object level, invalid UTF-8, trailing JSON, nulls and non-integer numeric
-forms fail before writable open.
-
-Both commands print one canonical `mousa.classification.v1` JSON record. Put derives
-the ID from all assertion facts and returns the persisted verified record. Exact
-retry returns identical bytes without extra assertion or basis rows; changed facts
-create a different immutable assertion. Conflicting labels may coexist. There is no
-update, delete, current-winner resolver, validity interval or newest/confident choice.
-Existing subject and basis parents are checked transactionally. A missing parent or
-link failure leaves no partial assertion/links, but a valid put may already have
-created or migrated the database when storage rejects it. Basis may name existing
-records from different sources; this trusted local action is not a source access grant.
-
-Get opens read-only: an absent database is not created and an older store is not
-migrated. Unknown IDs return a typed `not_found` error; damaged canonical bytes,
-identity or projections return an integrity error without repair or success JSON.
-Invalid invocation/ID exits 2; rejected input/storage operations exit 1.
-
-These are local store-owner administration commands, not MCP/hosted writes. Labels
-do not affect indexing, serving permission, ranking or freshness.
-Asserter strings do not authenticate authorship and label/confidence does not prove
-truth. Representation/segment subjects pin specific revisions: after resync, an old
-assertion retains its own pins without relabeling replacement evidence or recovering
-retired text. Source subjects name a stable identity, not approval of future content.
-Classification-based filtering/authorization, secret scanning and automatic inference
-remain unimplemented.
-
-Run the standard-library example on a temporary native JSONL store:
-
-```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 examples/classifications.py --mousa ./mousa
-```
-
-It syncs synthetic text, retrieves a real passage, submits a clearly synthetic
-caller-reviewed segment label with its representation as basis, retries and compares
-canonical readback, records a conflicting label and checks the original is unchanged.
-It also verifies unchanged ordinary selection and readback after replacing the source
-revision. It exercises segment subjects and representation basis, not all subject
-kinds. No SQL, model, classifier, answer generation or semantic judging is involved.
-
-### MCP classification administration
-
-Source builds containing this addition expose `mousa_classification_put` and
-`mousa_classification_get`. This is separate from tagged-release availability;
-the runnable example is not a published acceptance receipt.
-
-```sh
-./mousa -store local.sqlite mcp --caller cli --source notes --classification-admin-source notes
-python3 examples/mcp_classifications.py --mousa ./mousa
-```
-
-Put arguments are `{"source":"notes","classification":DRAFT}`, where `DRAFT`
-is the strict native `mousa.classification_input.v1` object above. The result is
-`{"classification":CANONICAL_RECORD}` inside the ordinary MCP result envelope.
-Get arguments are `{"source":"notes","classification_id":"CLASSIFICATION_ID"}`.
-Its result contains `decision_id`, `decision_outcome` and `decision_reasons`;
-`classification` appears only when authorized and source scope is proven.
-Denied get omits the payload and does not reveal existence or corruption.
-
-The repeatable startup flag `--classification-admin-source` accepts only configured
-`--source` aliases and defaults off. It grants neither ingestion
-nor retrieval visibility. Those permissions do not grant classification
-writes. HTTP put also requires the validated transport principal's existing
-`mousa:write` scope; the asserted asserter is not that principal. Get needs no admin
-flag but always evaluates fresh retrieval authorization and may persist its normal
-decision receipt. It is not physically read-only like native classification get.
-
-Subject and every ordered basis entry must have all canonical ancestry roots in
-the selected source. Native cross-source storage remains supported; mixed-source,
-foreign and unprovable classifications are outside this MCP interface and return
-generic `not_found` on scoped get. No partial basis is released. Historical,
-withdrawn and never-indexed same-source pins remain valid metadata references,
-but current authorization still controls get. Source aliases are configuration
-names, not filesystem paths. No listing, classifier or taxonomy access rule is added.
-
-The example uses MCP sync/export to obtain pins, puts and retries confidence 0,
-reads both separately versioned assertions, and compares stable query fields.
-It invokes no native classification command or SQL. Its segment subject and
-representation basis illustrate attribution, not all five subject kinds.
-Confidence is an asserted integer, not a calibrated probability; labels do not
-establish factual truth, authenticate authorship, approve future revisions or
-recover retired text. Default query/trail payloads and selection remain unchanged.
-
-Integrity checks, authorization and factual truth are separate
-properties. Classification records are not automatic categorization or
-classification-based authorization.
-
 ## Local MCP usage
 
 The same executable serves MCP `2025-11-25` over stdio, backed directly by the
@@ -783,14 +653,12 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The ten tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
-`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`, `mousa_vector_import`,
-`mousa_classification_put` and `mousa_classification_get`.
+The nine tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`, `mousa_vector_import`
+and `mousa_source_manifest`.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, policy administration or withdrawal tool.
-Classification
-has a separate [same-source MCP interface](#mcp-classification-administration).
 
 
 `mousa_trail` reauthorizes each inspection. Denial succeeds with a fresh committed

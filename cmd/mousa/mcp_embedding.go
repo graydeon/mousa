@@ -23,10 +23,6 @@ func mcpIngestionTool(name string) bool {
 	return name == "mousa_sync" || name == "mousa_vector_import"
 }
 
-func mcpWriteTool(name string) bool {
-	return mcpIngestionTool(name) || name == "mousa_classification_put"
-}
-
 func mcpVectorImportSchema() map[string]any {
 	hex := map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"}
 	descriptor := map[string]any{"type": "string", "minLength": 1, "maxLength": 256}

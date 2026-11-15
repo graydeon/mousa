@@ -35,8 +35,6 @@ type mcpArguments struct {
 	TokenBudget        *mousa.TokenBudget
 	TokenDetails       bool
 	VectorImport       mousa.VectorImport
-	Classification     mousa.Classification
-	ClassificationID   mousa.ClassificationID
 	ExpectedManifestID *mousa.SHA256
 }
 
@@ -119,12 +117,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	switch operation {
 	case "mousa_source_manifest":
 		allowed = append(allowed, "expected_manifest_id")
-	case "mousa_classification_put":
-		allowed = append(allowed, "classification")
-		required = append(required, "classification")
-	case "mousa_classification_get":
-		allowed = append(allowed, "classification_id")
-		required = append(required, "classification_id")
 	case "mousa_sync":
 		allowed = append(allowed, "items", "segment_policy")
 		required = append(required, "items")
@@ -175,12 +167,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
-		case "classification":
-			record, err := mousa.DecodeClassificationInput(value)
-			if err != nil {
-				return args, err
-			}
-			args.Classification = record
 		case "import":
 			input, err := mousa.DecodeVectorImport(value)
 			if err != nil {
@@ -271,11 +257,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 					return args, errors.New("packing_policy must be original or exact-v1")
 				}
 				args.PackingPolicy = text
-			case "classification_id":
-				args.ClassificationID, err = mousa.ParseClassificationID(text)
-				if err != nil || args.ClassificationID == (mousa.ClassificationID{}) {
-					return args, errors.New("classification_id must be a nonzero lowercase SHA-256 ID")
-				}
 			case "space_id":
 				args.SpaceID, err = mousa.ParseSHA256(text)
 				if err != nil || args.SpaceID == (mousa.SHA256{}) {
@@ -324,16 +305,14 @@ func mcpOutputSchema[T any](operation string) (*jsonschema.Schema, error) {
 	// These canonical IDs marshal as lowercase hex, not as their Go byte arrays.
 	hexID := &jsonschema.Schema{Type: "string", Pattern: "^[0-9a-f]{64}$"}
 	schema, err := jsonschema.For[mcpEnvelope[T]](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-		reflect.TypeFor[mousa.PolicyDecisionID]():      hexID,
-		reflect.TypeFor[mousa.SourceTrailID]():         hexID,
-		reflect.TypeFor[mousa.SegmentID]():             hexID,
-		reflect.TypeFor[mousa.SHA256]():                hexID,
-		reflect.TypeFor[mousa.RepresentationID]():      hexID,
-		reflect.TypeFor[mousa.SourceID]():              hexID,
-		reflect.TypeFor[mousa.ClassificationID]():      hexID,
-		reflect.TypeFor[mousa.ObservationID]():         hexID,
-		reflect.TypeFor[mousa.ArtifactID]():            hexID,
-		reflect.TypeFor[mousa.ClassificationSubject](): mcpClassificationSubjectSchema(),
+		reflect.TypeFor[mousa.PolicyDecisionID](): hexID,
+		reflect.TypeFor[mousa.SourceTrailID]():    hexID,
+		reflect.TypeFor[mousa.SegmentID]():        hexID,
+		reflect.TypeFor[mousa.SHA256]():           hexID,
+		reflect.TypeFor[mousa.RepresentationID](): hexID,
+		reflect.TypeFor[mousa.SourceID]():         hexID,
+		reflect.TypeFor[mousa.ObservationID]():    hexID,
+		reflect.TypeFor[mousa.ArtifactID]():       hexID,
 	}})
 	if err != nil {
 		return nil, err
@@ -444,11 +423,6 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			"type": "object", "additionalProperties": false, "required": []string{"source", "import"}, "properties": map[string]any{"source": source, "import": mcpVectorImportSchema()},
 		}, OutputSchema: imported},
 	)
-	classifications, err := mcpClassificationToolDefinitions(source)
-	if err != nil {
-		return nil, err
-	}
-	definitions = append(definitions, classifications...)
 	manifest, err := mcpSourceManifestTool(source)
 	if err != nil {
 		return nil, err

@@ -54,8 +54,6 @@ func main() {
 		err = accessCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
-	case "classification":
-		err = classificationCommand(ctx, *storePath, rest)
 	case "mcp":
 		err = mcpCommand(ctx, *storePath, rest)
 	case "plugin":
@@ -99,14 +97,11 @@ commands:
   access --source <id> allow|deny
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
-  classification put        append one strict attributed assertion draft from stdin (JSON)
-  classification get <id>   read one verified assertion; read-only, never creates a store (JSON)
   mcp --caller <id> --source <id>
                             serve configured JSONL sources over stdio MCP
                             --openai-extensions enables evidence mentions/resources
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; --ingest-source <id> permits ingestion/import
-                            --classification-admin-source <id> separately permits classifications
                             --tokenizer-python <path> --tokenizer-cache <dir> enables
                             optional whole-rendering token budgets; prepared offline backend only
   plugin --out <new-dir> --source <id> --consent-to-share

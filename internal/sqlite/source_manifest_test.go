@@ -330,13 +330,9 @@ func TestSourceManifestExcludesEmbeddingsAndQueryReceipts(t *testing.T) {
 	if _, err := store.EvaluateAndTraceVector(t.Context(), testEvaluationRequest(t, source.ID, "vector-receipt"), space, []float64{1, 0}, 100, mousa.PackingOriginal); err != nil {
 		t.Fatal(err)
 	}
-	subject := mousa.NewRepresentationClassificationSubject(before.Manifest.Items[0].RepresentationID)
-	if _, err := store.PutSourceClassification(t.Context(), source.ID, scopedClassification(t, subject, subject)); err != nil {
-		t.Fatal(err)
-	}
 	after := inspectManifest(t, store, source, "after-vectors", &before.Manifest.ID)
 	if !*after.Matches {
-		t.Fatal("classification, embedding or query metadata changed content identity")
+		t.Fatal("embedding or query metadata changed content identity")
 	}
 }
 

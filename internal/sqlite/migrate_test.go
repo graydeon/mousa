@@ -364,20 +364,6 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 	if err := v4.IndexTextRepresentation(ctx, representation.ID, content); err != nil {
 		t.Fatal(err)
 	}
-	graph, classification := classificationRecordGraph(t)
-	for _, put := range []func() error{
-		func() error { return v4.PutSource(ctx, graph.source) },
-		func() error { return v4.PutObservation(ctx, graph.observation) },
-		func() error { return v4.PutArtifact(ctx, graph.artifact) },
-		func() error { return v4.PutRepresentation(ctx, graph.base) },
-		func() error { return v4.PutRepresentation(ctx, graph.mixed) },
-		func() error { return v4.PutSegment(ctx, graph.segment) },
-		func() error { return v4.PutClassification(ctx, classification) },
-	} {
-		if err := put(); err != nil {
-			t.Fatal(err)
-		}
-	}
 	beforeLexical, err := v4.SearchLexical(ctx, "alpha", 10)
 	if err != nil {
 		t.Fatal(err)
@@ -394,9 +380,6 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if got, err := store.GetClassification(ctx, classification.ID); err != nil || !reflect.DeepEqual(got, classification) {
-		t.Fatalf("classification after v5 migration = %#v, %v", got, err)
-	}
 	afterLexical, err := store.SearchLexical(ctx, "alpha", 10)
 	if err != nil {
 		t.Fatal(err)
@@ -438,9 +421,6 @@ func TestPolicyDefinitionMigrationExactSchemaAndBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restored.Close()
-	if got, err := restored.GetClassification(ctx, classification.ID); err != nil || !reflect.DeepEqual(got, classification) {
-		t.Fatalf("restored classification = %#v, %v", got, err)
-	}
 	gotLexical, err := restored.SearchLexical(ctx, "alpha", 10)
 	if err != nil || !reflect.DeepEqual(gotLexical, beforeLexical) {
 		t.Fatalf("restored lexical = %v, %v", gotLexical, err)

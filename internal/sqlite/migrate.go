@@ -391,11 +391,6 @@ func verifyVersion(ctx context.Context, db *sql.DB, embedded []migration, wantVe
 			}
 		}
 	}
-	if wantVersion >= 4 {
-		if err := verifyClassificationRecords(ctx, db); err != nil {
-			return err
-		}
-	}
 	if wantVersion >= 5 {
 		if err := verifyPolicyDefinitionRecords(ctx, db); err != nil {
 			return err

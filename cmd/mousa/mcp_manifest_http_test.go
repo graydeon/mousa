@@ -64,9 +64,9 @@ func TestHTTPManifestReadPrincipalAndPermissions(t *testing.T) {
 	}))
 	defer identity.Close()
 	config.Issuer, config.IntrospectionURL = identity.URL, identity.URL
-	for mask := range 4 {
+	for mask := range 2 {
 		application := &mcpApplication{store: store, path: run.store, caller: "cli", sources: map[string]mcpSource{
-			"alpha": {source: source, write: mask&1 != 0, classificationAdmin: mask&2 != 0},
+			"alpha": {source: source, write: mask&1 != 0},
 			"beta":  {source: unknown},
 		}, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), http: true}
 		server, err := application.server(t.Context())
@@ -156,7 +156,7 @@ func TestHTTPManifestReadPrincipalAndPermissions(t *testing.T) {
 				t.Fatalf("HTTP strict parser accepted/mutated: %s %v", raw, response)
 			}
 		}
-		if mask == 3 {
+		if mask == 1 {
 			run.run(false, "access", "--source", "alpha", "deny")
 			rawExec(t, run.store, `UPDATE representations SET record_json=x'7b7d0a'`)
 			for _, alias := range []string{"alpha", "beta"} {

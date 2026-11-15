@@ -27,14 +27,6 @@ Do not create a tunnel, deploy an endpoint, install credentials, publish a plugi
 Check the configured tool schema before promising an interface. Composer
 mentions/resources keep fixed defaults.
 
-For explicit attributed labels, discover `mousa_classification_put` and
-`mousa_classification_get`. Put requires the separate repeatable
-`--classification-admin-source` allowlist of distinct configured JSONL aliases,
-off by default, plus HTTP `mousa:write`. It grants neither ingestion
-nor retrieval. Get requires fresh retrieval
-authorization, not an admin flag. Subject and every ordered basis entry must
-have all canonical ancestry roots in the selected source; native cross-source
-storage remains outside this MCP slice.
 
 Caller-supplied vector and hybrid MCP tools use external embeddings. Discover
 mousa_vector_inputs / mousa_vector_import for client export/import: export needs

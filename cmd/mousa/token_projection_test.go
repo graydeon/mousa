@@ -209,7 +209,7 @@ func TestNativeTokenQueryOutcomes(t *testing.T) {
 				}
 				after, _ := json.Marshal(trail)
 				if !bytes.Equal(before, after) {
-					t.Fatal("classification mutated canonical facts")
+					t.Fatal("trail mutated canonical facts")
 				}
 			})
 		}

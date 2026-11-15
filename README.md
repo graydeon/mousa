@@ -114,20 +114,6 @@ the indexed snapshot, not unsynced files, completed actions or a later query.
 See the [manifest workflow and example](docs/USAGE.md#current-source-manifests).
 This addition is not a tagged-release or independent capture acceptance claim.
 
-Native `classification put` and `classification get ID` record and retrieve
-immutable attributed labels against existing evidence. The
-[runnable classification example](docs/USAGE.md#native-classification-administration)
-demonstrates exact retry, coexisting conflicting labels and revision-pinned readback.
-Labels do not change indexing, ranking or retrieval permission;
-caller attribution is not authenticated authorship or factual verification.
-Source builds containing the MCP classification addition also expose
-`mousa_classification_put` and `mousa_classification_get`, limited to subjects and
-basis whose complete ancestry belongs to one configured source. Writes require
-`--classification-admin-source`; reads require fresh retrieval authorization.
-The [MCP-only example](examples/mcp_classifications.py) uses sync/export pins,
-exact retry and separately versioned assertions without changing retrieval.
-This source addition is not a tagged-release or public-capture acceptance claim.
-
 Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
 records branch contributions in v6. Native and MCP token-aware lexical/vector/hybrid
 selection records measured rendering and reservation facts in v7. MCP `mousa_trail`
@@ -159,8 +145,6 @@ remain readable but cannot certify a comparison. See the
 | [How Mousa works](docs/OVERVIEW.md) | The nine-stage pipeline, Source Trails and design principles. |
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
 | [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
-| [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
-| [MCP classification example](examples/mcp_classifications.py) | Same-source attributed put/retry/get and coexisting asserted versions through MCP. |
 
 ## Contributing
 

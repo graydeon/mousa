@@ -19,7 +19,7 @@ import (
 
 func manifestAdapterState(t *testing.T, path string) string {
 	t.Helper()
-	state := classificationState(t, path)
+	state := ""
 	for _, table := range []string{"policy_decisions", "policy_decision_inputs", "source_trails"} {
 		count, digest := tableDigest(t, path, table)
 		state += fmt.Sprintf("%s:%d/%s;", table, count, digest)
@@ -54,12 +54,8 @@ func TestMCPManifestStdioSnapshotAndPermissions(t *testing.T) {
 	run.runInput("{\"id\":\"a\",\"text\":\"cedar\"}\n", false, "sync", "--source", "alpha")
 	_, native := run.run(false, "manifest", "--source", "alpha")
 	id := manifestID(t, native)
-	for mask := range 4 {
-		var startup []string
-		if mask&2 != 0 {
-			startup = append(startup, "--classification-admin-source", "alpha")
-		}
-		client := startMCPClient(t, run, "cli", mask&1 != 0, startup...)
+	for mask := range 2 {
+		client := startMCPClient(t, run, "cli", mask&1 != 0)
 		result := client.call("mousa_source_manifest", map[string]any{"source": "alpha"}, "")
 		if !reflect.DeepEqual(result["manifest"], native["manifest"]) || result["matches"] != nil || result["decision_id"] == native["decision_id"] {
 			t.Fatalf("mask %d changed manifest/export/fresh authorization: %v", mask, result)
@@ -74,7 +70,7 @@ func TestMCPManifestStdioSnapshotAndPermissions(t *testing.T) {
 		}
 		client.close()
 	}
-	unauthorized := startMCPClient(t, run, "untrusted", true, "--classification-admin-source", "alpha")
+	unauthorized := startMCPClient(t, run, "untrusted", true)
 	assertManifestDenied(t, unauthorized.call("mousa_source_manifest", map[string]any{"source": "alpha", "expected_manifest_id": id}, ""))
 	unauthorized.close()
 	client := startMCPClient(t, run, "cli", false)
@@ -160,7 +156,7 @@ func TestMCPManifestDiscovery(t *testing.T) {
 			found = tool
 		}
 	}
-	if found == nil || found.Title == "" || found.Annotations == nil || found.Annotations.DestructiveHint == nil || *found.Annotations.DestructiveHint || mcpWriteTool(found.Name) {
+	if found == nil || found.Title == "" || found.Annotations == nil || found.Annotations.DestructiveHint == nil || *found.Annotations.DestructiveHint || mcpIngestionTool(found.Name) {
 		t.Fatalf("manifest missing or advertised as administration: %+v", found)
 	}
 	var schema jsonschema.Schema

@@ -11,22 +11,9 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source includes native attributed classification administration
-and measured token budgets. Accepted PR110 adds source-scoped MCP
-classification administration. These source capabilities are not a claim
-about a tagged release; independent captures retain their own producing commits.
+Accepted source includes measured token budgets. These source capabilities are
+not a claim about a tagged release; independent captures retain their own producing commits.
 
-Source builds containing native `classification put|get` also record immutable
-attributed assertions against existing evidence. The commands reuse canonical
-classification storage; they do not change selection, permissions or factual truth.
-See the [classification workflow](USAGE.md#native-classification-administration).
-Synthetic examples establish protocol/identity behavior, not label correctness,
-retrieval quality or semantic sufficiency. No tagged-release availability is claimed.
-The MCP classification source addition exposes same-source put/get with a separate
-`--classification-admin-source` write allowlist. Every subject and basis ancestry
-root must belong to the selected source; native cross-source storage is unchanged.
-Get requires fresh retrieval authorization and withholds the entire payload on
-denial. See the [MCP workflow](USAGE.md#mcp-classification-administration).
 These accepted source additions remain distinct from tagged releases and
 independently published observations.
 
@@ -60,8 +47,7 @@ The native [vector](USAGE.md#caller-supplied-vector-workflow) and
 JSONL sources. Generation stays external; synthetic examples do not establish
 embedding-model quality, semantic equivalence or factual truth.
 
-Raw historical record-by-ID reads and policy administration remain native-only. Classification
-put/get also have the bounded same-source MCP interface described above.
+Raw historical record-by-ID reads and policy administration remain native-only.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
 
 ## The nine-stage retrieval backbone

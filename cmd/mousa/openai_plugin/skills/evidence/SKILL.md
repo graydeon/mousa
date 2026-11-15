@@ -17,20 +17,6 @@ On supported desktop hosts, a Mousa composer mention provides an evidence resour
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
 
-Use `mousa_classification_put` only for explicitly supplied attribution, with
-`source` and the complete native `mousa.classification_input.v1` draft in
-`classification`. Supply every required field, including confidence zero;
-preserve ordered, nonduplicate typed basis references. The separate
-`--classification-admin-source` grant and HTTP write scope authorize this
-mutation, not ingestion or retrieval. Subject and every basis entry must be
-provably wholly within the selected configured source. An exact retry returns
-the same canonical assertion; changed attribution appends a different record.
-Fetch by `source` and `classification_id` using `mousa_classification_get`.
-Denial omits classification entirely, even existence and corruption details.
-Attribution is not factual truth, calibrated confidence or current permission.
-Historical pins do not relabel replacement evidence. Labels never affect
-default query/trail payloads, ranking, packing or authorization.
-
 Composer mentions/resources keep fixed defaults. Explain conflicting released
 passages using provenance.
 

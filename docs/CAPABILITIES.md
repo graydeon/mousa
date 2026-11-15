@@ -33,8 +33,6 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
-| Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
-| MCP attributed classification administration | Source builds containing this addition | `mousa_classification_put`, `mousa_classification_get` | Separate write allowlist; all subject/basis ancestry roots in one source; fresh-authorized scoped read; strict native draft and canonical retry | [MCP example](../examples/mcp_classifications.py); synthetic attribution only, not classifier accuracy, calibrated confidence or a tagged-release claim |
 | Embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
 | OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
@@ -51,57 +49,6 @@ keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
-
-## Native attributed classification administration
-
-The [native workflow and runnable example](USAGE.md#native-classification-administration)
-record caller-reviewed assertions against existing evidence through the implemented
-immutable `mousa.classification.v1` primitive. A strict bounded
-`mousa.classification_input.v1` draft omits the computed ID; put derives it, validates
-all facts and writes through the existing single-store transaction. Put/get return
-the existing canonical record. No stored schema, migration, query/packet/trail
-property, canonical v1, v2, v5–v7 or v11 bytes or default selection changes. The separate MCP
-addition below extends discovery without changing native storage semantics.
-
-Subjects and ordered basis references support source, observation, artifact,
-representation and segment parents. All must exist; no placeholder parents are
-created. Existing storage permits cross-source basis. Exact retry adds no record or
-link; different facts yield a different immutable ID. Get re-verifies canonical
-identity, subject projection and ordered basis and refuses damage without repair.
-Read-only get never creates/migrates a store; syntax is checked before writable put
-open, but parent/storage rejection need not undo database creation or migration.
-
-These commands are trusted local store-owner administration, not an MCP write
-surface or access shortcut. Caller labels, confidence and asserter names are
-untrusted attribution, not authenticated authorship, calibrated probability or
-policy authority. Conflicting assertions can coexist without a winner resolver.
-Revision-pinned assertions retain their own evidence identities after resync, not
-unavailable old text or labels on replacement revisions. Source-level assertions
-name stable identity, not automatic approval of future content.
-
-Delivered value is durable, inspectable attribution with typed evidence basis.
-Classification-based filtering/authorization, secret scanning and automatic
-classification/inference remain unimplemented. Indexing, retrieval permission,
-ranking and freshness do not consume these labels.
-
-### Same-source MCP classification administration
-
-The [MCP workflow](USAGE.md#mcp-classification-administration) reuses the native
-draft and canonical records, but requires all ancestry roots of the subject and
-every basis entry to belong to the selected configured JSONL source. Native
-cross-source basis remains supported. Foreign, mixed-source and unprovable scoped
-reads return generic `not_found`, without partial records or foreign corruption
-details. Denial precedes lookup and omits classification entirely.
-
-Put requires the independent `--classification-admin-source` allowlist and HTTP
-write scope when hosted; ingestion permission is insufficient.
-Get needs no write grant, but fresh retrieval authorization, ancestry proof,
-verified readback and the normal decision receipt share one writer snapshot.
-Historical/withdrawn/never-indexed parents do not require current index coverage.
-This interface adds no classifier, enumeration, label filtering, ranking rule or
-access grant. Asserted identities are not authenticated transport principals.
-The source addition and executable example are not public capture results.
-
 
 ## Native token-aware packing
 
@@ -381,8 +328,6 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing and token options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
-| `mousa_classification_put` | `source`, `classification`: closed `mousa.classification_input.v1` | None | `classification`: verified accepted canonical record |
-| `mousa_classification_get` | `source`, `classification_id` | None | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; `classification` only when allowed and same-source scope is proven |
 | `mousa_source_manifest` | `source` | `expected_manifest_id`: nonzero lowercase 64-hex ID | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; authorized `manifest`; `matches` only for an authorized expected-ID check |
 
 Export calls `ExportEmbeddingInputs` with the trusted caller's retrieval request.
