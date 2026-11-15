@@ -11,7 +11,7 @@ const SourceTrailSchemaV9 = "mousa.source_trail.v9"
 // packing checks. Store verification additionally rederives exact membership from
 // recorded administration and immutable ancestry, never current activation.
 func (trail SourceTrail) validateRetrievalSupersessionTrail() error {
-	if trail.Token != nil || trail.Supersession == nil || (trail.Vector == nil) == (trail.Hybrid == nil) || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 {
+	if trail.Token != nil || trail.Supersession == nil || (trail.Vector == nil) == (trail.Hybrid == nil) {
 		return errors.New("v9 requires exactly one byte retrieval mode and supersession")
 	}
 	if err := trail.Supersession.Validate(); err != nil {

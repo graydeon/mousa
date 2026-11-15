@@ -249,7 +249,6 @@ func TestSupersessionQueryInvalidOptionsDoNotCreateStore(t *testing.T) {
 		{"--source", "x", "--supersession"},
 		{"--supersession", root, "!!!"},
 		{"--source", "x", "--supersession", root, "text"},
-		{"--source", "x", "--supersession", "--associations=", "text"},
 		{"--source", "x", "--supersession", "--unknown", "text"},
 	}
 	for index, args := range cases {
@@ -428,7 +427,6 @@ func TestSupersessionQueryInvalidExistingStoreAndUnknownTrailDoNotWrite(t *testi
 	before := snapshotActivationStore(t, run.store)
 	audit := supersessionAuditSnapshot(t, run.store)
 	for _, args := range [][]string{
-		{"query", "--source", "query/rejected", "--supersession", "--associations=", "oldterm"},
 		{"query", "--source", "query/rejected", "--supersession", "--packing-policy", "invalid", "oldterm"},
 		{"query", "--source", "query/rejected", "--supersession", ""},
 	} {

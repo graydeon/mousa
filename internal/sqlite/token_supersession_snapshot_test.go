@@ -24,30 +24,6 @@ func TestTokenSupersessionWriterHeldThroughCounting(t *testing.T) {
 	}
 }
 
-func TestTokenAssociationsWriterHeldThroughCounting(t *testing.T) {
-	t.Parallel()
-	testTokenSupersessionWriterHeldThroughCounting(t, "associations")
-}
-
-func TestTokenAssociationsCancellationRollsBack(t *testing.T) {
-	t.Parallel()
-	testTokenSupersessionWriterHeldThroughCounting(t, "association-cancel")
-}
-
-func TestTokenAssociatedSupersessionWriterSnapshot(t *testing.T) {
-	testTokenSupersessionWriterHeldThroughCounting(t, "triple")
-}
-
-func TestTokenAssociatedSupersessionCancellationRollsBack(t *testing.T) {
-	testTokenSupersessionWriterHeldThroughCounting(t, "triple-cancel")
-}
-
-func TestTokenRetrievalAssociationsWriterSnapshot(t *testing.T) {
-	for _, mode := range []string{"vector-associations", "hybrid-associations", "vector-associations-cancel", "hybrid-associations-cancel", "vector-associations-supersession", "hybrid-associations-supersession", "vector-associations-supersession-cancel", "hybrid-associations-supersession-cancel"} {
-		t.Run(mode, func(t *testing.T) { testTokenSupersessionWriterHeldThroughCounting(t, mode) })
-	}
-}
-
 func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
 	if python == "" || cache == "" {
@@ -55,17 +31,11 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 	}
 	f := newV4Fixture(t)
 	defer f.store.Close()
-	triple := mode == "triple" || mode == "triple-cancel"
-	retrievalAssociations := strings.Contains(mode, "-associations")
-	associations := mode == "associations" || mode == "association-cancel" || triple || retrievalAssociations
 	var space mousa.SHA256
-	if mode != "lexical" && (!associations || retrievalAssociations) {
+	if mode != "lexical" {
 		space = importSupersessionVectors(t, f)
 	}
 	_, state := f.activate(t)
-	if associations {
-		seedLocalItem(t, f.store, f.source, "qualification", "Close idle sockets explicitly.")
-	}
 	other, err := Open(t.Context(), f.store.path)
 	if err != nil {
 		t.Fatal(err)
@@ -80,10 +50,6 @@ func testTokenSupersessionWriterHeldThroughCounting(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "gated-counter")
-	gateStage := "primary"
-	if associations {
-		gateStage = "association"
-	}
 	script := fmt.Sprintf(`#!%s
 import sys,struct,socket,tiktoken
 enc=tiktoken.get_encoding('o200k_base')
@@ -94,12 +60,12 @@ while True:
  h=i.read(4)
  if not h: break
  n=struct.unpack('>I',h)[0];text=i.read(n).decode('utf-8')
- if first and (%q == "primary" or "Close idle sockets explicitly." in text):
+ if first:
   first=False
   with socket.create_connection(('127.0.0.1',%d)) as s:
    s.sendall(b'counting');s.recv(1)
  o.write(struct.pack('>Q',len(enc.encode_ordinary(text))));o.flush()
-`, python, gateStage, listener.Addr().(*net.TCPAddr).Port)
+`, python, listener.Addr().(*net.TCPAddr).Port)
 	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -118,24 +84,11 @@ while True:
 	before := freshAuditCounts(t, f.store)
 	go func() {
 		options := TokenQuery{Budget: mousa.TokenBudget{Cap: 1000}, Counter: counter, Supersession: true}
-		if associations {
-			options.Supersession = false
-			options.Associations = []mousa.AssociationDeclaration{{FromItem: "predecessor", ToItem: "qualification", Basis: "explicit cleanup", Author: "example.operator"}}
-			if triple {
-				options.Supersession = true
-				options.Associations[0].FromItem = "successor"
-			}
-			if retrievalAssociations {
-				options.Supersession = strings.Contains(mode, "-supersession")
-				options.Associations[0].FromItem = "peer"
-			}
-		}
-		if mode == "lexical" || associations && !retrievalAssociations {
+		if mode == "lexical" {
 			r, _, err := f.store.EvaluateAndTraceTokenLexical(t.Context(), testEvaluationRequest(t, f.source.ID, "gated-query"), "sharedterm", "original", 1024, mousa.PackingExactV1, options)
 			done <- result{r.Trail, err}
 		} else {
-			retrievalMode := strings.Split(mode, "-")[0]
-			r, err := queryTokenRetrieval(t, f, space, retrievalMode, mousa.PackingExactV1, "gated-query", 1024, options)
+			r, err := queryTokenRetrieval(t, f, space, mode, mousa.PackingExactV1, "gated-query", 1024, options)
 			done <- result{r.Trail, err}
 		}
 	}()
@@ -174,7 +127,7 @@ while True:
 		gate.Close()
 		got := <-done
 		if got.err == nil || got.trail.ID != (mousa.SourceTrailID{}) || !reflect.DeepEqual(before, freshAuditCounts(t, f.store)) {
-			t.Fatal("associated cancellation committed producing state", got.err)
+			t.Fatal("cancellation committed producing state", got.err)
 		}
 		return
 	}
@@ -182,26 +135,6 @@ while True:
 	got := <-done
 	if got.err != nil {
 		t.Fatal(got.err)
-	}
-	if mode == "associations" || triple || retrievalAssociations {
-		schema := mousa.SourceTrailSchemaV11
-		if triple {
-			schema = mousa.SourceTrailSchemaV13
-		}
-		if retrievalAssociations {
-			schema = mousa.SourceTrailSchemaV15
-		}
-		if got.trail.Schema != schema || len(got.trail.Associated) != 1 || !got.trail.Associated[0].Selected {
-			t.Fatal("association did not share measured snapshot")
-		}
-		seedLocalItem(t, other, f.source, "qualification", "Replacement qualification.")
-		historical, err := f.store.GetSourceTrail(t.Context(), got.trail.ID)
-		if err != nil || historical.Associated[0] != got.trail.Associated[0] {
-			t.Fatal("later target revision reinterpreted selection", err)
-		}
-		if !triple && !strings.Contains(mode, "-supersession") {
-			return
-		}
 	}
 	if got.trail.Supersession.ActivationID == nil || *got.trail.Supersession.ActivationID != state.CurrentActivationID || len(got.trail.Supersession.Dispositions) != 1 {
 		t.Fatal("mixed consultation")

@@ -26,8 +26,7 @@ Do not create a tunnel, deploy an endpoint, install credentials, publish a plugi
 
 Check the configured tool schema before promising an interface. Discovered query
 `supersession: true` enables exact predecessor withholding; omission/false preserves
-defaults. Source builds support lexical associations as v12/v13 and vector/hybrid
-associations as v14/v15 for byte/token mode. Discovered `mousa_trail` supersession
+defaults. Discovered `mousa_trail` supersession
 returns recorded consultation, not today's activation. Composer mentions/resources
 keep fixed defaults.
 

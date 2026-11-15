@@ -11,12 +11,9 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source through PR105 includes native attributed classification administration,
-measured token budgets with declared lexical supporting context and closed v11
-history, alongside native/MCP lexical/vector/hybrid supersession.
-Accepted source includes lexical association/supersession history as v12 in byte
-mode and v13 with measured tokens, plus vector/hybrid declared support as v14/v15
-(accepted in PR108). Accepted PR109 and PR110 add source-scoped MCP supersession
+Accepted source includes native attributed classification administration,
+measured token budgets, and native/MCP lexical/vector/hybrid supersession.
+Accepted PR109 and PR110 add source-scoped MCP supersession
 and classification administration. These source capabilities are not a claim
 about a tagged release; independent captures retain their own producing commits.
 
@@ -89,10 +86,7 @@ with unchanged full-source admission before withholding. See the
 [runnable example](USAGE.md#vector-and-hybrid-supersession).
 
 Defaults are unchanged: recording an activation alone does not filter a default
-query, reinterpret a recorded member or move item pointers. Lexical
-queries can combine declared supporting context with supersession in v12 byte mode
-or v13 token mode. Accepted source also supports vector/hybrid
-associations as v14 byte or v15 token history. MCP declaration, activation and
+query, reinterpret a recorded member or move item pointers. MCP declaration, activation and
 current-state inspection use configured JSONL aliases; mutations require the
 separate `--supersession-admin-source` startup allowlist. Status authorizes before
 consulting state and may persist an authorization receipt. Raw historical
@@ -136,9 +130,7 @@ A Source Trail records how a context packet was produced. Default packing writes
 `mousa.source_trail.v1`, binding the policy request and decision, outcome,
 search expression, byte budget, packet identity, and ordered candidate
 dispositions. Opt-in exact-content packing writes v2, which also binds
-duplicate omissions and retained-segment relationships. Queries that record
-a declared-association stage write v3, binding associated passages and
-omissions. Older trail bytes and identities remain unchanged.
+duplicate omissions and retained-segment relationships. Older trail bytes and identities remain unchanged.
 
 A byte-only opted-in directory or JSONL query always writes
 `mousa.source_trail.v4`, including denial, verified no-history and deactivation.
@@ -151,7 +143,7 @@ the released selection, so an unchanged selection has the same packet identity.
 Native vector queries write `mousa.source_trail.v5` instead. Its closed `vector`
 member records the declared space, exact query vector and identity, current eligible
 and indexed counts, and ordered embedding/source/content pins and cosine scores.
-It has no lexical expression, associations or supersession consultation. Original
+It has no lexical expression or supersession consultation. Original
 and exact-v1 byte packing use the same packet v1 identity domain for the released
 selection. Native history reauthorizes and checks recorded producing embeddings,
 not today's vectors or current item pointers. Lexical defaults and earlier bytes
@@ -180,9 +172,7 @@ consultation and token selection, verify withheld canonical content and pack
 survivors. Omitted/false token supersession stays v7; byte-only enforcement
 stays lexical v4 or vector/hybrid v9. Full vector-source admission precedes
 masking. Packet v3 binds the complete producing selection: equal returned text
-does not establish equal v7/v8/v10 packet identities. Declared lexical token
-context writes v11, or v13 with supersession, only when its association stage has
-facts to record; unfired declarations retain v7 or v8 respectively. See the
+does not establish equal v7/v8/v10 packet identities. See the
 [source status](#source-and-release-status).
 
 Canonical read and startup verification check the recorded administration and candidate
@@ -259,7 +249,6 @@ Implemented and planned capabilities, marked per item:
 - authority, freshness, sensitivity, status, and supersession metadata (lifecycle status and deployment policy implemented; native revision-pinned declaration/activation administration and explicit native/MCP lexical/vector/hybrid enforcement with byte or token budgets and v4/v8/v9/v10 trails; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
-- source-scoped declared associations with attributed, bounded context (native CLI and inline MCP lexical/vector/hybrid queries, with byte or measured token budgets and optional supersession; not inferred relationships or access grants);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 

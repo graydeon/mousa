@@ -38,14 +38,6 @@ func TestTokenRejectedHistoryFacts(t *testing.T) {
 }
 
 func TestTokenHistoryProjectionPositionsAndRecount(t *testing.T) {
-	testTokenHistoryProjectionPositionsAndRecount(t, false)
-}
-
-func TestTokenAssociatedSupersessionHistoryProjectionPositionsAndRecount(t *testing.T) {
-	testTokenHistoryProjectionPositionsAndRecount(t, true)
-}
-
-func testTokenHistoryProjectionPositionsAndRecount(t *testing.T, triple bool) {
 	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
 		t.Run(packing, func(t *testing.T) {
 			ctx := context.Background()
@@ -53,28 +45,7 @@ func testTokenHistoryProjectionPositionsAndRecount(t *testing.T, triple bool) {
 			defer store.Close()
 			request, active := seedEnforcedRetrieval(t, store, "root passage")
 			input := mousa.NewRepresentationDerivationInput(active.representation.ID)
-			if triple {
-				source, representation, _ := prepareLocalRevision(t, store, "primary", "root passage")
-				request = testEvaluationRequest(t, source.ID, "request-composed-projection")
-				active.representation = representation
-				artifact, err := representationSourceArtifact(ctx, store.db, representation.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				input = mousa.NewArtifactDerivationInput(artifact.ID)
-			}
-			options := func() TokenQuery {
-				o := tokenOptions(t)
-				if triple {
-					item, err := localItemPathOfRepresentation(ctx, store.db, request.SourceID, active.representation.ID)
-					if err != nil {
-						t.Fatal(err)
-					}
-					o.Supersession = true
-					o.Associations = []mousa.AssociationDeclaration{{FromItem: item, ToItem: "missing-qualification", Basis: "explicit support", Author: "test"}}
-				}
-				return o
-			}
+			options := func() TokenQuery { return tokenOptions(t) }
 			ancestors := make(map[mousa.SegmentID]mousa.SourceID)
 			for i := range 5 {
 				other := addVerifiedLexicalDocument(t, store, fmt.Sprintf("ancestor-%d", i), "ancestor passage")
@@ -98,9 +69,6 @@ func testTokenHistoryProjectionPositionsAndRecount(t *testing.T, triple bool) {
 			traced, text, err := store.EvaluateAndTraceTokenLexical(ctx, testEvaluationRequest(t, request.SourceID, "filtered-query"), "sharedterm", "original", 1024, packing, options())
 			if err != nil {
 				t.Fatal(err)
-			}
-			if triple && traced.Trail.Schema != mousa.SourceTrailSchemaV13 {
-				t.Fatal("mixed lifecycle fixture did not record triple composition")
 			}
 			for i, row := range traced.Trail.Candidates {
 				want := mousa.CandidateAccepted

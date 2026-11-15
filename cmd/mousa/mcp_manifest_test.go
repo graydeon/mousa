@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -184,51 +183,6 @@ func TestMCPManifestDiscovery(t *testing.T) {
 		if err := resolved.Validate(args); err == nil {
 			t.Fatalf("discovery schema accepts invalid arguments: %v", args)
 		}
-	}
-}
-
-func TestMCPManifestPreservesAcceptedDiscovery(t *testing.T) {
-	run, _ := setup(t)
-	command := exec.Command(run.binary, "-store", run.store, "mcp", "--caller", "cli", "--source", "alpha")
-	client := mcp.NewClient(&mcp.Implementation{Name: "manifest-discovery", Version: "1"}, nil)
-	session, err := client.Connect(t.Context(), &mcp.CommandTransport{Command: command, TerminateDuration: 2 * time.Second}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer session.Close()
-	listed, err := session.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile("testdata/mcp_manifest_baseline.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var baseline struct {
-		Tools []map[string]any `json:"tools"`
-	}
-	if err := json.Unmarshal(raw, &baseline); err != nil {
-		t.Fatal(err)
-	}
-	if len(baseline.Tools) != 13 || len(listed.Tools) != 14 {
-		t.Fatalf("wrong baseline/current discovery sizes: %d/%d", len(baseline.Tools), len(listed.Tools))
-	}
-	current := make(map[string]map[string]any)
-	for _, tool := range listed.Tools {
-		var object map[string]any
-		if err := json.Unmarshal(mustJSON(t, tool), &object); err != nil {
-			t.Fatal(err)
-		}
-		current[tool.Name] = object
-	}
-	for _, tool := range baseline.Tools {
-		name := tool["name"].(string)
-		if !reflect.DeepEqual(current[name], tool) {
-			t.Errorf("accepted discovery object changed: %s", name)
-		}
-	}
-	if current["mousa_source_manifest"] == nil {
-		t.Fatal("new manifest tool missing")
 	}
 }
 

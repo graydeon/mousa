@@ -36,7 +36,6 @@ type mcpArguments struct {
 	TokenBudget        *mousa.TokenBudget
 	TokenDetails       bool
 	VectorImport       mousa.VectorImport
-	Associations       []mousa.AssociationDeclaration
 	Declaration        mousa.SupersessionDeclaration
 	Activation         mousa.SupersessionActivation
 	Classification     mousa.Classification
@@ -143,10 +142,10 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 		allowed = append(allowed, "activation")
 		required = append(required, "activation")
 	case "mousa_query":
-		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession", "associations")
+		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy", "supersession")
 		required = append(required, "query", "policy", "budget_bytes")
 	case "mousa_vector_query", "mousa_hybrid_query":
-		allowed = append(allowed, "space_id", "values", "budget_bytes", "packing_policy", "supersession", "associations")
+		allowed = append(allowed, "space_id", "values", "budget_bytes", "packing_policy", "supersession")
 		required = append(required, "space_id", "values", "budget_bytes")
 		if operation == "mousa_hybrid_query" {
 			allowed = append(allowed, "query", "policy")
@@ -196,12 +195,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			declaration = value
 		case "activation":
 			activation = value
-		case "associations":
-			declarations, err := mousa.DecodeAssociationDeclarations(value)
-			if err != nil {
-				return args, err
-			}
-			args.Associations = declarations
 		case "import":
 			input, err := mousa.DecodeVectorImport(value)
 			if err != nil {
@@ -411,34 +404,14 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 				"policy": stringEnum("original", "dedup"), "packing_policy": stringEnum("original", "exact-v1"),
 				"budget_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": mcpMaxBudgetBytes},
 				"supersession": map[string]any{"type": "boolean", "description": "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires declaration and activation administration for the same source through native commands or permitted MCP tools; omitted or false keeps the uncurated default."},
-				"associations": map[string]any{
-					"type": "object", "additionalProperties": false, "required": []string{"schema", "associations"},
-					"description": "Caller-declared same-source supporting context for selected primary evidence; byte or measured token packing, optionally with exact pinned supersession. Not a discovered relation, access grant or authenticated authorship. Token composition considers at most 100 total passages and 256 KiB accepted passage text. String limits are also enforced in UTF-8 bytes.",
-					"properties": map[string]any{
-						"schema": map[string]any{"const": mousa.AssociationDeclarationSchema},
-						"associations": map[string]any{
-							"type": "array", "minItems": 1, "maxItems": mousa.MaxAssociationDeclarations,
-							"items": map[string]any{
-								"type": "object", "additionalProperties": false,
-								"required": []string{"from_item", "to_item", "basis", "author"},
-								"properties": map[string]any{
-									"from_item": map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationItemBytes},
-									"to_item":   map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationItemBytes},
-									"basis":     map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationBasisBytes},
-									"author":    map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxAssociationAuthorBytes},
-								},
-							},
-						},
-					},
-				},
 			},
 		}},
 		{Name: "mousa_trail", Description: "Inspect a Source Trail under fresh authorization for its configured source. Returns filtered historical metadata, never evidence text. Denial releases no historical payload. An opted-in call also returns the supersession consultation the trail recorded.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "trail_id"}, "properties": map[string]any{
 				"source": source, "trail_id": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
-				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact primary withholding rows. Available for recorded supersession history, including byte-only lexical supporting context v12. Reports producing evidence, not today's activation projection; omitted or false hides it."},
+				"supersession":      map[string]any{"type": "boolean", "description": "Return the consultation the trail recorded: consulted state, nullable activation/declaration identities and exact primary withholding rows. Available for recorded supersession history. Reports producing evidence, not today's activation projection; omitted or false hides it."},
 				"retrieval_details": map[string]any{"type": "boolean", "description": "Return verified producing vector/hybrid identities, coverage and ranking facts when recorded. No search is rerun; historical completeness is not inferred from today's index. Omitted or false keeps the default inspection."},
-				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7, v8, v10 or declared-context v11. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
+				"token_details":     map[string]any{"type": "boolean", "description": "Return the verified accepted-candidate token selection recorded by v7, v8 or v10. Counts are producing observations; no tokenizer runs or recounts. Omitted or false hides token facts."},
 			},
 		}},
 	}
@@ -489,7 +462,6 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			continue
 		}
 		properties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
-		properties["associations"] = definitions[2].InputSchema.(map[string]any)["properties"].(map[string]any)["associations"]
 		properties["context_tokens"] = map[string]any{"type": "integer", "minimum": 1, "maximum": 524288, "description": "Opt into the exact returned context rendering token cap; requires an operator-configured offline tokenizer. Both byte and token constraints apply."}
 		for _, field := range []string{"window_tokens", "prompt_reserve_tokens", "output_reserve_tokens"} {
 			properties[field] = map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000000, "description": "Caller declaration requiring context_tokens; nonzero reservations require a positive window. Not proof of model-window safety."}

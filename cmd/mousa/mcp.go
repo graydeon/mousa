@@ -427,15 +427,15 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			var rendered string
 			if args.TokenBudget != nil {
 				var traced sqlite.TracedLexicalResult
-				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession, Associations: args.Associations})
+				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession})
 				if err == nil {
-					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced, args.Associations, args.Supersession)
+					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced, args.Supersession)
 					if err == nil {
 						result = mcpLexicalResult{evidence, &rendered, mousa.ReleasedTokenSelection(traced.Trail)}
 					}
 				}
 			} else {
-				evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
+				evidence, err = queryItemsForRequestWithSupersession(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, args.Supersession)
 				result = evidence
 			}
 			if err == nil {
@@ -449,21 +449,25 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var traced sqlite.TracedVectorResult
 			if args.TokenBudget != nil {
-				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession, Associations: args.Associations}
+				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter, Supersession: args.Supersession}
 				if operation == "mousa_vector_query" {
 					traced, err = a.store.EvaluateAndTraceTokenVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				} else {
 					traced, err = a.store.EvaluateAndTraceTokenHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
 				}
 			} else if operation == "mousa_vector_query" {
-				traced, err = a.store.EvaluateAndTraceAssociatedVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
+				if args.Supersession {
+					traced, err = a.store.EvaluateAndTraceSupersessionVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+				} else {
+					traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
+				}
+			} else if args.Supersession {
+				traced, err = a.store.EvaluateAndTraceSupersessionHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			} else {
-				traced, err = a.store.EvaluateAndTraceAssociatedHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, args.Associations, args.Supersession)
+				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			}
 			if err == nil {
-				projection := mcpRetrievalProjection(args.Source, traced)
-				projection.AssociatedEvidence, projection.AssociationOmissions, err = associatedEvidenceProjection(ctx, a.store, traced.Trail, traced.Associated)
-				result = projection
+				result = mcpRetrievalProjection(args.Source, traced)
 			}
 		}
 	case "mousa_trail":

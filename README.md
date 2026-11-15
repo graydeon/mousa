@@ -100,29 +100,10 @@ canonical v7/v8 producing facts remain intact for integrity checks.
 Token outcomes distinguish lifecycle-only rejection from an accepted candidate
 omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
 
-For caller-declared supporting notes, use native `query --associations FILE` or
-inline `associations` on lexical `mousa_query`. Both accept measured token budgets:
-only primary passages that survive both budgets trigger supporting context.
-The [runnable example](docs/USAGE.md#mcp-declared-supporting-context) checks a
-whole-context exact fit and omission one token below it, without displacing the primary.
-Canonical v11 validation checks aggregate byte admission before each addition,
-including omitted associated rows; oversized sizes cannot wrap the 256 KiB total.
-Byte-only MCP associations and token composition are available in source builds
-containing those capabilities. No tagged release is claimed.
-Declarations assert relationships and attribution, not semantic sufficiency or access.
-Byte-only lexical queries can combine associations and explicit supersession:
-the [complete example](docs/USAGE.md#supersession-safe-supporting-context) runs native
-directory/JSONL and configured MCP queries with verified v12 byte-mode history.
-Source builds also compose measured token budgets with associations and supersession
-as v13, including independent whole-render counting and retained-text recount in
-the example. This is not a tagged-release claim. Accepted source includes
-vector/hybrid declared support with v14 byte and v15 token history; see the
-[runnable retrieval workflow](docs/USAGE.md#mcp-vector-and-hybrid-example).
-
 ## What works today?
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
-checks, byte-budget packing, exact-content deduplication, declared associations and
+checks, byte-budget packing, exact-content deduplication and
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
 
 Source builds containing `manifest` can export and check a caller-owned
@@ -216,7 +197,6 @@ remain readable but cannot certify a comparison. See the
 | [Supersession contract](docs/SUPERSESSION_ENFORCEMENT.md) | Revision-pinned replacement and the implemented native opt-in enforcement boundary. |
 | [Classification example](examples/classifications.py) | Synthetic caller-reviewed assertions through native put/get; no automatic classification. |
 | [MCP classification example](examples/mcp_classifications.py) | Same-source attributed put/retry/get and coexisting asserted versions through MCP. |
-| [Supporting-context example](examples/association_supersession.py) | Native/MCP byte-only explicit replacement and caller-declared qualifications. |
 
 ## Contributing
 

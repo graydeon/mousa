@@ -35,8 +35,7 @@ token v10 with original ranking/coverage and survivor packing; omission/false
 preserves v5/v6 bytes or v7 tokens and response properties. Full-source vector
 admission precedes masking. Trail `supersession`, `retrieval_details` and
 `token_details` independently expose their respective verified recorded members
-under fresh authorization, without recounting. Accepted association composition
-uses v14/v15; the initial v9/v10 profiles remain association-free.
+under fresh authorization, without recounting.
 See [vector/hybrid usage](USAGE.md#vector-and-hybrid-supersession).
 
 ## Source-scoped administration
@@ -214,8 +213,7 @@ The client boundary of the implemented build, from the current source:
   [current usage](USAGE.md#local-mcp-usage); the original four-tool design is not
   the complete current discovery surface.
 - `(*mcpApplication).call` in `cmd/mousa/mcp.go` runs `mousa_query` through
-  `queryItemsForRequestWithSupersession` with the caller's boolean and a nil association
-  list, and inspects the trail through `Store.InspectSourceTrail` in both cases, clearing
+  `queryItemsForRequestWithSupersession` with the caller's boolean, and inspects the trail through `Store.InspectSourceTrail` in both cases, clearing
   `inspection.Historical.Supersession` only when the caller did not opt in.
 - `mcpCommand` opens the canonical store once, before the server accepts requests. No
   tool call opens, creates or migrates a store, so an MCP argument has no store-open
@@ -228,8 +226,7 @@ The native side already implements everything the opt-in needs:
   for an allow, build `mousa.source_trail.v4`, insert it, read it back canonically and
   clear withheld text in a copied candidate slice, all inside one writer transaction.
 - `queryItemsForRequestWithSupersession` (`cmd/mousa/query.go`) is the existing
-  CLI reuse point for that path, including the rejection of a supersession-plus-association
-  combination.
+  CLI reuse point for that path.
 - `readSupersessionConsultation` (`internal/sqlite/supersession_activation.go`) reads the
   verified current state and selected declaration through a caller-supplied handle, so no
   second transaction is opened.
@@ -353,7 +350,7 @@ curated" from "this store's recorded state is damaged" and fail closed on the la
 ## 3. One transaction, authorization and denial
 
 **Decision.** The committed MCP handler reuses `queryItemsForRequestWithSupersession`
-(`cmd/mousa/query.go`) with a nil association list and the caller's boolean. That call
+(`cmd/mousa/query.go`) with the caller's boolean. That call
 reaches `Store.EvaluateAndTraceSupersessionLexical` (`internal/sqlite/trail.go`), which
 delegates to the shared `traceLexical` body and performs every stage inside one
 `writeImmediate` writer transaction:
@@ -379,8 +376,7 @@ The MCP handler must not add an administrative read of its own before or after t
 
 **Unchanged semantics.** Exact predecessor-representation matching, successor currency
 that does not gate withholding, canonical candidate rank and size, both packing policies
-(`original` and `exact-v1`), the rejection of a supersession-plus-association
-combination, and fail-closed corruption handling are already implemented and are reused
+(`original` and `exact-v1`), and fail-closed corruption handling are already implemented and are reused
 as they are. This interface adds no ranking rule, no storage object and no new
 disposition value.
 
@@ -389,7 +385,7 @@ disposition value.
 **Decision.** Keep the `mousa.mcp_result.v1` envelope and declare the opt-in result
 field in the existing `mousa_query` output schema. The query result schema declares
 `supersession_excluded` unconditionally, exactly as it already declares the sibling
-optional counts `duplicate_omitted` and `association_omissions`; the field's presence in
+optional count `duplicate_omitted`; the field's presence in
 a response stays conditional on the caller opting in.
 
 **Reasons.** The envelope's own field set is unchanged, so its identifier still
@@ -595,10 +591,8 @@ accepted digests of the sync, status and query output schemas, so a shared decla
 cannot silently change them.
 
 A default JSONL query records v1 for `original` packing and v2 for `exact-v1`,
-both without a member. MCP query does not produce associations, but native
-`query --source alpha --associations FILE` can create v3 history for the same
-JSONL source, and MCP inspection can read it under either packing policy.
-Only a v4 record carries the member; the opt-in fabricates no member for v1–v3.
+both without a member. Only a v4 record carries the member; the opt-in
+fabricates no member for v1 or v2.
 
 **Inspection input and result** (documentation example; the field set is what the
 committed build returns and the identities are placeholders rather than captured
@@ -701,7 +695,7 @@ boundary and do not duplicate those tests.
 | Restart | Under unchanged index membership and allowing authorization, the recorded historical fields and supersession member are unchanged; the inspection authorization ID and fresh query request/decision/trail IDs vary and are validated separately | Covered by `TestMCPSupersessionQueryOptInRestartKeepsRecordedMember` |
 | Inspection opt-in property set | Omitted and explicit `false` keep the filtered inspection under both packing policies; `supersession: true` adds exactly the recorded `historical.supersession` member and no other property, and the returned member equals the producing record's own member as canonical JSON | Covered by `TestMCPSupersessionTrailOptInPreservesDefaultPropertySet` |
 | Recorded members | The recorded member is returned for an active declaration, a verified absence of history, a deactivation and an unconsulted denial, and the recorded identities, consultation flag, disposition rows and pins are asserted against the fixture | Covered by `TestMCPSupersessionTrailOptInRecordedMembers` |
-| Legacy record versions | v1 (`original` packing), v2 (`exact-v1`) and native-created same-source v3 association history keep their historical properties and producing identities under omitted/false/true; none gains a member | Covered by `TestMCPSupersessionTrailOptInLegacyVersions` and `TestMCPSupersessionTrailNativeAssociationHistory` |
+| Legacy record versions | v1 (`original` packing), v2 (`exact-v1`) history keeps their historical properties and producing identities under omitted/false/true; none gains a member | Covered by `TestMCPSupersessionTrailOptInLegacyVersions` |
 | Strict input errors | `null`, `"true"`, `1`, `0`, a duplicate key, an unknown key, non-object arguments and trailing data are rejected with `invalid_arguments` and no `result`, and each rejected call is bracketed against the stored trail, candidate, declaration, activation and decision rows; `mousa_sync` and `mousa_status` still reject the field | Covered by `TestMCPSupersessionTrailOptInInputBoundaries` |
 | Declined authorization and unknown trails | Denial succeeds with current reasons and no history, committing exactly its response-bound decision and necessary input children while existing rows remain unchanged; unknown/foreign errors roll back their attempted decision | Covered by `TestMCPSupersessionTrailOptInAuthorizationBoundaries` and `TestMCPSupersessionTrailDeniedAudit` |
 | Inspection after an activation change | A restart, a replacement activation and a deactivation after the trail was recorded do not change the returned member, and the fresh wrapper authorization identity is validated separately | Covered by `TestMCPSupersessionTrailOptInRestartAndActivationChange` |
@@ -754,7 +748,7 @@ record the following client-boundary evidence without importing product internal
 |---|---|
 | Build and discovery | Clean anonymous public product checkout; Go 1.27.1, `GOWORK=off`, `CGO_ENABLED=0`, `go build -trimpath`, binary SHA-256 and build receipt; MCP `2025-11-25` discovery with only the trail schemas extended from the query-only baseline |
 | Real requests and responses | Exact stdio frames, native commands, exits and notifications; generated frames bound to the frozen schedule with JSON types and recursive duplicate-key checks preserved |
-| Historical inspection | Both packing policies; v4 active, no-history, deactivated and recorded unconsulted-denial members; omitted/false filtering; later activation and content changes, restart; native-created v1–v3 including same-source v3 associations, without fabricating a member |
+| Historical inspection | Both packing policies; v4 active, no-history, deactivated and recorded unconsulted-denial members; omitted/false filtering; later activation and content changes, restart; native-created v1 and v2, without fabricating a member |
 | State and refusals | Full logical SQLite snapshots including committed WAL state; successful denial commits only response-bound authorization and necessary input children; erroneous reads commit nothing; already-open own/foreign orphan refusals stay masked `not_found`, distinct from fresh-open startup integrity refusal |
 | Controls | 17 rehashed negative mutations reject at named detectors; two ordinary controls pass; a separate actual extra-table-and-row write makes capture and replay fail at `orphan-deny-unknown-true:only-bound-authorization-write` |
 
@@ -816,8 +810,7 @@ Each slice is independently reviewable and changes no native code path.
   resource template call `queryItemsForRequest` with fixed options
   (`cmd/mousa/mcp_openai.go`) and stay unchanged.
 - MCP does not import directories; native directory queries support enforcement through
-  the CLI. Lexical association composition records v12 in byte mode or v13 with
-  measured tokens; accepted vector/hybrid composition records v14/v15. No transitive or automatic supersession,
+  the CLI. No transitive or automatic supersession,
   or change to ranking, authorization or item pointers is implemented.
 - No new envelope version or output field on an existing opt-out response. The
   administration change adds exactly three tools and preserves the eight earlier schemas.

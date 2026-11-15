@@ -69,7 +69,7 @@ func assertMCPTokenRendering(t *testing.T, result map[string]any) int {
 		t.Fatalf("whole-rendering count/digest/boundary: %v", result)
 	}
 	bytes := 0
-	for _, field := range []string{"evidence", "associated_evidence"} {
+	for _, field := range []string{"evidence"} {
 		rows, _ := result[field].([]any)
 		for _, raw := range rows {
 			passage := raw.(map[string]any)
@@ -273,9 +273,9 @@ func TestMCPTokenSkippedCandidatesAndAuthorization(t *testing.T) {
 func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 	startup := mcpTokenStartup(t)
 	for _, mode := range []string{"lexical", "vector", "hybrid"} {
-		for _, scenario := range []struct{ cancelled, supersession, associations bool }{{false, false, false}, {true, false, false}, {false, true, false}, {true, true, false}, {false, false, true}, {true, false, true}, {false, true, true}, {true, true, true}} {
+		for _, scenario := range []struct{ cancelled, supersession bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
 			cancelled, supersession := scenario.cancelled, scenario.supersession
-			t.Run(fmt.Sprintf("%s/cancelled=%v/supersession=%v/associations=%v", mode, cancelled, supersession, scenario.associations), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/cancelled=%v/supersession=%v", mode, cancelled, supersession), func(t *testing.T) {
 				run, _ := setup(t)
 				jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
 				if supersession {
@@ -289,10 +289,6 @@ func TestMCPTokenFailureAndCancellationReapWithoutProducingTrail(t *testing.T) {
 					tool = "mousa_" + mode + "_query"
 				}
 				args["context_tokens"], args["supersession"] = 256, supersession
-				if scenario.associations {
-					jsonlSync(t, run, "alpha", record("support", "Separate qualification."))
-					args["associations"] = mcpAssociationDocument(mcpAssociation("a", "support"))
-				}
 				input, err := json.Marshal(args)
 				if err != nil {
 					t.Fatal(err)

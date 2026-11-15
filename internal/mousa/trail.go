@@ -15,9 +15,7 @@ const (
 	ContextPacketSchemaV2 = "mousa.context_packet.v2"
 	SourceTrailSchema     = "mousa.source_trail.v1"
 	SourceTrailSchemaV2   = "mousa.source_trail.v2"
-	SourceTrailSchemaV3   = "mousa.source_trail.v3"
 	SourceTrailSchemaV4   = "mousa.source_trail.v4"
-	SourceTrailSchemaV12  = "mousa.source_trail.v12"
 	PackingOriginal       = "original"
 	PackingExactV1        = "exact-v1"
 )
@@ -25,7 +23,7 @@ const (
 // isSourceTrailSchema reports whether one schema literal is a supported Source Trail version.
 func isSourceTrailSchema(schema string) bool {
 	switch schema {
-	case SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV3, SourceTrailSchemaV4, SourceTrailSchemaV12:
+	case SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV4:
 		return true
 	}
 	return false
@@ -123,29 +121,24 @@ type TrailCandidate struct {
 
 // SourceTrail is one immutable record of how a context packet was produced: the enforced decision,
 // the search expression, the pack budget accounting, and every considered candidate with its
-// disposition and selection. Released text is never copied into the record. A v3 trail additionally
-// records the association stage: considered associated passages and the declared relationships that
-// released nothing. A v4 trail records the consulted supersession evidence instead: an opt-in trail
-// always carries one closed Supersession member, and it carries no associated passages.
-// A v12 trail composes that consultation with a byte-only association stage.
+// disposition and selection. Released text is never copied into the record. A v4 trail records the
+// consulted supersession evidence: an opt-in trail always carries one closed Supersession member.
 type SourceTrail struct {
-	Schema               string                 `json:"schema"`
-	ID                   SourceTrailID          `json:"id"`
-	RequestID            string                 `json:"request_id"`
-	DecisionID           string                 `json:"decision_id"`
-	Outcome              string                 `json:"outcome"`
-	Expression           string                 `json:"expression,omitempty"`
-	BudgetBytes          uint64                 `json:"budget_bytes"`
-	UsedBytes            uint64                 `json:"used_bytes"`
-	PacketID             string                 `json:"packet_id"`
-	Candidates           []TrailCandidate       `json:"candidates"`
-	PackingPolicy        string                 `json:"packing_policy,omitempty"`
-	Associated           []TrailAssociated      `json:"associated,omitempty"`
-	AssociationOmissions []AssociationOmission  `json:"association_omissions,omitempty"`
-	Supersession         *SupersessionSelection `json:"supersession,omitempty"`
-	Vector               *VectorSelection       `json:"vector,omitempty"`
-	Hybrid               *HybridSelection       `json:"hybrid,omitempty"`
-	Token                *TokenSelection        `json:"token,omitempty"`
+	Schema        string                 `json:"schema"`
+	ID            SourceTrailID          `json:"id"`
+	RequestID     string                 `json:"request_id"`
+	DecisionID    string                 `json:"decision_id"`
+	Outcome       string                 `json:"outcome"`
+	Expression    string                 `json:"expression,omitempty"`
+	BudgetBytes   uint64                 `json:"budget_bytes"`
+	UsedBytes     uint64                 `json:"used_bytes"`
+	PacketID      string                 `json:"packet_id"`
+	Candidates    []TrailCandidate       `json:"candidates"`
+	PackingPolicy string                 `json:"packing_policy,omitempty"`
+	Supersession  *SupersessionSelection `json:"supersession,omitempty"`
+	Vector        *VectorSelection       `json:"vector,omitempty"`
+	Hybrid        *HybridSelection       `json:"hybrid,omitempty"`
+	Token         *TokenSelection        `json:"token,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -297,10 +290,6 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 // the decision and the packet identity keep their existing construction, and a request that releases
 // the same selection keeps the packet identity a default query would produce.
 //
-// This constructor takes no association input, so an opted-in trail always records no associated
-// passages and no association omissions; rejecting that combination belongs to the retrieval caller
-// that would accept association declarations, which does not exist yet.
-//
 // Like NewSourceTrail it checks structure, accounting and identity only: it reads no store, so it
 // proves no stored existence, canonical ancestry, authorization or transaction-local current state,
 // and validation of a decoded v4 record stays structural for the same reason.
@@ -369,18 +358,10 @@ func NewSourceTrailWithSupersession(request PolicyEvaluationRequest, decision Po
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
-	if trail.Schema == SourceTrailSchemaV14 {
-		return trail.validateRetrievalAssociationTrail()
-	}
-	if trail.Schema == SourceTrailSchemaV12 {
-		if err := trail.validateAssociatedSupersessionProfile(); err != nil {
-			return err
-		}
-	}
 	if trail.Schema == SourceTrailSchemaV9 {
 		return trail.validateRetrievalSupersessionTrail()
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 || trail.Schema == SourceTrailSchemaV15 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
 		return trail.validateTokenTrail()
 	}
 	if trail.Token != nil {
@@ -401,7 +382,7 @@ func (trail SourceTrail) Validate() error {
 	if !isSourceTrailSchema(trail.Schema) {
 		return newValidationError("schema", ValidationCodeInvalidSchema, "unsupported source trail version", nil)
 	}
-	if trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV12 {
+	if trail.Schema == SourceTrailSchemaV4 {
 		if trail.Supersession == nil {
 			return newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
 		}
@@ -414,11 +395,6 @@ func (trail SourceTrail) Validate() error {
 	if err := trail.validatePacking(); err != nil {
 		return err
 	}
-	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 {
-		if err := trail.validateAssociated(); err != nil {
-			return err
-		}
-	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {
 		return prefixValidationError(err, "request_id")
 	}
@@ -428,7 +404,7 @@ func (trail SourceTrail) Validate() error {
 	if trail.Outcome != string(PolicyOutcomeAllow) && trail.Outcome != string(PolicyOutcomeDeny) {
 		return newValidationError("outcome", ValidationCodeInvalidValue, "must be allow or deny", nil)
 	}
-	if (trail.Schema == SourceTrailSchemaV4 || trail.Schema == SourceTrailSchemaV12) && trail.Supersession.Consulted != (trail.Outcome == string(PolicyOutcomeAllow)) {
+	if trail.Schema == SourceTrailSchemaV4 && trail.Supersession.Consulted != (trail.Outcome == string(PolicyOutcomeAllow)) {
 		// The flag is recorded, never inferred: an allow consulted supersession and a deny did not.
 		return newValidationError("supersession.consulted", ValidationCodeInvalidValue, "must be true exactly when the decision allowed the source", nil)
 	}
@@ -472,14 +448,6 @@ func (trail SourceTrail) Validate() error {
 			used += candidate.TextBytes
 		}
 	}
-	for _, row := range trail.Associated {
-		if row.Selected {
-			if row.TextBytes > trail.BudgetBytes-used {
-				return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "selected bytes exceed the budget")
-			}
-			used += row.TextBytes
-		}
-	}
 	if used != trail.UsedBytes {
 		return retrievalValidationError("used_bytes", ValidationCodeInvalidRange, "disagrees with the selected passages")
 	}
@@ -505,11 +473,8 @@ func (trail SourceTrail) Validate() error {
 }
 
 // packetIdentity re-derives the packet identity of a validated trail: the v1 domain for
-// v1/v2 records, and the v2 domain that also binds associated rows for v3.
+// v1/v2 records.
 func (trail SourceTrail) packetIdentity() (ContextPacketID, error) {
-	if trail.Schema == SourceTrailSchemaV3 || trail.Schema == SourceTrailSchemaV12 || trail.Schema == SourceTrailSchemaV14 {
-		return contextPacketIDV3(trail)
-	}
 	selected := make([]bool, len(trail.Candidates))
 	for index, candidate := range trail.Candidates {
 		selected[index] = candidate.Selected
@@ -523,13 +488,10 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema == SourceTrailSchemaV12 || trail.Schema == SourceTrailSchemaV14 || trail.Schema == SourceTrailSchemaV15 {
-		return vectorTrailIdentity(trail)
-	}
 	if trail.Schema == SourceTrailSchemaV9 {
 		return vectorTrailIdentity(trail)
 	}
-	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 || trail.Schema == SourceTrailSchemaV11 || trail.Schema == SourceTrailSchemaV13 {
+	if trail.Schema == SourceTrailSchemaV7 || trail.Schema == SourceTrailSchemaV8 || trail.Schema == SourceTrailSchemaV10 {
 		return vectorTrailIdentity(trail)
 	}
 	if trail.Schema == SourceTrailSchemaV6 {
@@ -598,37 +560,6 @@ func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
 		fields = append(fields, []byte("end"))
 		_ = index
 	}
-	if trail.Schema == SourceTrailSchemaV3 {
-		for _, row := range trail.Associated {
-			var bytes, selected [8]byte
-			binary.BigEndian.PutUint64(bytes[:], row.TextBytes)
-			if row.Selected {
-				selected[0] = 1
-			}
-			fields = append(fields,
-				[]byte("associated"),
-				row.SegmentID[:],
-				row.ContentSHA256[:],
-				bytes[:],
-				selected[:],
-				[]byte(row.Omission),
-				[]byte(row.DuplicateOf),
-				[]byte(row.FromItem),
-				[]byte(row.ToItem),
-				[]byte(row.Basis),
-				[]byte(row.Author),
-				[]byte("end"),
-			)
-		}
-		for _, omission := range trail.AssociationOmissions {
-			fields = append(fields,
-				[]byte("omission"),
-				[]byte(omission.FromItem),
-				[]byte(omission.ToItem),
-				[]byte(omission.Reason),
-			)
-		}
-	}
 	if trail.Schema == SourceTrailSchemaV4 {
 		if trail.Supersession == nil {
 			return SourceTrailID{}, newValidationError("supersession", ValidationCodeInvalidValue, "is required for source trail v4", nil)
@@ -689,11 +620,9 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
-		case SourceTrailSchemaV12, SourceTrailSchemaV13, SourceTrailSchemaV14, SourceTrailSchemaV15:
-			return decodeAssociatedSupersessionTrail(data)
 		case SourceTrailSchemaV9:
 			return decodeRetrievalSupersessionTrail(data)
-		case SourceTrailSchemaV7, SourceTrailSchemaV8, SourceTrailSchemaV10, SourceTrailSchemaV11:
+		case SourceTrailSchemaV7, SourceTrailSchemaV8, SourceTrailSchemaV10:
 			return decodeTokenSourceTrail(data)
 		case SourceTrailSchemaV6:
 			return decodeHybridSourceTrail(data)
@@ -712,25 +641,8 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		UsedBytes     uint64          `json:"used_bytes"`
 		PacketID      string          `json:"packet_id"`
 		PackingPolicy json.RawMessage `json:"packing_policy"`
-		Associated    []struct {
-			SegmentID     string          `json:"segment_id"`
-			ContentSHA256 string          `json:"content_sha256"`
-			TextBytes     uint64          `json:"text_bytes"`
-			Selected      bool            `json:"selected"`
-			Omission      json.RawMessage `json:"omission"`
-			DuplicateOf   json.RawMessage `json:"duplicate_of"`
-			FromItem      string          `json:"from_item"`
-			ToItem        string          `json:"to_item"`
-			Basis         string          `json:"basis"`
-			Author        string          `json:"author"`
-		} `json:"associated"`
-		AssociationOmissions []struct {
-			FromItem string `json:"from_item"`
-			ToItem   string `json:"to_item"`
-			Reason   string `json:"reason"`
-		} `json:"association_omissions"`
-		Supersession json.RawMessage `json:"supersession"`
-		Candidates   []struct {
+		Supersession  json.RawMessage `json:"supersession"`
+		Candidates    []struct {
 			SegmentID     string          `json:"segment_id"`
 			ContentSHA256 string          `json:"content_sha256"`
 			FinalRank     int             `json:"final_rank"`
@@ -760,15 +672,6 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 			return "", newValidationError(field, ValidationCodeInvalidValue, "must be a string", err)
 		}
 		return *value, nil
-	}
-	decodeAssociationField := func(field string, present bool) error {
-		if !present {
-			return nil
-		}
-		if wire.Schema != SourceTrailSchemaV3 {
-			return newValidationError(field, ValidationCodeInvalidSchema, "field requires source trail v3", nil)
-		}
-		return nil
 	}
 	packingPolicy, err := decodePackingField("packing_policy", wire.PackingPolicy)
 	if err != nil {
@@ -826,54 +729,6 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 		}
 		entry.Selected = candidate.Selected
 		trail.Candidates[index] = entry
-	}
-	if err := decodeAssociationField("associated", len(wire.Associated) > 0); err != nil {
-		return SourceTrail{}, err
-	}
-	if len(wire.Associated) > 0 {
-		trail.Associated = make([]TrailAssociated, len(wire.Associated))
-	}
-	for index, row := range wire.Associated {
-		field := "associated"
-		segmentID, err := ParseSegmentID(row.SegmentID)
-		if err != nil {
-			return SourceTrail{}, validationErrorForField(prefixValidationError(err, field), field)
-		}
-		content, err := ParseSHA256(row.ContentSHA256)
-		if err != nil {
-			return SourceTrail{}, validationErrorForField(prefixValidationError(err, field), field)
-		}
-		omission, err := decodePackingField(field+".omission", row.Omission)
-		if err != nil {
-			return SourceTrail{}, err
-		}
-		duplicateOf, err := decodePackingField(field+".duplicate_of", row.DuplicateOf)
-		if err != nil {
-			return SourceTrail{}, err
-		}
-		trail.Associated[index] = TrailAssociated{
-			SegmentID:     segmentID,
-			ContentSHA256: content,
-			TextBytes:     row.TextBytes,
-			Selected:      row.Selected,
-			Omission:      omission,
-			DuplicateOf:   duplicateOf,
-			FromItem:      row.FromItem,
-			ToItem:        row.ToItem,
-			Basis:         row.Basis,
-			Author:        row.Author,
-		}
-	}
-	if err := decodeAssociationField("association_omissions", len(wire.AssociationOmissions) > 0); err != nil {
-		return SourceTrail{}, err
-	}
-	if len(wire.AssociationOmissions) > 0 {
-		trail.AssociationOmissions = make([]AssociationOmission, len(wire.AssociationOmissions))
-	}
-	for index, omission := range wire.AssociationOmissions {
-		trail.AssociationOmissions[index] = AssociationOmission{
-			FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason,
-		}
 	}
 	if wire.Supersession != nil {
 		if wire.Schema != SourceTrailSchemaV4 {

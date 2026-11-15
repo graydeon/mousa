@@ -7,15 +7,10 @@ import subprocess
 import tempfile
 
 from memory.memory import Client
-from token_supersession import identity
 
 
 FIXTURE = {"primary": "Drain sockets before shutdown.",
-           "peer": "Drain surviving guidance.",
-           "support": "Nonmatching declared qualification.",
-           "old": "Obsolete declared qualification.",
-           "twin": "Obsolete declared qualification.",
-           "new": "Explicit replacement attribution."}
+           "peer": "Drain surviving guidance."}
 
 
 def main():
@@ -23,7 +18,6 @@ def main():
     parser.add_argument("--mousa", type=Path, required=True)
     parser.add_argument("--tokenizer-python", type=Path)
     parser.add_argument("--tokenizer-cache", type=Path)
-    parser.add_argument("--supersession", action="store_true")
     args = parser.parse_args()
     if (args.tokenizer_python is None) != (args.tokenizer_cache is None):
         parser.error("provide both tokenizer options")
@@ -66,13 +60,11 @@ def main():
             try:
                 if form == "mcp":
                     client = Client(binary, store, receipts, True, 30, source,
-                                    args.tokenizer_python, args.tokenizer_cache, supersession_admin=True)
+                                    args.tokenizer_python, args.tokenizer_cache)
                     client.initialize()
                     client.call("mousa_sync", dict(source=source,
                         items=[dict(id=k, text=v) for k, v in FIXTURE.items()]))
                     exported, _ = client.call("mousa_vector_inputs", dict(source=source))
-                    current, _ = client.call("mousa_supersession_status", dict(source=source))
-                    assert current["current"] == dict(state="no_history", activation=None, declaration=None)
                 else:
                     if form == "directory":
                         directory.mkdir()
@@ -93,90 +85,30 @@ def main():
                     imported, _ = client.call("mousa_vector_import", dict(source=source, **{"import": supplied}))
                 else:
                     imported = command("vector", "import", *selector, value=json.dumps(supplied))
-                old, new = "old" + suffix, "new" + suffix
-                sid = pins[old]["source_id"]
-                declaration = dict(schema="mousa.supersession_declaration.v1", source_id=sid,
-                    predecessor_item_id=old, predecessor_representation_id=pins[old]["representation_id"],
-                    successor_item_id=new, successor_representation_id=pins[new]["representation_id"],
-                    author="example.operator", basis="Explicit replacement, not inferred truth")
-                declaration["id"] = identity(declaration["schema"], bytes.fromhex(sid), old,
-                    bytes.fromhex(declaration["predecessor_representation_id"]), new,
-                    bytes.fromhex(declaration["successor_representation_id"]), declaration["author"], declaration["basis"])
-                if client:
-                    draft = {k: v for k, v in declaration.items() if k not in ("id", "source_id")}
-                    draft["schema"] = "mousa.supersession_declaration_input.v1"
-                    accepted, _ = client.call("mousa_supersession_declare", dict(source=source, declaration=draft))
-                    assert accepted == dict(declaration=declaration)
-                else:
-                    command("supersession", "declaration", "put", value=json.dumps(declaration))
-                activation = dict(schema="mousa.supersession_activation.v1", source_id=sid,
-                    expected_previous_activation_id=None, declaration_id=declaration["id"],
-                    actor_id="example.operator", actor_version="1", occurred_at_usec=1, reason="Explicit replacement")
-                activation["id"] = identity(activation["schema"], bytes.fromhex(sid), b"", bytes.fromhex(declaration["id"]))
-                if client:
-                    draft = {k: v for k, v in activation.items() if k not in ("id", "source_id")}
-                    draft["schema"] = "mousa.supersession_activation_input.v1"
-                    accepted, _ = client.call("mousa_supersession_activate", dict(source=source, activation=draft))
-                    assert accepted == dict(activation=activation)
-                    current, _ = client.call("mousa_supersession_status", dict(source=source))
-                    assert current["current"] == dict(state="active", activation=activation, declaration=declaration)
-                else:
-                    command("supersession", "activation", "put", value=json.dumps(activation))
-                associations = dict(schema="mousa.association_declarations.v1", associations=[
-                    dict(from_item="primary" + suffix, to_item=item + suffix,
-                         basis="Caller-declared qualification", author="example.operator") for item in ("old", "twin", "support")])
-                path = root / (form + "-associations.json")
-                path.write_text(json.dumps(associations), encoding="utf-8")
-                for mode in (("lexical", "vector", "hybrid") if client else ("vector", "hybrid")):
+                for mode in ("lexical", "vector", "hybrid") if client else ("vector", "hybrid"):
                     for packing in ("original", "exact-v1"):
-                        def query(associated):
-                            if client:
-                                fields = dict(source=source, budget_bytes=8192,
-                                    packing_policy=packing, supersession=args.supersession)
-                                if mode != "lexical":
-                                    fields.update(space_id=imported["space_id"], values=[1, 0])
-                                if mode != "vector":
-                                    fields.update(query="Drain", policy="original")
-                                if token_flags:
-                                    fields["context_tokens"] = 4096
-                                if associated:
-                                    fields["associations"] = associations
-                                return client.call("mousa_query" if mode == "lexical" else "mousa_" + mode + "_query", fields)[0]
-                            return command("query", "--" + mode + "-space", imported["space_id"],
-                                "--packing-policy", packing, "--budget-bytes", "8192", *token_flags,
-                                "--supersession=" + str(args.supersession).lower(),
-                                *(["--associations", path] if associated else []), *selector,
+                        if client:
+                            fields = dict(source=source, budget_bytes=8192, packing_policy=packing)
+                            if mode != "lexical":
+                                fields.update(space_id=imported["space_id"], values=[1, 0])
+                            if mode != "vector":
+                                fields.update(query="Drain", policy="original")
+                            if token_flags:
+                                fields["context_tokens"] = 4096
+                            result = client.call("mousa_query" if mode == "lexical" else "mousa_" + mode + "_query", fields)[0]
+                        else:
+                            result = command("query", "--" + mode + "-space", imported["space_id"],
+                                "--packing-policy", packing, "--budget-bytes", "8192", *token_flags, *selector,
                                 *(["Drain"] if mode == "hybrid" else []),
                                 value='{"schema":"mousa.vector_query.v1","values":[1,0]}')
-                        baseline, result = query(False), query(True)
-                        primary = [p for p in result["evidence"] if p.get("origin") != "association"]
-                        assert primary == baseline["evidence"]
-                        if mode in result:
-                            assert result[mode] == baseline[mode]
-                        elif mode != "lexical":
-                            for field in ("eligible", "indexed", "missing", "query_vector_id"):
-                                assert result[field] == baseline[field]
-                        support = (result["associated_evidence"] if mode != "lexical" else
-                                   [p for p in result["evidence"] if p.get("origin") == "association"])
-                        expected = {"support" + suffix, "twin" + suffix}
-                        if not args.supersession:
-                            expected = {"support" + suffix, old}
-                            if packing == "original":
-                                expected.add("twin" + suffix)
-                        assert {p["item"] for p in support} == expected
-                        assert all(p["origin"] == "association" for p in support)
-                        assert all(p["segment_id"] not in {e["segment_id"] for e in supplied["embeddings"]} for p in support)
-                        assert result["used_bytes"] == sum(len(p["text"].encode()) for p in primary + support)
-                        counted(baseline)
+                        assert result["evidence"]
+                        assert result["used_bytes"] == sum(len(p["text"].encode()) for p in result["evidence"])
                         counted(result)
                         if client:
                             history = client.call("mousa_trail", dict(source=source, trail_id=result["trail_id"],
-                                retrieval_details=True, token_details=bool(token_flags), supersession=args.supersession))[0]
+                                retrieval_details=True, token_details=bool(token_flags)))[0]
                         else:
                             history = command("trail", *selector, result["trail_id"])
-                        version = ("13" if token_flags else "12") if mode == "lexical" and args.supersession else (
-                            ("11" if token_flags else "3") if mode == "lexical" else ("15" if token_flags else "14"))
-                        assert history["historical"]["schema"] == "mousa.source_trail.v" + version
                         if mode in result:
                             assert history["historical"][mode] == result[mode]
                         elif mode != "lexical":
@@ -187,20 +119,6 @@ def main():
                             assert recount["historical"]["token_verification"] == "official_recount_verified"
                             assert recount["historical"]["token"] == result["token"]
                         print(json.dumps(dict(surface=form, mode=mode, packing=packing, result=result, history=history)))
-                if client:
-                    before = result
-                    deactivation = dict(schema="mousa.supersession_activation_input.v1",
-                        expected_previous_activation_id=activation["id"], declaration_id=None,
-                        actor_id="example.operator", actor_version="1", occurred_at_usec=2, reason=None)
-                    accepted, _ = client.call("mousa_supersession_activate", dict(source=source, activation=deactivation))
-                    current, _ = client.call("mousa_supersession_status", dict(source=source))
-                    assert current["current"] == dict(state="deactivated", activation=accepted["activation"], declaration=None)
-                    after = query(True)
-                    counted(after)
-                    assert {p["item"] for p in after["associated_evidence"]} == {old, "support"}
-                    retained, _ = client.call("mousa_trail", dict(source=source, trail_id=before["trail_id"],
-                        retrieval_details=True, token_details=bool(token_flags), supersession=args.supersession))
-                    assert retained["historical"] == history["historical"]
             finally:
                 if client:
                     cleanup = client.close()

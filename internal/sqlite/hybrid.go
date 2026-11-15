@@ -15,19 +15,16 @@ import (
 // vector in one source/space. Authorization, both branches, packing and readback
 // share the immediate writer snapshot; a denied request enumerates neither branch.
 func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, false, nil)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, false)
 }
 
 // EvaluateAndTraceSupersessionHybrid withholds exact predecessor pins after fusion
 // without changing branch ranks, coverage or the full source admission limits.
 func (store *Store) EvaluateAndTraceSupersessionHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, true, nil)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil, true)
 }
 
-func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool, declarations []mousa.AssociationDeclaration) (TracedVectorResult, error) {
-	if err := validateRetrievalDeclarations(declarations); err != nil {
-		return TracedVectorResult{}, err
-	}
+func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery, supersession bool) (TracedVectorResult, error) {
 	if err := store.requireWritable("query hybrid"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -184,7 +181,7 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build hybrid trail", err)
 		}
-		trail, err = packRetrievalAssociations(ctx, conn, request.SourceID, trail, candidates, passages, declarations, consultation.declaration, token, &result)
+		trail, err = packRetrievalTokens(trail, request.SourceID, candidates, token, &result)
 		if err != nil {
 			return err
 		}

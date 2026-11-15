@@ -146,67 +146,6 @@ func TestMCPSupersessionTrailDeniedAudit(t *testing.T) {
 	client.close()
 }
 
-func TestMCPSupersessionTrailNativeAssociationHistory(t *testing.T) {
-	for _, packing := range []string{mousa.PackingOriginal, mousa.PackingExactV1} {
-		t.Run(packing, func(t *testing.T) {
-			run, root := setup(t)
-			jsonlSync(t, run, "alpha", record("release", "Announce the release tag.")+"\n"+record("freeze", "Keep rollback open one day."))
-			declarations := writeDeclarationFile(t, root, `{"schema":"mousa.association_declarations.v1","associations":[{"from_item":"release","to_item":"freeze","basis":"tag caveat","author":"example.operations"}]}`)
-			_, query := run.run(false, "query", "--source", "alpha", "--associations", declarations, "--packing-policy", packing, "--budget-bytes", "8192", "announce")
-			trailID := query["trail_id"].(string)
-			id := requireTrailID(t, trailID)
-			if schema := mcpRecordedTrailMember(t, run.store, id, "schema"); schema != mousa.SourceTrailSchemaV3 {
-				t.Fatalf("native association query produced %v", schema)
-			}
-			associated := mcpRecordedTrailMember(t, run.store, id, "associated").([]any)
-			if len(associated) != 1 {
-				t.Fatalf("native fixture must record its declared caveat: %v", associated)
-			}
-			expected := make(map[string]any)
-			for key, value := range associated[0].(map[string]any) {
-				expected[key] = value
-			}
-			expected["indexed_now"] = true
-			if expected["from_item"] != "release" || expected["to_item"] != "freeze" || expected["author"] != "example.operations" || expected["basis"] != "tag caveat" || expected["selected"] != true {
-				t.Fatalf("wrong native association: %v", expected)
-			}
-			client := startMCPClient(t, run, "cli", false)
-			var baseline map[string]any
-			for _, mode := range []any{nil, false, true} {
-				args := map[string]any{"source": "alpha", "trail_id": trailID}
-				if mode != nil {
-					args["supersession"] = mode
-				}
-				before := inspectionRows(t, run.store, nil)
-				result := client.call("mousa_trail", args, "")
-				requireInspectionAudit(t, run, before, result, "alpha", "allow")
-				history := result["historical"].(map[string]any)
-				if history["schema"] != mousa.SourceTrailSchemaV3 || history["packing_policy"] != packing || history["id"] != trailID {
-					t.Fatalf("inspection lost native record identity: %v", history)
-				}
-				for _, key := range []string{"request_id", "decision_id", "packet_id"} {
-					if history[key] != query[key] {
-						t.Fatalf("%s differs from producing query: %v versus %v", key, history[key], query[key])
-					}
-				}
-				if _, present := history["supersession"]; present {
-					t.Fatal("inspection fabricated a v3 supersession member")
-				}
-				if mcpCanonicalJSON(t, history["associated"]) != mcpCanonicalJSON(t, []any{expected}) {
-					t.Fatalf("association projection differs from native record: %v", history["associated"])
-				}
-				stable := mcpStableTrailValues(t, result)
-				if baseline == nil {
-					baseline = stable
-				} else if !reflect.DeepEqual(baseline, stable) {
-					t.Fatalf("inspection input changed v3 properties or values: %v versus %v", baseline, stable)
-				}
-			}
-			client.close()
-		})
-	}
-}
-
 func TestMCPSupersessionTrailOrphanSourceMasking(t *testing.T) {
 	for _, deny := range []bool{false, true} {
 		name := "allow"

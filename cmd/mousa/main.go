@@ -138,21 +138,12 @@ query options (before positional arguments):
   --context-window <W>       optional caller-declared window, at most 1000000000
   --prompt-reserve <P>       caller-declared prompt/tool overhead; requires a window
   --output-reserve <O>       caller-declared output tokens; requires a window
-                            supports declared associations in every retrieval mode;
                             all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
                             cannot combine with an explicit policy flag
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
-                            supports --policy and --associations; no vector-space flag
-  --supersession            withhold the exact active predecessor revision (directory or --source);
-                            supports --associations with byte or token budgets
-  --associations <file>      opt-in declared-association JSON file
-                            (schema mousa.association_declarations.v1); honors author-declared
-                            item relationships within the queried source; depth 1, at most 4
-                            applied targets; primary evidence has priority in both budgets
-                            byte-only: at most 256 target passages considered
-                            with tokens: at most 100 total rows / 256 KiB accepted passage text
-                            supporting text keeps its own identity and declaring attribution
+                            supports --policy; no vector-space flag
+  --supersession            withhold the exact active predecessor revision (directory or --source)
 
 trail options:
   --verify-tokens            explicitly recount retained token-aware context with the
@@ -246,7 +237,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	policy := flags.String("policy", "original", "query-term policy: original or dedup")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
-	associations := flags.String("associations", "", "optional declared-association JSON file; opt-in associated context")
 	supersession := flags.Bool("supersession", false, "opt-in exact pinned supersession")
 	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
 	hybridSpace := flags.String("hybrid-space", "", "RRF lexical/vector space identity; query text argument and vector JSON on stdin")
@@ -271,22 +261,17 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			hybridMode = true
 		}
 	})
-	tokenMode, tokenSpecific, tokenIncompatible := false, false, false
+	tokenMode, tokenSpecific := false, false
 	flags.Visit(func(option *flag.Flag) {
 		switch option.Name {
 		case "context-tokens":
 			tokenMode = true
 		case "tokenizer-python", "tokenizer-cache", "context-window", "prompt-reserve", "output-reserve":
 			tokenSpecific = true
-		case "associations":
-			tokenIncompatible = true
 		}
 	})
 	if tokenSpecific && !tokenMode {
 		return usageError{"tokenizer options require --context-tokens"}
-	}
-	if tokenIncompatible && *associations == "" && (*supersession || vectorMode || hybridMode) {
-		return usageError{"associations requires a declaration file"}
 	}
 	if tokenMode {
 		if vectorMode && hybridMode {
@@ -307,24 +292,13 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 				return usageError{"vector mode cannot use an explicit policy"}
 			}
 		}
-		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession, *associations)
-	}
-	var declarations []mousa.AssociationDeclaration
-	if *associations != "" {
-		raw, err := os.ReadFile(*associations)
-		if err != nil {
-			return err
-		}
-		declarations, err = mousa.DecodeAssociationDeclarations(raw)
-		if err != nil {
-			return err
-		}
+		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache, *supersession)
 	}
 	if hybridMode {
 		if vectorMode {
 			return usageError{"hybrid mode cannot be combined with vector-space"}
 		}
-		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession, declarations)
+		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing, *supersession)
 	}
 	if vectorMode {
 		incompatible := false
@@ -337,7 +311,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		if incompatible {
 			return usageError{"vector mode cannot be combined with an explicit policy"}
 		}
-		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession, declarations)
+		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing, *supersession)
 	}
 	if *policy != "original" && *policy != "dedup" {
 		return usageError{"query policy must be original or dedup"}
@@ -371,7 +345,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			return usageError{"query expression exceeds byte limit"}
 		}
 	}
-	return runQueryWithSupersession(ctx, storePath, source, label, query, *policy, *budget, *packing, declarations, *supersession)
+	return runQueryWithSupersession(ctx, storePath, source, label, query, *policy, *budget, *packing, *supersession)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -682,51 +656,32 @@ type evidenceResult struct {
 	PackingPolicy        string                       `json:"packing_policy,omitempty"`
 	UsedBytes            uint64                       `json:"used_bytes"`
 	BudgetBytes          uint64                       `json:"budget_bytes"`
-	AssociationOmissions []associationOmission        `json:"association_omissions,omitempty"`
 	Evidence             []evidenceHit                `json:"evidence"`
 	LatencyMicros        int64                        `json:"latency_micros"`
 }
 
 type evidenceHit struct {
-	Item                 string             `json:"item"`
-	SegmentID            string             `json:"segment_id"`
-	ContentSHA256        string             `json:"content_sha256"`
-	RepresentationID     string             `json:"representation_id"`
-	RepresentationSHA256 string             `json:"representation_sha256"`
-	ByteStart            uint64             `json:"byte_start"`
-	ByteEnd              uint64             `json:"byte_end"`
-	SegmentPolicy        string             `json:"segment_policy"`
-	Rank                 int                `json:"rank,omitempty"`
-	Score                float64            `json:"bm25_score,omitempty"`
-	ByteLength           int                `json:"byte_length"`
-	Text                 string             `json:"text"`
-	Origin               string             `json:"origin,omitempty"`
-	Association          *associationReason `json:"association,omitempty"`
-}
-
-// associationReason carries the declaration that included an associated passage: the declaring
-// item, the target, and the author-attributed basis. Lexical evidence omits it.
-type associationReason struct {
-	FromItem string `json:"from_item"`
-	ToItem   string `json:"to_item"`
-	Basis    string `json:"basis"`
-	Author   string `json:"author"`
-}
-
-// associationOmission reports one declared relationship or passage that released nothing, and why.
-type associationOmission struct {
-	FromItem  string `json:"from_item"`
-	ToItem    string `json:"to_item"`
-	Reason    string `json:"reason"`
-	SegmentID string `json:"segment_id,omitempty"`
+	Item                 string  `json:"item"`
+	SegmentID            string  `json:"segment_id"`
+	ContentSHA256        string  `json:"content_sha256"`
+	RepresentationID     string  `json:"representation_id"`
+	RepresentationSHA256 string  `json:"representation_sha256"`
+	ByteStart            uint64  `json:"byte_start"`
+	ByteEnd              uint64  `json:"byte_end"`
+	SegmentPolicy        string  `json:"segment_policy"`
+	Rank                 int     `json:"rank,omitempty"`
+	Score                float64 `json:"bm25_score,omitempty"`
+	ByteLength           int     `json:"byte_length"`
+	Text                 string  `json:"text"`
+	Origin               string  `json:"origin,omitempty"`
 }
 
 // runQuery runs one authorized query against one resolved source.
-func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) error {
-	return runQueryWithSupersession(ctx, storePath, source, label, query, policy, budgetBytes, packingPolicy, declarations, false)
+func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string) error {
+	return runQueryWithSupersession(ctx, storePath, source, label, query, policy, budgetBytes, packingPolicy, false)
 }
 
-func runQueryWithSupersession(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration, supersession bool) error {
+func runQueryWithSupersession(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string, supersession bool) error {
 	started := time.Now()
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
@@ -737,7 +692,7 @@ func runQueryWithSupersession(ctx context.Context, storePath string, source mous
 	if err != nil {
 		return err
 	}
-	result, err := queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, declarations, supersession)
+	result, err := queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, supersession)
 	if err != nil {
 		return err
 	}

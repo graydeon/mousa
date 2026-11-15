@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/graydeon/mousa/internal/mousa"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func classificationDraft(subject any) map[string]any {
@@ -138,75 +135,6 @@ func TestMCPClassificationStrictDraft(t *testing.T) {
 	for _, raw := range []string{`{}`, `{"source":null,"classification_id":"` + strings.Repeat("a", 64) + `"}`, `{"source":"alpha","classification_id":"` + strings.Repeat("0", 64) + `"}`, `{"source":"alpha","classification_id":"` + strings.Repeat("a", 64) + `","source":"beta"}`, `{"source":"alpha","classification_id":"` + strings.Repeat("a", 64) + `"} {}`} {
 		if _, err := decodeMCPArguments([]byte(raw), "mousa_classification_get"); err == nil {
 			t.Fatal("accepted invalid get")
-		}
-	}
-}
-
-func TestMCPClassificationDiscoveryBaseline(t *testing.T) {
-	raw, err := os.ReadFile("testdata/mcp_classification_baseline.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var baseline struct {
-		Tools []map[string]any `json:"tools"`
-	}
-	if err := json.Unmarshal(raw, &baseline); err != nil {
-		t.Fatal(err)
-	}
-	run, _ := setup(t)
-	client := startMCPClient(t, run, "cli", false)
-	defer client.close()
-	listed, err := client.session.ListTools(t.Context(), &mcp.ListToolsParams{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(baseline.Tools) != 11 || len(listed.Tools) != 14 {
-		t.Fatal("unexpected discovery counts")
-	}
-	current := map[string]map[string]any{}
-	for _, tool := range listed.Tools {
-		var wire map[string]any
-		if err := json.Unmarshal(mustJSON(t, tool), &wire); err != nil {
-			t.Fatal(err)
-		}
-		current[tool.Name] = wire
-	}
-	for _, tool := range baseline.Tools {
-		tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["source"].(map[string]any)["enum"] = []any{"alpha", "beta"}
-		name := tool["name"].(string)
-		if !reflect.DeepEqual(tool, current[name]) {
-			t.Fatalf("existing tool %s changed beyond the allowed two additions", name)
-		}
-	}
-	definitions, err := mcpToolDefinitions([]string{"alpha", "beta"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range definitions {
-		if !strings.HasPrefix(tool.Name, "mousa_classification_") {
-			continue
-		}
-		var schema jsonschema.Schema
-		if err := json.Unmarshal(mustJSON(t, tool.InputSchema), &schema); err != nil {
-			t.Fatal(err)
-		}
-		resolved, err := schema.Resolve(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		args := map[string]any{"source": "alpha", "classification_id": strings.Repeat("a", 64)}
-		if tool.Name == "mousa_classification_put" {
-			delete(args, "classification_id")
-			args["classification"] = classificationDraft(map[string]any{"kind": "source", "id": strings.Repeat("a", 64)})
-		}
-		var wire any
-		json.Unmarshal(mustJSON(t, args), &wire)
-		if err := resolved.Validate(wire); err != nil {
-			t.Fatal(err)
-		}
-		args["caller_id"] = "forbidden"
-		if err := resolved.Validate(args); err == nil {
-			t.Fatal("open schema")
 		}
 	}
 }

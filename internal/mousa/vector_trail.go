@@ -88,7 +88,7 @@ func vectorTrailIdentity(trail SourceTrail) (SourceTrailID, error) {
 
 func (trail SourceTrail) validateVectorTrail() error {
 	invalid := func() error { return errors.New("invalid v5 vector trail bindings, coverage or order") }
-	if (trail.Schema != SourceTrailSchemaV5 && trail.Schema != SourceTrailSchemaV9) || trail.Expression != "" || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 || trail.Vector == nil || trail.Hybrid != nil {
+	if (trail.Schema != SourceTrailSchemaV5 && trail.Schema != SourceTrailSchemaV9) || trail.Expression != "" || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) || trail.Vector == nil || trail.Hybrid != nil {
 		return invalid()
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {
@@ -164,7 +164,7 @@ func (trail SourceTrail) validateVectorTrail() error {
 }
 
 func decodeVectorSourceTrail(data []byte) (SourceTrail, error) {
-	// This closed version has no lexical expression, associations or supersession.
+	// This closed version has no lexical expression or supersession.
 	var wire struct {
 		Schema        string           `json:"schema"`
 		ID            SourceTrailID    `json:"id"`

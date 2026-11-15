@@ -13,21 +13,19 @@ import (
 
 // queryItems uses the canonical evaluation, retrieval, packing, and tracing
 // transaction. Only selected, accepted text is released from that snapshot.
-// Declarations opt the caller into associated context: without them the
-// retrieval is the established unassociated path.
-func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) (*evidenceResult, error) {
+func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
 	request, err := newRetrievalRequest(source.ID)
 	if err != nil {
 		return nil, err
 	}
-	return queryItemsForRequest(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, declarations)
+	return queryItemsForRequest(ctx, store, source, request, query, policy, budgetBytes, packingPolicy)
 }
 
-func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration) (*evidenceResult, error) {
-	return queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, declarations, false)
+func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
+	return queryItemsForRequestWithSupersession(ctx, store, source, request, query, policy, budgetBytes, packingPolicy, false)
 }
 
-func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, declarations []mousa.AssociationDeclaration, supersession bool) (*evidenceResult, error) {
+func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string, supersession bool) (*evidenceResult, error) {
 	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
 	if err != nil {
 		return nil, err
@@ -42,17 +40,17 @@ func queryItemsForRequestWithSupersession(ctx context.Context, store *sqlite.Sto
 	expression := strings.Join(terms, " OR ")
 	var traced sqlite.TracedLexicalResult
 	if supersession {
-		traced, err = store.EvaluateAndTraceAssociatedSupersessionLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
+		traced, err = store.EvaluateAndTraceSupersessionLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
 	} else {
-		traced, err = store.EvaluateAndTraceAssociatedLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy, declarations)
+		traced, err = store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return lexicalEvidenceProjection(ctx, store, source, request, expression, policy, packingPolicy, traced, declarations, supersession)
+	return lexicalEvidenceProjection(ctx, store, source, request, expression, policy, packingPolicy, traced, supersession)
 }
 
-func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, expression, policy, packingPolicy string, traced sqlite.TracedLexicalResult, declarations []mousa.AssociationDeclaration, supersession bool) (*evidenceResult, error) {
+func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, expression, policy, packingPolicy string, traced sqlite.TracedLexicalResult, supersession bool) (*evidenceResult, error) {
 	result := &evidenceResult{
 		RequestID: request.ID.String(), DecisionID: traced.Decision.ID.String(),
 		DecisionOutcome: string(traced.Decision.Outcome), DecisionReasons: traced.Decision.ReasonCodes,
@@ -135,14 +133,6 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 			Origin: "lexical",
 		})
 	}
-	if declarations != nil {
-		evidence, omissions, err := associatedEvidenceProjection(ctx, store, traced.Trail, traced.Associated)
-		if err != nil {
-			return nil, err
-		}
-		result.Evidence = append(result.Evidence, evidence...)
-		result.AssociationOmissions = omissions
-	}
 	switch {
 	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:
 		result.Outcome = "policy_excluded"
@@ -161,55 +151,6 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 		result.Outcome = "no_matches"
 	}
 	return result, nil
-}
-
-func associatedEvidenceProjection(ctx context.Context, store *sqlite.Store, trail mousa.SourceTrail, passages []mousa.AssociatedPassage) ([]evidenceHit, []associationOmission, error) {
-	var evidence []evidenceHit
-	var omissions []associationOmission
-	for index, row := range trail.Associated {
-		if row.Selected {
-			passage := passages[index]
-			segment := passage.Segment
-			representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
-			if err != nil {
-				return nil, nil, err
-			}
-			if representation.ProcessorID != mousa.UTF8TextProcessorID {
-				return nil, nil, fmt.Errorf("selected associated evidence is not normalized UTF-8 text")
-			}
-			policy, err := mousa.TextSegmentationPolicy(representation)
-			if err != nil {
-				return nil, nil, err
-			}
-			if err := segment.ValidateAgainst(representation); err != nil {
-				return nil, nil, err
-			}
-			byteRange, ok := segment.Selector.TextByteRange()
-			if !ok || byteRange.End-byteRange.Start != uint64(len(passage.Text)) {
-				return nil, nil, fmt.Errorf("selected associated range disagrees with released text")
-			}
-			evidence = append(evidence, evidenceHit{
-				Item: passage.Item, SegmentID: segment.ID.String(),
-				RepresentationID:     segment.RepresentationID.String(),
-				RepresentationSHA256: representation.ContentSHA256.String(),
-				ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: policy,
-				ContentSHA256: segment.ContentSHA256.String(), ByteLength: len(passage.Text),
-				Text: passage.Text, Origin: "association",
-				Association: &associationReason{FromItem: row.FromItem, ToItem: row.ToItem, Basis: row.Basis, Author: row.Author},
-			})
-			continue
-		}
-		switch row.Omission {
-		case "budget", "duplicate", "bytes", "tokens", "rendered_bytes", string(mousa.SupersessionSuperseded):
-			omissions = append(omissions, associationOmission{
-				FromItem: row.FromItem, ToItem: row.ToItem, Reason: row.Omission, SegmentID: row.SegmentID.String(),
-			})
-		}
-	}
-	for _, omission := range trail.AssociationOmissions {
-		omissions = append(omissions, associationOmission{FromItem: omission.FromItem, ToItem: omission.ToItem, Reason: omission.Reason})
-	}
-	return evidence, omissions, nil
 }
 
 const queryCandidateLimit = 100

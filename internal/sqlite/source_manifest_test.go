@@ -431,19 +431,23 @@ func TestSourceManifestExcludesAllowPolicyReplacement(t *testing.T) {
 	}
 }
 
-func TestSourceManifestExcludesAssociationsAndSupersession(t *testing.T) {
+func TestSourceManifestExcludesSupersession(t *testing.T) {
 	store := openLexicalStore(t)
 	defer store.Close()
-	sourceID, from, to := seedAssociatedItems(t, store)
+	seedEvaluationFixture(t, store)
+	sequence := uint64(1)
+	batch := testPushBatch(t, "operations", &sequence)
+	if err := store.ApplyIngest(t.Context(), batch); err != nil {
+		t.Fatal(err)
+	}
+	sourceID, from, to := batch.Source.ID, "rollback.md", "drain.md"
+	seedLocalItem(t, store, batch.Source, from, "Rolling restart\n\nPerform the rolling restart one server at a time.\n")
+	seedLocalItem(t, store, batch.Source, to, "Shutdown caveat\n\nDrain client connections before each server stops.\n")
 	source, err := store.GetSource(t.Context(), sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := inspectManifest(t, store, source, "before-metadata", nil)
-	traced := associateQuery(t, store, sourceID, "manifest-association", "restart", 1<<20, mousa.PackingOriginal, []mousa.AssociationDeclaration{drainDeclaration()})
-	if traced.Trail.Schema != mousa.SourceTrailSchemaV3 || len(traced.Trail.Associated) == 0 {
-		t.Fatal("fixture did not record an association")
-	}
 	predecessor, err := store.GetLocalItem(t.Context(), sourceID, from)
 	if err != nil {
 		t.Fatal(err)
@@ -462,6 +466,6 @@ func TestSourceManifestExcludesAssociationsAndSupersession(t *testing.T) {
 	}
 	after := inspectManifest(t, store, source, "after-metadata", &before.Manifest.ID)
 	if !*after.Matches {
-		t.Fatal("association or supersession metadata changed content identity")
+		t.Fatal("supersession metadata changed content identity")
 	}
 }

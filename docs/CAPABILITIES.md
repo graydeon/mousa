@@ -31,7 +31,6 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Source lifecycle and retrieval policy decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
 | Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
-| Declared associated context | Source builds | Native directory/JSONL `query --associations <file>`; inline MCP `associations`; lexical and vector/hybrid byte/token modes with optional supersession | Same-source authorization, selected-primary trigger, primary priority, bounded consideration, omissions; lexical v3/v11/v12/v13 and retrieval v14/v15 history | [Runnable retrieval example](../examples/mcp_retrieval.py); synthetic protocol/arithmetic only, not general retrieval quality |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Attributed classification assertions | Yes | Native `classification put`, `classification get <id>` | Strict draft input, all five typed subject forms, canonical identity/storage, exact retry, ordered basis, transactional parents/rollback, immutable earlier reads, native revision pins and damage refusal | Synthetic [runnable example](USAGE.md#native-classification-administration); not automatic classification, factual verification or classification-based authorization |
@@ -287,7 +286,7 @@ queries. Its closed `vector` member binds the descriptor, space/query-vector
 identities, query values, observed eligible/indexed counts and every ranked
 embedding/source/segment/representation/content pin and cosine score. The usual
 candidate rows bind rank, size, selected flags and packing omissions; v5 has no
-lexical expression, associations or supersession member. Packet v1 identities
+lexical expression or supersession member. Packet v1 identities
 continue to bind the released selection rather than retrieval mode. Native `trail`
 reauthorizes before releasing v5 metadata and rechecks scores against recorded
 immutable embeddings, never today's current pointers. Resync/deletion/withdrawal
@@ -441,9 +440,7 @@ selected bytes. MCP `supersession`, `retrieval_details` and `token_details` rema
 independent history opt-ins under fresh authorization, with no recount.
 Ordinary v7, lexical v8 and byte-only v9 construction and all valid v1–v9 bytes
 and identities remain unchanged. Native explicit false vector/hybrid token flags,
-previously rejected, now behave like omission and retain v7. Accepted source
-also supports declared support as v14/v15; see [declared associated context](#declared-associated-context).
-See the [runnable synthetic example](USAGE.md#vector-and-hybrid-supersession).
+previously rejected, now behave like omission and retain v7. See the [runnable synthetic example](USAGE.md#vector-and-hybrid-supersession).
 
 
 ## Supersession core boundary
@@ -470,7 +467,6 @@ implements the same explicit opt-in as an optional `supersession` boolean, and i
 tool returns the consultation a `mousa.source_trail.v4` record recorded when the same
 boolean is set ([MCP supersession opt-in](MCP_SUPERSESSION.md)). Configured JSONL aliases also
 support separately permitted declaration/activation and freshly authorized current-state inspection.
-Lexical associations compose as v12 in byte mode or v13 in token mode.
 The [enforcement contract](SUPERSESSION_ENFORCEMENT.md) defines the exact counts,
 outcomes, identities and failure boundaries; defaults and packet construction are unchanged.
 Historical
@@ -513,10 +509,9 @@ and opted-out MCP query paths do not invoke it.
 The second domain half lives in `internal/mousa/trail.go` and
 `internal/mousa/packing.go`. `SourceTrailSchemaV4` is `mousa.source_trail.v4`, written
 only by the separate constructor `NewSourceTrailWithSupersession`; `NewSourceTrail` and
-every earlier public signature are unchanged, and v1, v2 and v3 bytes and identities are
+every earlier public signature are unchanged, and v1 and v2 bytes and identities are
 unchanged. A v4 record requires an explicit `original` or `exact-v1` packing policy,
-must carry exactly one closed `supersession` member and carries no associated passages
-or association omissions. Earlier versions reject the member even when it is null.
+must carry exactly one closed `supersession` member. Earlier versions reject the member even when it is null.
 
 The member is built by `BuildSupersessionSelection` from the request's source, the
 decision's outcome, the verified candidates and the caller's verified activation state
@@ -793,10 +788,10 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
-| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`); inline `associations` for lexical byte/token queries, including supersession | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds primary `supersession_excluded`, associations append independently attributed evidence and any omissions |
-| `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10/v11/v13/v15 token view that exists |
-| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields; inline `associations` | Primary evidence, cosine/ranks, coverage and producing IDs; separate attributed `associated_evidence` and omissions when present |
-| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession, token and association options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60); separate supporting evidence without fabricated ranks |
+| `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean (default `false`)| Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs; supersession adds primary `supersession_excluded` |
+| `mousa_trail` | `source`, `trail_id` | Independent `supersession`, `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded consultation, vector/hybrid facts or safe v7/v8/v10 token view that exists |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; `supersession`: boolean; token budget fields | Primary evidence, cosine/ranks, coverage and producing IDs |
+| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing, supersession and token options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
 | `mousa_supersession_declare` | `source`, `declaration`: closed `mousa.supersession_declaration_input.v1` | None | `declaration`: accepted canonical record |
@@ -838,8 +833,7 @@ even when zero. Nonzero reservations require a positive window; their sum must
 not exceed it. The effective limit is the lesser of the cap and window minus
 reservations, or just the cap without a window. Zero remaining allowance is valid.
 All three token modes accept supersession: true writes lexical v8 or vector/hybrid
-v10; omission/false retains v7. Recorded lexical association facts instead use
-v11 without supersession or v13 with it; an unfired association stage retains v7/v8.
+v10; omission/false retains v7.
 
 ### MCP measured context and recorded token details
 
@@ -910,7 +904,7 @@ Denial/withdrawal releases no evidence, source coverage or candidate facts.
 Vector/hybrid requests accept the optional `supersession` boolean: true withholds
 exact declared predecessors and records byte-only v9 or token-budget v10, while
 omission/false keeps the existing producing version and response properties.
-Accepted source supports strict inline associations. See
+See
 [vector/hybrid supersession](#byte-only-vectorhybrid-supersession).
 Vector-only queries also reject lexical policy/query fields.
 Unknown, duplicate, missing, null and wrong-type input members reject before
@@ -965,8 +959,8 @@ the native `supersession declaration put` and `supersession activation put` comm
 
 Use the returned `result.trail_id` with `mousa_trail`. Items use the same strict
 record validation, normalization, immutable revision identities and atomic
-current-item activation as [JSONL input](#jsonl-input). There are no inferred
-associations or new packing/token-window rules. Evidence coordinates refer to
+current-item activation as [JSONL input](#jsonl-input). There are no new
+packing/token-window rules. Evidence coordinates refer to
 normalized UTF-8 bytes; use the [same digest and range checks](#verify-a-selected-passages-location)
 as for CLI evidence. Treat every source text as untrusted data, not protocol,
 shell commands or instructions to the client.
@@ -1008,9 +1002,7 @@ Denied inspection commits its fresh authorization decision and necessary input r
 returns that decision's ID and reasons, and performs no historical lookup. It releases
 no historical payload. Unknown or foreign-source inspection errors roll back their
 attempted authorization and return `not_found`; historical and administrative rows
-remain unchanged. MCP inspection reads native-created same-source v3 or v11
-association history; lexical MCP queries also produce those versions.
-
+remain unchanged. 
 Unknown tools/methods and malformed protocol parameters use SDK JSON-RPC errors.
 Invalid JSON or an oversized inbound frame terminates the stdio session with a
 bounded diagnostic on stderr, without a success message. Earlier completed
@@ -1532,13 +1524,10 @@ use the length of `evidence` for the selected count. The old misleading
 For directory and JSONL item sources, `--supersession` explicitly enables exact pinned-predecessor
 withholding after authorization and lifecycle verification and before packing.
 The opted-in store transaction reads the verified activation and declaration and
-records v4, or v12 when a supporting stage is recorded. Withheld text is not released, its rank and canonical size
+records v4. Withheld text is not released, its rank and canonical size
 stay unchanged, and it consumes no budget or retained duplicate slot. Successor
 availability does not gate withholding or cause replacement text to be inserted.
-Lexical `--associations` composition uses the same consultation for target
-passages under byte or measured token budgets. See the
-[complete supporting-context example](USAGE.md#supersession-safe-supporting-context)
-and [directory pin preparation](USAGE.md#directory-supersession-example).
+See [directory pin preparation](USAGE.md#directory-supersession-example).
 MCP `mousa_query` exposes the same query opt-in through its optional `supersession`
 boolean, and `mousa_trail` returns the recorded consultation member of a v4 trail under
 the same optional boolean. Source-scoped MCP declaration, activation and status
@@ -1601,7 +1590,7 @@ bytes separately from the unchanged evidence-text budget.
 Exact packing returns `duplicate_omitted`, including zero. Opted-in supersession
 returns `supersession_excluded`, including zero, and records its explicit packing
 policy even under `original`; default original responses omit all three optional
-fields. Without association expansion, selected, duplicate, budget, lifecycle and
+fields. Selected, duplicate, budget, lifecycle and
 supersession counts sum to `matched_candidates`, treating absent optional counts as zero.
 
 Outcome precedence is denial (with the existing lifecycle override), selected evidence,
@@ -1693,190 +1682,6 @@ Directory identities remain usable by `query`, `status`, `trail`, `access`, and
 existing directory. Stored activation is not a claim about current filesystem
 contents. Integrity checks, authorization, current activation, and factual
 correctness are separate properties; none substitutes for the others.
-
-### Declared associated context
-
-`query --associations <file>` opts a caller into declared associated context.
-The file is one strict JSON document, schema
-`mousa.association_declarations.v1`, listing up to 32 declarations. Each
-declaration names a `from_item` and `to_item` (item paths of the queried
-source), a non-empty `basis`, and a non-empty `author`. Duplicate
-`(from_item, to_item)` pairs and self-references are rejected. Mousa never
-infers relationships and never treats a declaration as discovery; the author
-and basis remain attached to every passage the declaration releases.
-
-MCP `mousa_query` accepts the complete document as optional inline `associations`,
-decoded from its original nested JSON bytes by the same native codec. This
-input is available in source builds containing merged PR95, not a tagged release.
-Measured token composition is accepted through PR98. Refresh cached closed tool schemas.
-Omission preserves exact default response properties. Supplied null, wrong
-shape/schema, empty lists, unknown/repeated keys at any depth, invalid or repeated
-declarations and more than 32 declarations return `invalid_arguments` before
-producing query/trail/packet state. Item names are bounded to 1024 UTF-8 bytes,
-basis to 512 and author to 128; schema character bounds do not replace byte checks.
-The existing transport frame bound still applies. No path, URL or additional
-source selector is accepted. Both term policies and both packers work with byte or
-measured token budgets; omitted, false and true `supersession` work.
-Source-build token triples record v13 only when association facts are recorded.
-Accepted source supports vector/hybrid associations with both packers
-and optional token budgets and explicit supersession; it is not a released-version claim.
-Support is returned separately as `associated_evidence`, with association attribution,
-not in primary `evidence` or retrieval rank/score arrays. `association_omissions`
-reports withheld supporting rows. Support does not alter coverage or primary ranking.
-An authorized current support passage need not have an embedding. Full-source
-admission (100 active items, 100 passages, 256 KiB) includes unembedded and suppressed
-rows before selection. Support resolves from that admitted universe in the same
-writer snapshot, only after a primary survives suppression and both budgets.
-Supporting targets with inactive ancestry produce `target_inactive` without text
-or proposed token counts. A selected primary with inactive ancestry causes the
-composed request to fail closed before persistence; no partial result is returned.
-Producing association facts use closed v14 byte or v15 token history, with exactly
-one vector/hybrid component and optional supersession. No-fire paths retain
-v5/v6/v7/v9/v10. Historical v1–v13 encodings and identities remain unchanged.
-Native history supports retained-text token recount; MCP's independent detail
-opt-ins project recorded facts without recounting. Whole-context counts include
-support headers and separators, but exclude caller framing.
-The existing tools and `mousa.mcp_result.v1` envelope remain.
-Source text and declaration strings are untrusted data; `author` is not an
-authenticated identity. No ingestion permission is needed for retrieval.
-`mousa_trail` already exposes verified v3 metadata under fresh source
-authorization, including its ordinary authorization audit write. An unfired
-declaration preserves native unassociated version/identity rules, not fresh
-request/decision/trail IDs across separate calls.
-
-A declaration is honored only when the declaring item contributed selected
-primary evidence to that packet, so an unrelated query releases nothing.
-Depth is one: the target's passages are never followed by further
-declarations. At most four distinct target items are read per query; repeated
-targets and declarations beyond the cap are recorded as omissions
-(`duplicate_target`, `fan_out`), as are unknown targets (`target_unknown`) and
-inactive or deleted ones (`target_inactive`). A relationship is not an access
-grant: resolution stays inside the one allowed source decision and only reads
-the current active revision of the target. Equal text does not transfer
-permissions between items.
-
-A byte-only query considers at most 256 target passages, counted across the targets its
-declarations name, in declaration order and then in the target's document order.
-A target with more passages is read only up to that bound, and its remaining
-passages are recorded as `target_truncated`; the passages that were considered
-keep their own rows, released or omitted. The bound is derived from the largest
-row a declaration can produce: 1024 bytes of item identity for each side, 512
-bytes of basis and 128 bytes of author, whose JSON encoding escapes control
-characters at six bytes each, so 256 rows stay under a quarter of the canonical
-record limit. Without it, a legal large target could exceed that limit and fail
-the whole request. The target's passages are read before packing, so added cost
-follows the number of passages considered rather than the bytes that fit, and a
-query whose remaining budget cannot hold a passage still reads the target and
-records the omissions.
-
-`target_truncated` extends the v3 omission-reason vocabulary. Consumers that
-enumerate the earlier v3 reasons must accept this value before reading a
-truncated trail. The omitted target passages have no rows in that trail.
-
-Associated passages pack into the remaining byte budget after primary
-evidence, in declaration order and selector order. Primary evidence keeps its
-existing selection and priority; an associated passage never displaces it.
-Each associated passage keeps its own item, segment identity, representation
-digest, byte coordinates, content digest and text, and is returned with
-`origin: "association"` plus the declaration; lexical hits carry
-`origin: "lexical"` and no declaration. Associated passages have no lexical
-rank or BM25 score. A passage that does not fit is omitted with reason
-`budget`; byte-equal duplicates are omitted with `duplicate` and a reference to
-the released passage under exact-v1 packing. Small budgets therefore expose
-omission without claiming completeness.
-
-With explicit supersession, selected surviving primaries alone trigger expansion.
-The same recorded exact predecessor pin withholds associated targets before budget
-and duplicate retention. These rows carry `omission: "superseded"` and no text
-release; `association_omissions` reports that reason independently of the primary
-`supersession_excluded` count. A withheld equal-body predecessor cannot disqualify
-a surviving twin. No successor retrieval or inferred replacement is added.
-The [v12 contract](SUPERSESSION_ENFORCEMENT.md#byte-only-lexical-supporting-context)
-specifies producing-history verification and retired-text limits.
-
-A byte-only trail that records an association stage is a `mousa.source_trail.v3` record,
-or v12 when explicit supersession is enabled,
-with `associated` rows and `association_omissions`, and its packet identity
-uses a v2 domain that binds every released byte. Its inspected view adds
-`associated` and `association_omissions`. V1 and v2 encoding, decoding and
-validation are unchanged; a v3 record appears only when the association stage
-has something to record, so an unfired declaration reproduces the unassociated
-trail exactly. Older executables that understand only v1/v2 reject v3 records
-rather than misreading them. As with all trail records, identities are
-text-free explanations, not signatures, and inspection still requires fresh
-source authorization.
-
-With `--context-tokens` or MCP `context_tokens`, primary evidence is measured
-first. Only primary passages that survive both budgets trigger resolution.
-Both stages share the existing immediate writer snapshot and one official
-counter. Associated passages append to the remaining body-byte and measured
-whole-rendering allowance, preserving `mousa.context_text.v1` headers, exact text
-and separators. Skips retain neither budget nor duplicate state; a later smaller
-note can fit. Same-segment duplicates are omitted under either packer; exact-v1
-also compares exact bytes across both stages. Associated omissions distinguish
-`bytes`, `tokens`, `rendered_bytes` and `duplicate`, without changing v3 vocabulary.
-
-The combined profile permits at most 100 total primary-plus-associated passage
-rows and 256 KiB aggregate admitted passage text, before budget or duplicate
-omissions. All primary consideration rows count, including lifecycle rejections;
-rejected primary text keeps its existing handling. Exceeding either bound rejects
-the whole request, not a successful partial selection. Ordinary byte/token queries
-retain their limits, including the byte-only 256-target-passage consideration bound.
-Construction and canonical validation check each admitted-primary and associated
-size against the remaining aggregate capacity before addition. Budget/duplicate
-omissions still count; superseded targets do not. Extreme unsigned sizes cannot wrap the total.
-Declaration order, document order, depth one, four targets and relationship
-omission meanings remain unchanged. The shared counter retains its 512 KiB
-per-rendering, 32 MiB cumulative work, 102-call and 15-second limits. The 100-row
-profile leaves capacity for final whole-context confirmation; Finish/reap occurs
-once after both stages, before persistence. Work/deadline/finalization failure rolls back.
-
-A recorded measured association stage writes closed `mousa.source_trail.v11`
-without supersession, or v13 with the recorded exact-pin consultation. Both contain
-lexical producing facts, association rows/relationship omissions and token facts;
-neither accepts vector/hybrid facts. Unfired declarations retain v7 without
-supersession or v8 with it. The token member's `associations.associated_ids` and
-`associations.proposed_tokens` arrays align explicitly with associated rows,
-separately from primary `primary_ids`, `proposed_tokens` and `lexical`. Primary
-identities align with all considered canonical primary rows; release views
-instead expose only compact accepted `candidate_ids`. Null proposed counts mean
-no counter call occurred. Associated facts never acquire BM25 or lexical ranks.
-Safe owned projections compact lifecycle-rejected primary slots and independently
-copy all associated IDs/count pointers. Unrequested MCP token details remain hidden.
-
-Packet v3 binds the complete v11 or v13 selection, schema, attribution and measured
-facts using its existing canonical wrapper, not a new packet domain. Trail
-identity hashes canonical JSON with its ID zeroed; packet identity hashes the
-`mousa.context_packet.v3` wrapper with trail ID zeroed and request/decision/packet
-strings empty. Both encodings include their terminal LF. The fixed
-`internal/mousa/testdata/trail-v11.json` golden independently uses source `77`
-repeated 32 times, primary `Run`, selected note `Close`, a byte-equal `Run`
-duplicate and the omitted text `A larger qualification that cannot fit in the remaining measured token allowance.`.
-Official ordinary counts include all headers and separators: primary 132,
-selected whole context 262, proposed final qualification 407, with limit 262.
-The byte-equal duplicate has a null proposed count. Earlier goldens remain unchanged.
-
-Canonical construction, decoding, store reads and startup enforce the profile.
-History verifies recorded segment/representation/source membership and declaring
-primary relationships through the supplied snapshot, including omitted rows.
-Missing named parents are integrity errors; directly requested unknown objects
-retain `not_found`. History does not resolve today's targets or rerun selection.
-Retained selected text reconstructs the exact rendering/digest and supports
-explicit official native recount. Retired text stays unarchived, preserving the
-existing historical verification limit.
-
-
-Reading a stored trail re-verifies both stages against the store. Every released
-passage must still decode from its canonical record with the recorded digest and
-size, still belong to its representation and to the decision source, and still
-hash its retained indexed text. An associated row is checked the same way,
-including that the row names the item its segment belongs to and that its
-declaring item contributed selected primary evidence. Membership comes from
-immutable representation ancestry, so a trail stays readable after the target
-item is revised, deactivated or removed. A v3 record validates its candidates
-under the packing policy it records: an original-policy trail keeps repeated
-byte-equal passages valid, while an exact-v1 trail still has to name the
-duplicate it omitted.
 
 ## Maintained agent skills
 

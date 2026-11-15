@@ -48,7 +48,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 	// A v4 record names each canonical record this pass reads, which decides how a missing one is
 	// classified below.
 	v4 := trail.Supersession != nil
-	strict := v4 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV14 || trail.Schema == mousa.SourceTrailSchemaV15
+	strict := v4
 	// The candidates a v4 record names as withheld remain content-verified, but they are neither
 	// selected nor allowed to seed the retained byte-equal set, so the byte-aware duplicate check
 	// leaves them alone.
@@ -60,11 +60,6 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 	// Verified ancestry is cached beside the representation, because the v4 exact-pin re-check reads
 	// the same source paths.
 	paths := make(map[mousa.RepresentationID][]mousa.EvidencePath)
-	// A declared relationship is recorded only when its declaring item contributed selected primary
-	// evidence, so the item of every released representation is read back once and reused by both
-	// the primary pass and the association stage.
-	items := make(map[mousa.RepresentationID]string)
-	primaryItems := make(map[string]struct{})
 	var verified []mousa.VerifiedLexicalCandidate
 	if v4 {
 		verified = make([]mousa.VerifiedLexicalCandidate, len(trail.Candidates))
@@ -96,13 +91,6 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 		}
 		if v4 {
 			verified[index].Paths = paths[segment.RepresentationID]
-		}
-		if candidate.Selected && candidate.Omission == "" && (len(trail.Associated) > 0 || trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12 || trail.Schema == mousa.SourceTrailSchemaV13 || trail.Schema == mousa.SourceTrailSchemaV14 || trail.Schema == mousa.SourceTrailSchemaV15) {
-			item, err := representationItem(ctx, q, sourceID, segment.RepresentationID, items)
-			if err != nil {
-				return err
-			}
-			primaryItems[item] = struct{}{}
 		}
 		text, available, err := retainedIndexedText(ctx, q, segment)
 		if err != nil {
@@ -139,7 +127,7 @@ func verifyTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail,
 			return err
 		}
 	}
-	return verifyAssociatedTrailContent(ctx, q, trail, sourceID, representations, paths, items, primaryItems)
+	return nil
 }
 
 // withheldSegments returns the segment identities one v4 record names as withheld, so the content
@@ -223,134 +211,6 @@ func verifySourceTrailSupersession(ctx context.Context, q queryer, trail mousa.S
 	// predecessor pin, and the row set must be complete.
 	if err := selection.ValidateAgainst(sourceID, mousa.PolicyDecisionOutcome(trail.Outcome), candidates, activation, declaration); err != nil {
 		return wrap(CodeIntegrity, "verify trail supersession", err)
-	}
-	return nil
-}
-
-// verifyAssociatedTrailContent checks the association stage of a v3 trail against the store. Every
-// associated row keeps its own identity and accounting, so each row is re-read: the canonical
-// segment still carries the recorded digest, it still belongs to the item the row names, the
-// declaring item did contribute selected primary evidence, a duplicate omission names a canonical
-// segment with equal content, and a selected row still has the recorded size and hashes its
-// retained bytes. Item membership is derived from immutable representation ancestry, so a trail
-// stays readable after the target item is revised, deactivated or removed.
-func verifyAssociatedTrailContent(ctx context.Context, q queryer, trail mousa.SourceTrail, sourceID mousa.SourceID, representations map[mousa.RepresentationID]mousa.Representation, paths map[mousa.RepresentationID][]mousa.EvidencePath, items map[mousa.RepresentationID]string, primaryItems map[string]struct{}) error {
-	strict := trail.Schema == mousa.SourceTrailSchemaV11 || trail.Schema == mousa.SourceTrailSchemaV12 || trail.Schema == mousa.SourceTrailSchemaV13 || trail.Schema == mousa.SourceTrailSchemaV14 || trail.Schema == mousa.SourceTrailSchemaV15
-	var declaration *mousa.SupersessionDeclaration
-	if trail.Supersession != nil && trail.Supersession.DeclarationID != nil {
-		value, err := readSupersessionDeclaration(ctx, q, *trail.Supersession.DeclarationID)
-		if err != nil {
-			return canonicalTrailParentError(true, "verify associated trail", "recorded declaration", err)
-		}
-		declaration = &value
-	}
-	retained := make(map[mousa.SHA256][]retainedText)
-	var target string
-	var revision mousa.RepresentationID
-	var previousEnd uint64
-	if strict {
-		for _, row := range trail.Candidates {
-			if !row.Selected {
-				continue
-			}
-			segment, err := getSegment(ctx, q, row.SegmentID)
-			if err != nil {
-				return canonicalTrailParentError(true, "verify associated trail", "primary segment", err)
-			}
-			text, available, err := retainedIndexedText(ctx, q, segment)
-			if err != nil {
-				return err
-			}
-			retained[row.ContentSHA256] = append(retained[row.ContentSHA256], retainedText{row.SegmentID.String(), text, available})
-		}
-		for _, omission := range trail.AssociationOmissions {
-			if _, ok := primaryItems[omission.FromItem]; !ok {
-				return integrity("verify associated trail", "omitted declaring item contributed no selected primary evidence")
-			}
-		}
-	}
-	for _, row := range trail.Associated {
-		segment, err := getSegment(ctx, q, row.SegmentID)
-		if err != nil {
-			return canonicalTrailParentError(strict, "verify associated trail", "associated segment", err)
-		}
-		if segment.ContentSHA256 != row.ContentSHA256 {
-			return integrity("verify associated trail", "associated digest disagrees with canonical segment")
-		}
-		if err := verifyTrailRepresentation(ctx, q, segment, sourceID, representations, paths, strict || trail.Schema == mousa.SourceTrailSchemaV4); err != nil {
-			return err
-		}
-		item, err := representationItem(ctx, q, sourceID, segment.RepresentationID, items)
-		if err != nil {
-			return err
-		}
-		if row.ToItem != item {
-			return integrity("verify associated trail", "associated target item disagrees with canonical ancestry")
-		}
-		if _, declared := primaryItems[row.FromItem]; !declared {
-			return integrity("verify associated trail", "associated declaring item contributed no selected primary evidence")
-		}
-		if row.Omission == "duplicate" {
-			previous, err := mousa.ParseSegmentID(row.DuplicateOf)
-			if err != nil {
-				return wrap(CodeIntegrity, "verify associated trail", err)
-			}
-			duplicate, err := getSegment(ctx, q, previous)
-			if err != nil {
-				return canonicalTrailParentError(strict, "verify associated trail", "duplicate segment", err)
-			}
-			if duplicate.ContentSHA256 != row.ContentSHA256 {
-				return integrity("verify associated trail", "duplicate relationship disagrees with canonical content")
-			}
-		}
-		if !row.Selected && !strict {
-			continue
-		}
-		span, ok := segment.Selector.TextByteRange()
-		if !ok || span.End-span.Start != row.TextBytes {
-			return integrity("verify associated trail", "associated size disagrees with canonical segment")
-		}
-		if strict {
-			if target != row.ToItem {
-				target, revision, previousEnd = row.ToItem, segment.RepresentationID, 0
-			}
-			if revision != segment.RepresentationID || span.Start < previousEnd {
-				return integrity("verify associated trail", "target mixes recorded revisions or document order")
-			}
-			previousEnd = span.End
-		}
-		text, available, err := retainedIndexedText(ctx, q, segment)
-		if err != nil {
-			return err
-		}
-		if available && uint64(len(text)) != row.TextBytes {
-			return integrity("verify associated trail", "indexed text length disagrees with associated row")
-		}
-		if trail.Schema == mousa.SourceTrailSchemaV12 || trail.Schema == mousa.SourceTrailSchemaV13 || trail.Schema == mousa.SourceTrailSchemaV14 || trail.Schema == mousa.SourceTrailSchemaV15 {
-			suppressed := declaration != nil && segment.RepresentationID == declaration.PredecessorRepresentationID
-			if suppressed != (row.Omission == string(mousa.SupersessionSuperseded)) {
-				return integrity("verify associated trail", "associated suppression disagrees with recorded exact predecessor pin")
-			}
-			if suppressed {
-				continue
-			}
-		}
-		if strict {
-			for _, previous := range retained[row.ContentSHA256] {
-				if previous.id == row.SegmentID.String() || trail.PackingPolicy == mousa.PackingExactV1 && available && previous.available && previous.text == text {
-					if row.DuplicateOf != previous.id {
-						return integrity("verify associated trail", "duplicate does not reference first retained passage")
-					}
-					break
-				}
-				if row.DuplicateOf == previous.id && available && previous.available && previous.text != text {
-					return integrity("verify associated trail", "duplicate disagrees with retained bytes")
-				}
-			}
-			if row.Selected {
-				retained[row.ContentSHA256] = append(retained[row.ContentSHA256], retainedText{row.SegmentID.String(), text, available})
-			}
-		}
 	}
 	return nil
 }

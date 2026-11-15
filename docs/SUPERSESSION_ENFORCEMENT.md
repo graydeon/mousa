@@ -23,7 +23,7 @@ source-scoped verified candidates, consults verified administration and builds
 `mousa.source_trail.v4` inside the existing writer transaction. It reuses
 `readSupersessionConsultation`, `BuildSupersessionSelection` and
 `NewSourceTrailWithSupersession`; no public reader opens a nested transaction.
-Byte-only opted-in lexical queries record v4 unless a composed association stage records v12.
+Byte-only opted-in lexical queries record v4.
 Canonical readback must agree before commit.
 
 Lexical token-budget composition is also implemented: add `--context-tokens N`
@@ -42,8 +42,7 @@ Byte-only vector/hybrid enforcement writes v9, retaining the existing producing
 ranking facts and this consultation contract. Its full source admission occurs
 before masking, including when combined with token budgets as v10. Both modes
 reuse token packet v3's full producing-selection binding and complete survivor
-rendering, with null proposed counts for withheld candidates. Lexical token
-association/supersession uses v13; accepted vector/hybrid composition uses v14/v15. See
+rendering, with null proposed counts for withheld candidates. See
 [retrieval semantics](CAPABILITIES.md#byte-only-vectorhybrid-supersession)
 and the [runnable example](USAGE.md#vector-and-hybrid-supersession).
 The [v8 identity and verification contract](CAPABILITIES.md#native-token-aware-packing)
@@ -78,89 +77,6 @@ defaults, current item pointers or historical interpretation.
 Resyncing a changed predecessor creates an unpinned revision; historical v4 inspection
 continues to verify the original pins.
 
-## Byte-only lexical supporting context
-
-Native directory/JSONL queries accept `--supersession --associations FILE`.
-Configured MCP `mousa_query` accepts `supersession: true` with its strict inline
-association document. No new tool, configuration, dependency or migration is needed.
-The [complete runnable example](USAGE.md#supersession-safe-supporting-context)
-prepares exact declaration/activation pins and inspects both client surfaces.
-
-Authorization, current candidates, consultation, expansion, packing and insertion
-share the existing writer transaction. Primary evidence is suppressed and packed
-first. Only selected primary items can fire caller declarations. Target resolution
-retains caller order, same-source ownership, current pins, four-target fan-out,
-256 considered passages and existing unknown/inactive/truncated omissions.
-Supporting passages never recursively trigger another declaration.
-
-Each considered target is content/ancestry verified, then compared to the same
-recorded declaration's exact predecessor representation. A withheld row records
-`omission: "superseded"`, positive canonical size and its own segment/digest and
-attribution, but no selection or duplicate link. It spends no retained bytes and
-does not seed exact-v1 duplicate retention. Unsuppressed support is appended after
-primary evidence; successor availability never enables fallback or reinstatement.
-
-For example, selected `keep` fires `keep -> old` and `keep -> twin`. A declaration
-pins `old -> new`. Associated `old` is withheld; byte-equal unpinned `twin` can still
-be retained. If `old` also matched the lexical query, its primary row is withheld
-and cannot fire an `old -> other` association.
-
-Only a recorded composed stage uses closed `mousa.source_trail.v12`. Its fields
-reuse v4 consultation/primary dispositions and v3 association rows/omissions.
-The trail identity hashes the complete canonical record with its ID zeroed,
-including its v12 schema. Byte packet v2 binds selected primary then associated
-rows through the established association packet construction. Empty/non-firing,
-denied and no-match stages keep v4. Valid v1–v11 codecs/identities are unchanged;
-old schemas do not accept this combination.
-
-Canonical reads/startup rederive both suppression stages from the recorded
-activation chain/declaration and immutable segment ancestry through the supplied
-transaction queryer, not today's activation or item pointers. They verify sizes,
-target ordering, selected-primary origin and retained exact bytes, including
-withheld content. Retired indexed text is unavailable and is not reconstructed.
-Missing named canonical parents are integrity errors; an unknown trail is not_found.
-
-Native history exposes text-free associated suppression rows after fresh
-authorization. MCP's existing independent `supersession` inspection opt-in gates
-the recorded consultation; associated history retains its established fields.
-Query `supersession_excluded` counts primary suppression; associated withholding
-appears as `superseded` in `association_omissions`. Denial releases neither history
-nor aligned rejected metadata. Omitted/false behavior and property sets remain unchanged.
-
-### Measured-token supporting context
-
-Source builds also accept `--context-tokens N` on the lexical composition above,
-or MCP `context_tokens` with an operator-configured tokenizer. This is a source
-capability, not a claim about tagged releases or independently accepted captures.
-Both packers suppress primaries before whole-render primary selection. Only selected
-primaries fire declarations. The same exact-pin consultation suppresses associated
-targets before admitted-text accounting, duplicate decisions or either budget,
-including targets that would otherwise be oversized or duplicates.
-
-One query-scoped official counter measures primary proposals and appended support,
-confirms the exact final rendering and finishes before insertion. Body-byte and
-whole-render token limits remain independent; headers and separators count as tokens.
-The existing 100-row, 256 KiB admitted-text and tokenizer work/rendering bounds
-remain. Suppressed targets have no proposed token count. Reservation fields retain
-their caller-declared meaning; framing outside the rendering is not measured.
-
-Only recorded token association facts with supersession use closed SourceTrail v13.
-It reuses the typed v11 counts and v12 consultation/association dispositions; packet
-v3 binds the full producing selection. No firing facts retains v8, while omitted
-or false supersession retains the established v7/v11 behavior. Valid v1–v12 bytes,
-IDs and decoding remain unchanged.
-
-Construction, decoding, persisted readback and startup verification must agree.
-History verifies recorded ancestry rather than current activation. Normal history
-needs no tokenizer; explicit native recount requires every originally selected byte.
-Lifecycle-safe query and history projections compact accepted primary identities,
-ranks, BM25 and proposed counts together and separately align associated counts.
-Rejected rows disclose no slots, gaps or placeholders; accepted budget/duplicate
-omissions retain their measured facts. Canonical producing records remain immutable.
-Fresh authorization can deny history. Failure, cancellation or tokenizer refusal
-rolls back the owning transaction and closes its one counter.
-
-
 ## What exists today
 
 The contract below is grounded in the current source:
@@ -182,8 +98,8 @@ The contract below is grounded in the current source:
   therefore the current revision of exactly one item, an item revision is exactly the text
   representation derived from that observation's artifact, and a candidate without item
   ancestry can never match a declaration pin.
-- Packing and association stages stay inside that transaction; the trail records candidate
-  dispositions, packing omissions and association rows as v1, v2 or v3, and its content is
+- Packing stays inside that transaction; the trail records candidate
+  dispositions and packing omissions as v1, v2 or v4, and its content is
   re-verified against canonical store bytes on every read.
 
 ## Terms
@@ -322,30 +238,14 @@ An opt-in request with no active declaration therefore cannot collide with a def
 their selections match, but their trails differ by version and identity. A deactivation is
 recorded as a consulted activation event with a null declaration.
 
-## 4. Associations and packing modes
+## 4. Packing modes
 
-This section records the initial v4 enforcement boundary, not current association
-availability. Accepted lexical composition uses v12/v13; accepted vector/hybrid
-composition uses v14/v15. Their supporting stages apply exact-pin suppression
-before duplicate and budget accounting, as described in the capability contract.
-
-**Decision for first enforcement.** Both packing policies are supported. An opt-in
-enforcement request **must not** carry association declarations: the combination is rejected
-as an invalid query before the retrieval transaction begins, so no part of the request is
-written. The rejection is documented product behavior, not a silent bypass.
-
-**Reasons.** Associated passages are read from a target item's current revision, so they are
-the one path that could return a passage the suppression rule should have withheld; leaving
-that path unconsidered would make enforcement incomplete while looking complete. Supporting
-it needs associated-passage suppression plus its own omission reason, which is a second
-bounded slice, not a first one. Rejecting the combination is explicit, testable and
-reversible.
+Both packing policies are supported.
 
 | Mode | First enforcement |
 |---|---|
 | `original` packing | Supported; the budget applies to surviving candidates |
 | `exact-v1` packing | Supported; duplicate displacement applies to surviving candidates, so a suppressed copy cannot be named as the retained duplicate |
-| `--associations` | Rejected with an invalid-query error |
 
 ## 5. Historical trail reads and compatibility
 
@@ -373,7 +273,6 @@ or item pointers.
   `mousa_query` reports the withheld count, and `mousa_trail` returns the recorded member
   of a v4 record. Opted-out responses keep today's property set, so ordinary inspection
   stays filtered, text-free and unchanged for a legacy record.
-  The initial v4 profile carries no association facts; composed profiles use separate versions.
 - A store that contains v4 trails requires a binary that knows v4, exactly as v2 and v3
   records already do; no store schema version changes, because no object set changes.
 
@@ -381,7 +280,7 @@ or item pointers.
 
 An opt-in query writes `mousa.source_trail.v4` instead of v1/v2/v3. Its
 `packing_policy` is required and is either `original` or `exact-v1`, including a deny.
-It has no associated passages or association omissions. Legacy field presence is unchanged.
+Legacy field presence is unchanged.
 It adds one closed member, present in every v4 record and rejected in earlier versions:
 
 ```json
@@ -542,7 +441,6 @@ domain or SQLite test counts.
 | Empty mixed-cause response | Suppression plus a surviving budget skip yields budget_omitted; suppression plus lifecycle rejection without budget skips yields supersession_excluded; counts remain disjoint and defaults stay unchanged |
 | Restart determinism | Reopening and re-running preserves dispositions, selection and packet identity; fresh request/decision/trail identities intentionally differ, while reading the original trail preserves its exact bytes |
 | Historical trail readability | After later revisions, deletions and deactivation, the stored record still reads with current authorization and is not reinterpreted; v1–v3 reads are unchanged |
-| Association combination | An opt-in enforcement request with associations is rejected before any write; both packing policies work with enforcement |
 | Concurrent activation and query | A transition racing an opted-in query yields either the previous or the next state, never a mixture, and no partial decision or trail |
 | Corrupt state rollback | Damaged projection, broken chain, missing declaration or cross-source pointer fails the request with nothing committed |
 
@@ -551,8 +449,8 @@ domain or SQLite test counts.
 The domain selection and v4 trail constructors remain separate internal APIs; their
 existing signatures and all legacy identities are unchanged. The store adds
 `EvaluateAndTraceSupersessionLexical(ctx, request, expression, limit, budgetBytes,
-packingPolicy)`, a fresh-evaluation entry point with no association argument. Existing
-`EvaluateAndTraceLexical`, `EvaluateAndTraceAssociatedLexical` and
+packingPolicy)`, a fresh-evaluation entry point. Existing
+`EvaluateAndTraceLexical` and
 `TraceEnforcedLexical` retain their default and retry contracts.
 
 The native flag is boolean and only available on the JSONL item-source query path:
@@ -562,8 +460,8 @@ mousa -store local.sqlite query --source notes --supersession 'amber'
 mousa -store local.sqlite query --source notes --supersession --packing-policy exact-v1 'amber'
 ```
 
-Invocation validation precedes writable open where possible. Invalid flags, directory
-queries and association combinations do not create a store. A valid query uses the
+Invocation validation precedes writable open where possible. Invalid flags and directory
+queries do not create a store. A valid query uses the
 existing writable open: creation or supported migrations can happen before later source,
 authorization or integrity failures. Rollback guarantees apply to the retrieval
 transaction's decision and trail writes, not to that creation/migration boundary.
@@ -600,7 +498,7 @@ provide:
 
 - `SourceTrailSchemaV4` (`mousa.source_trail.v4`) and the `SourceTrail.Supersession` member. A v4
   record requires exactly one closed member and an explicit `original` or `exact-v1` packing
-  policy, carries no associated passages or association omissions, and every earlier version
+  policy, and every earlier version
   rejects the member even when it is null.
 - `NewSourceTrailWithSupersession(request, decision, expression, candidates, budgetBytes,
   packingPolicy, activation, declaration)` — the separate explicit opt-in constructor. It derives

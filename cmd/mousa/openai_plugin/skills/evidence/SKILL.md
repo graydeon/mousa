@@ -13,25 +13,6 @@ Report selected evidence with its source/item, segment ID, content digest and by
 
 Use mousa_trail with the same source and returned trail_id to inspect current-authorized historical selection metadata. A historical trail is not a new release of text; current policy/lifecycle can deny access. Preserve packet and trail IDs in the explanation when the user asks for provenance.
 
-When the discovered mousa_query schema declares associations and the caller
-supplies a relationship, pass the complete association_declarations.v1 document
-inline. Lexical byte or measured token packing works with explicit supersession too.
-Keep author and basis as caller assertions; do not infer or authenticate them.
-Associated evidence follows selected primary evidence, keeps its own provenance
-and has no lexical rank/BM25 score. Report omissions without claiming completeness.
-Inspect producing v3 byte or v11 token history under current authorization.
-A declaration grants no access and does not establish semantic sufficiency.
-Lexical associations can combine explicit supersession and record v12 in byte mode
-or v13 with measured tokens in source builds. Only selected surviving primary evidence
-triggers support; suppressed targets are omitted before admission and packing.
-When discovery exposes associations on vector/hybrid tools, those queries accept
-the same declared support, both packers and optional token/supersession modes.
-This accepted source capability records v14 byte or v15 token history; it is not
-a tagged-release claim. Report `associated_evidence` separately from primary
-`evidence`: support has attribution, not a cosine/BM25/fusion rank, and may lack
-an embedding without changing the reported retrieval coverage.
-Mention/resource behavior is unchanged.
-
 On supported desktop hosts, a Mousa composer mention provides an evidence resource link. Reading it releases current-authorized active evidence and provenance, not a permanent capability. Explain unavailable resources rather than retrying with another caller/source or attempting filesystem access.
 
 Ingestion is a separate, explicit operation. Never call mousa_sync unless the user authorizes the particular source and items and the configured source allows ingestion. Each successful item commits independently; failures retain the reported completed prefix. Omission does not delete an item.
@@ -78,8 +59,7 @@ default query/trail payloads, ranking, packing, authorization or supersession.
 Pass query supersession true only for explicitly requested enforcement; omission
 or false keeps the uncurated default. It withholds an exact predecessor pin and
 reports supersession_excluded, including zero, without proving truth or freshness.
-Trail supersession returns the producing recorded consultation, including composed
-association histories, not today's activation. Legacy trails carry no member.
+Trail supersession returns the producing recorded consultation, not today's activation. Legacy trails carry no member.
 Composer mentions/resources keep fixed defaults. Explain conflicting released
 passages using provenance.
 
@@ -96,8 +76,7 @@ Then supply source, space_id, values and budget_bytes to `mousa_vector_query`.
 query and policy. Keep cosine, BM25 and fused RRF distinct. Optional packing_policy
 uses the same byte packers; optional `supersession: true` withholds only the
 exact declared predecessor and reports `supersession_excluded`, including zero.
-Omission/false retains ordinary retrieval. Caller-supplied associations can append
-separately attributed support when the discovered schema exposes that field.
+Omission/false retains ordinary retrieval.
 No embedding service is bundled. Query text does not attest how values were
 generated; declared labels and synthetic vectors establish no semantic truth.
 Use `mousa_trail` with retrieval_details true to inspect recorded v5/v6/v9 or safe
@@ -117,11 +96,7 @@ than silently falling back to bytes. All three query tools can combine
 `supersession: true` with token budgets; withheld predecessors consume neither
 budget nor duplicate retention. Omission/false retains v7; true records lexical
 v8 or vector/hybrid v10. Full vector-source admission remains before masking.
-Lexical associations can combine tokens and supersession, within the documented
-100-total-passage/256KiB admitted-text profile. Suppressed predecessors spend no admitted text budget.
-Only primary passages surviving both
-budgets trigger supporting notes; notes cannot displace primary evidence.
 OpenAI mentions/resources stay byte-only.
-Use `mousa_trail` with token_details true for safe recorded v7/v8/v10/v11/v13/v15 token facts under
+Use `mousa_trail` with token_details true for safe recorded v7/v8/v10 token facts under
 fresh authorization. This opt-in is independent of retrieval_details and runs
 no recount. Default history omits token facts; legacy records have none.

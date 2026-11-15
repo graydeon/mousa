@@ -110,7 +110,7 @@ func newHybridSourceTrail(request PolicyEvaluationRequest, decision PolicyDecisi
 func (trail SourceTrail) validateHybridTrail() error {
 	invalid := func() error { return errors.New("invalid v6 hybrid bindings, coverage or order") }
 	h := trail.Hybrid
-	if h == nil || trail.Vector != nil || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) || len(trail.Associated) != 0 || len(trail.AssociationOmissions) != 0 {
+	if h == nil || trail.Vector != nil || (trail.Schema != SourceTrailSchemaV9 && trail.Supersession != nil) {
 		return invalid()
 	}
 	if _, err := ParsePolicyEvaluationRequestID(trail.RequestID); err != nil {

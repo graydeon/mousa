@@ -479,7 +479,7 @@ func TestSourceTrailV4RejectsTheMemberOnEarlierVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	member := &SupersessionSelection{Consulted: false, Dispositions: []SupersessionDisposition{}}
-	for _, schema := range []string{SourceTrailSchema, SourceTrailSchemaV2, SourceTrailSchemaV3} {
+	for _, schema := range []string{SourceTrailSchema, SourceTrailSchemaV2} {
 		changed := cloneV4Trail(base)
 		changed.Schema = schema
 		if schema == SourceTrailSchemaV2 {
@@ -628,12 +628,6 @@ func TestSourceTrailV4RejectsInvalidMembers(t *testing.T) {
 		{name: "missing packing policy", source: canonical, field: "packing", mutate: func(r map[string]any) { delete(r, "packing_policy") }},
 		{name: "unknown packing policy", source: canonical, field: "packing", mutate: func(r map[string]any) { r["packing_policy"] = "semantic" }},
 		{name: "v4 cannot carry the member of another version", source: canonical, field: "supersession", mutate: func(r map[string]any) { r["schema"] = SourceTrailSchemaV2 }},
-		{name: "associated passages", source: canonical, field: "associated", mutate: func(r map[string]any) {
-			r["associated"] = []any{map[string]any{"segment_id": strings.Repeat("aa", 32)}}
-		}},
-		{name: "association omissions", source: canonical, field: "association_omissions", mutate: func(r map[string]any) {
-			r["association_omissions"] = []any{map[string]any{"from_item": "docs/a", "to_item": "docs/b", "reason": "budget"}}
-		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data := mutateTrailRecord(t, test.source, test.mutate)

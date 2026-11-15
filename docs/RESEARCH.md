@@ -22,14 +22,13 @@ comparison.
 ## Status
 
 Pre-alpha engine: verified FTS5 BM25 retrieval, ingestion, segmentation, lifecycle and
-policy decisions, Source Trails, byte-budget packets, opt-in declared associations,
+policy decisions, Source Trails, byte-budget packets,
 and explicit native JSONL supersession enforcement. Declaration/activation administration
 and read-only current-state inspection are implemented. The fresh opted-in store path
 consults administration inside the retrieval transaction and emits v4; default queries
 are unchanged, and the local stdio MCP query tool exposes the same opt-in explicitly
 while its opted-out responses keep the previous property set.
-Lexical associations compose with supersession in source builds as v12 in byte
-mode or v13 with measured tokens. Native directory enforcement is also implemented.
+Native directory enforcement is also implemented.
 See the maintained capability contract for canonical version and history details.
 
 The Git documentation consumer optionally limits rendered prompt content with a pinned
@@ -307,8 +306,7 @@ Startup refusal is distinct from live transaction rollback.
 
 The 2026-10-13 inspection evidence correction adds real stdio regressions in
 `cmd/mousa/mcp_trail_audit_test.go`: successful denial commits a response-bound decision
-and its input children with all existing rows unchanged; native JSONL association
-queries produce inspectable v3 history under both packing policies; and own/foreign
+and its input children with all existing rows unchanged; and own/foreign
 orphans remain source-masked `not_found` in an already-open inspector while canonical
 and startup verification reject the damage as integrity. These correct documentation
 claims and missing fixtures, not runtime regressions. No storage semantics changed.
@@ -469,37 +467,6 @@ study or population-tail bounds. Three large-store restart samples also
 cannot establish tails, a theoretical optimum, sustained writer behavior,
 larger-store capacity or universal speed. The optimization observations
 have not been independently reproduced or published as a companion result.
-
-## Declared associations on a bounded backup checklist
-
-The [corrected comparison](https://github.com/graydeon/mousa-benchmarks/tree/7b87c38769eefa38ed2303f096e73474317fa3f1/results/2026-09-17-associated-context)
-uses six fixed development cases and the same pinned CPython 3.13.7 backup
-excerpts as the [caller-reviewed checklist](https://github.com/graydeon/mousa-benchmarks/tree/9d86f3cd1893b1f3dcee505ff0215426e47e4f59/results/2026-09-17-backup-decision).
-For each case it records a pre-change default, post-change default and
-post-change declaration-enabled response on fresh stores. The declared
-relationship links the backup procedure to a separate connection-context
-excerpt. The post-change default preserved primary evidence; the declaration
-added the missing connection-closure qualification to the fixed follow-up case
-(0/1 to 1/1 declared qualification coverage, 1,807 associated bytes). It also
-added those 1,807 bytes to two deadline questions whose requested fact is absent
-from both excerpts. The 180-byte case still selected no primary passage, so its
-association did not fire. These are passage-coverage observations, not generated
-answers or a held-out relevance result.
-
-The first comparison record labelled default-path responses as declared results.
-It remains unchanged alongside the corrected per-arm responses and analyzer;
-the corrected outcome above does not use its mislabelled summary. The
-[separate processing-bound study](https://github.com/graydeon/mousa-benchmarks/tree/7b87c38769eefa38ed2303f096e73474317fa3f1/results/2026-09-17-associated-bounds)
-observed that a legal 65,536-passage target failed before the 256-passage
-consideration bound (0/3 successful queries, canonical record above 32 MiB).
-All three bounded queries and trail reads succeeded, but their median wall time
-was 22,072.62 ms on the shared host. The limit visibly truncates extreme targets;
-it does not guarantee useful selection or constant-time queries. The pre-bound
-binary hash and observations survive, but its full uncommitted source snapshot
-does not, so that arm cannot be reconstructed exactly from the public run.
-The corrected comparison records its product base and the hash of an uncommitted
-product diff; neither result measures the later documentation consumer or
-establishes a general latency improvement.
 
 ## Opt-in passage segmentation
 

@@ -60,7 +60,7 @@ func (a *mcpApplication) addOpenAIExtensions(server *mcp.Server, serverContext c
 			if err != nil {
 				return nil, err
 			}
-			evidence, err := queryItemsForRequest(ctx, a.store, source, request, query, "original", 65536, mousa.PackingOriginal, nil)
+			evidence, err := queryItemsForRequest(ctx, a.store, source, request, query, "original", 65536, mousa.PackingOriginal)
 			if err != nil {
 				return nil, errors.New(mcpErrorCode(err))
 			}

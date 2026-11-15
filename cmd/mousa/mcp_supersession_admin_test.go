@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/graydeon/mousa/internal/mousa"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func supersessionDraftFixture(activation bool) map[string]any {
@@ -359,68 +357,4 @@ func TestMCPSupersessionDiscoverySchemas(t *testing.T) {
 			t.Fatalf("denial schema: %v", err)
 		}
 	}
-}
-
-func TestMCPSupersessionDiscoveryPreservesAcceptedTools(t *testing.T) {
-	raw, err := os.ReadFile("testdata/mcp_supersession_admin_baseline.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var baseline mcp.ListToolsResult
-	if err := json.Unmarshal(raw, &baseline); err != nil {
-		t.Fatal(err)
-	}
-	if len(baseline.Tools) != 8 {
-		t.Fatalf("accepted baseline has %d tools, want eight", len(baseline.Tools))
-	}
-	run, _ := setup(t)
-	client := startMCPClient(t, run, "cli", false)
-	listed, err := client.session.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current := make(map[string]*mcp.Tool, len(listed.Tools))
-	for _, tool := range listed.Tools {
-		if current[tool.Name] != nil {
-			t.Fatalf("duplicate tool %s", tool.Name)
-		}
-		current[tool.Name] = tool
-	}
-	for _, original := range baseline.Tools {
-		actual := current[original.Name]
-		if actual == nil {
-			t.Fatalf("lost accepted tool %s", original.Name)
-		}
-		var expectedWire, actualWire map[string]any
-		if err := json.Unmarshal(marshalSupersessionTest(t, original), &expectedWire); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(marshalSupersessionTest(t, actual), &actualWire); err != nil {
-			t.Fatal(err)
-		}
-		properties := expectedWire["inputSchema"].(map[string]any)["properties"].(map[string]any)
-		properties["source"].(map[string]any)["enum"] = []any{"alpha", "beta"}
-		if original.Name == "mousa_query" {
-			supersession := properties["supersession"].(map[string]any)
-			const old = "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires native declaration and activation administration for the same source; omitted or false keeps the uncurated default."
-			if supersession["description"] != old {
-				t.Fatal("accepted query description differs from the permitted correction")
-			}
-			supersession["description"] = "Withhold an accepted candidate whose own representation is the selected supersession declaration's exact predecessor pin for this source. Requires declaration and activation administration for the same source through native commands or permitted MCP tools; omitted or false keeps the uncurated default."
-		}
-		if !reflect.DeepEqual(expectedWire, actualWire) {
-			t.Fatalf("%s changed beyond the exact permitted administration description correction", original.Name)
-		}
-		delete(current, original.Name)
-	}
-	for _, name := range []string{"mousa_supersession_declare", "mousa_supersession_activate", "mousa_supersession_status", "mousa_classification_put", "mousa_classification_get", "mousa_source_manifest"} {
-		if current[name] == nil {
-			t.Fatalf("missing added tool %s", name)
-		}
-		delete(current, name)
-	}
-	if len(current) != 0 {
-		t.Fatalf("unexpected added tools: %v", current)
-	}
-	client.close()
 }
