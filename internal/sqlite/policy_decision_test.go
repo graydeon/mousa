@@ -3,10 +3,8 @@ package sqlite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -173,80 +171,6 @@ func TestPolicyDecisionEvaluationRejectsInvalidAndReadOnly(t *testing.T) {
 	missingSource[0] = 1
 	if _, err := writable.EvaluateSourceRetrieval(ctx, testEvaluationRequest(t, missingSource, "request-missing")); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("missing typed source = %v", err)
-	}
-}
-
-func TestPolicyDecisionMigrationExactSchemaBackupAndUpgrade(t *testing.T) {
-	migrations, err := loadMigrations(migrationFiles)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(migrations) < 7 || migrations[6].version != 7 || migrations[6].name != "policy_decisions" {
-		t.Fatalf("migration 7 = %#v", migrations)
-	}
-	// Frozen like migrations 3-6: any later edit to v7 bytes is a new migration, not a repair.
-	if len(migrations[6].sql) != 2576 || fmt.Sprintf("%x", migrations[6].hash) != "4457d69654acf14b01bc1e9ed5f5f5a3ae73a6d3bb1f27ad9917a8bff12e834f" || migrations[6].sql[len(migrations[6].sql)-1] != '\n' {
-		t.Fatalf("migration 7 bytes changed: length %d hash %x", len(migrations[6].sql), migrations[6].hash)
-	}
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "v6.sqlite")
-	createVersionSix(t, path)
-	if readOnly, err := OpenReadOnly(ctx, path); readOnly != nil || !IsCode(err, CodeReadOnly) {
-		if readOnly != nil {
-			readOnly.Close()
-		}
-		t.Fatalf("OpenReadOnly v6 = %v, %v", readOnly, err)
-	}
-	store, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	for _, table := range []string{"policy_decisions", "policy_decision_inputs"} {
-		var tableSQL string
-		if err := store.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?`, table).Scan(&tableSQL); err != nil || !strings.HasSuffix(tableSQL, " STRICT") {
-			t.Fatalf("%s schema = %q err=%v", table, tableSQL, err)
-		}
-	}
-	for table, want := range map[string][]string{
-		"policy_decisions":       {"id", "request_id", "caller_namespace", "external_caller_id", "external_request_id", "source_id", "outcome", "evaluated_at_usec", "current_withdrawal_id", "record_json"},
-		"policy_decision_inputs": {"decision_id", "ordinal", "layer", "activation_id", "binding_id", "definition_id", "result"},
-	} {
-		rows, err := store.db.Query(`SELECT name FROM pragma_table_info(?) ORDER BY cid`, table)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got []string
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				t.Fatal(err)
-			}
-			got = append(got, name)
-		}
-		rows.Close()
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("%s columns = %v, want %v", table, got, want)
-		}
-	}
-	for table, want := range map[string]int{"policy_decisions": 2, "policy_decision_inputs": 4} {
-		var got int
-		if err := store.db.QueryRow(`SELECT count(*) FROM pragma_foreign_key_list(?)`, table).Scan(&got); err != nil || got != want {
-			t.Fatalf("%s foreign keys = %d err=%v, want %d", table, got, err, want)
-		}
-	}
-	var storedHash []byte
-	if err := store.db.QueryRow(`SELECT sha256 FROM schema_migrations WHERE version = 7 AND name = 'policy_decisions'`).Scan(&storedHash); err != nil || !equalBytes(storedHash, migrations[6].hash[:]) {
-		t.Fatalf("stored migration hash = %x err=%v", storedHash, err)
-	}
-	backupPath := path + ".pre-migrate-v6-to-v7.sqlite"
-	backup, err := connect(ctx, backupPath, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer backup.Close()
-	if err := verifyVersion(ctx, backup, migrations, 6, false, true); err != nil {
-		t.Fatalf("v6 backup: %v", err)
 	}
 }
 

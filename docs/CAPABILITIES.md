@@ -23,7 +23,6 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Raw-content identity and normalized text | Yes | Both input forms | CRLF, BOM, empty text, exact retries | Core evaluation includes normalization; no separate normalization ablation |
 | Versioned passage boundaries | Yes | `sync --segment-policy passage-v1`; source-built BEIR `-segment-policy fixed-v1|passage-v1` | Exact source slices, policy replacement, retries, interrupted activation, historical identities and access exclusion; evaluator identity/reuse/resume and explicit comparison axis | Bounded documentation and synthetic comparison in the research record; no general quality claim |
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
-| Legacy directory recovery | Yes | Complete directory sync | Migration preserves history and requires source replay | None |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
 | Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
@@ -79,13 +78,13 @@ administration, not a retrieval access grant. It changes no policy or current it
 The whole batch is atomic. Exact retries are safe; different values for an existing
 source/segment/space reject as an immutable conflict.
 
-Migration 15 adds `vector_spaces` and `embeddings` to canonical SQLite, plus
+The schema has `vector_spaces` and `embeddings` tables, plus
 indexes for bounded current-item and passage enumeration. Space identities bind
 the complete descriptor; embedding identities bind space, source, segment,
 representation/content pins and supplied values. A unique source/segment/space
 slot prevents replacement under a different content identity. Canonical reads and
 startup scans verify bytes, identities, projections and immutable source ancestry
-without repairing corruption. No old record or migration is rewritten.
+without repairing corruption. No old record is rewritten.
 
 `query --vector-space SPACE_ID` takes one `mousa.vector_query.v1` object on stdin,
 with exactly `schema` and `values`, and takes no text argument. Explicit malformed,
@@ -243,7 +242,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | Tool | Required arguments | Optional arguments | Success `result` |
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
-| `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
+| `mousa_status` | `source` | None | Existing status report: collection state, active items and observations |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs |
 | `mousa_trail` | `source`, `trail_id` | `retrieval_details` boolean (default `false`) | Filtered history under fresh authorization; no text. The opt-in adds only the recorded vector/hybrid facts that exist |
 | `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Primary evidence, cosine/ranks, coverage and producing IDs |
@@ -513,8 +512,7 @@ Canonical history retains identities, digests, and provenance, not a complete te
 archive. After deindexing, Mousa cannot reconstruct an old revision's text from its
 digest. Retain original source material separately if historical text is required.
 
-`status` distinguishes `active_items` from historical `observations` and reports
-`needs_recovery`. Source collection state is separate: an active source can contain
+`status` distinguishes `active_items` from historical `observations`. Source collection state is separate: an active source can contain
 zero active items.
 
 For sync reports, `total_items` counts selected directory files or processed JSONL
@@ -547,7 +545,7 @@ The policy is bound into the normalized representation's existing
 `passage-v1` uses SHA-256 of the exact UTF-8 bytes
 `{"segmentation":"passage-v1"}`. Normalizer processor ID and version stay unchanged.
 Segment IDs still bind representation, byte-range selector and content digest.
-No schema migration or historical ID rewrite is needed. Returning to an earlier
+No schema change or historical ID rewrite is needed. Returning to an earlier
 policy and content reuses those historical identities. Use a passage-aware binary
 for future syncs; older binaries do not understand the selected policy.
 
@@ -590,53 +588,28 @@ structure larger than the budget cannot fit; smaller budgets can still omit all
 matching segments. The [research record](RESEARCH.md) reports the bounded
 development comparison and its costs, not general superiority.
 
-## Upgrading an existing directory store
+## Store schema and older stores
 
-Schema version 9 and earlier did not record a reliable current-item relationship.
-Migration 10 preserves canonical history, removes the ambiguous directory search
-projection, and marks each existing directory source as requiring recovery. The CLI
-refuses queries for that source until a complete directory sync succeeds:
+A store has one schema. Mousa marks it in the SQLite header (`application_id`
+and `user_version`) and checks that header before it reads or verifies any record.
+There are no migrations. A store written before the schema was collapsed, or by
+an earlier schema version, is refused with an `incompatible_schema` error that
+says to create a new store and re-sync it from its sources. A SQLite file that is
+not a Mousa store and a store from a newer binary are refused the same way. A
+refused store is not modified.
 
-```sh
-./mousa -store local.sqlite sync ./documents
-./mousa -store local.sqlite status ./documents
-```
-
-Use the same absolute root identity and restore the desired source files before
-syncing. Recovery reconstructs the current item set from those files; it does not
-guess chronology from stored hashes or modification times. If original source input
-is unavailable, current activation cannot be reconstructed automatically. Keep a
-backup before upgrading. A failed recovery sync can be retried; the recovery flag
-remains set until a full sync finishes.
-
-Preview selection before recovery. The current defaults are narrower than older
-CLI versions that attempted every UTF-8 file. Use explicit include patterns or
-`--all-text` when the intended recovery set needs other file types or hidden files;
-review the selection before committing it.
-
-## Startup verification and schema 11
-
-Migration 11 adds a nonunique partial index on active local items by source and
-representation. It changes the access path for startup's orphan-index check,
-not activation, canonical identities, evidence bytes or retrieval policy. An
-upgrade from version 10 creates a verified
-`<store>.pre-migrate-v10-to-v11.sqlite` backup before changing the schema.
-Read-only opens refuse an older schema without migrating it. Older binaries
-refuse a version-11 store; use the backup when an older binary is required.
-
-Writable startup retains both read-only preflight and writable verification,
-including the writable FTS structural integrity check. Canonical records,
-ingestion records and local-item activation checks each use a read snapshot.
-Observation, artifact and segment records are verified directly from ordered
-scans with the same canonical decoding and projection checks as individual
-reads. Each source's ingestion state is verified once per ingestion snapshot;
-all receipts, withdrawals and state rows remain checked. No verification result
-is reused across snapshots, opening passes or operations.
+Startup verification opens a writable store once, including the writable FTS
+structural integrity check. Canonical records, ingestion records and local-item
+activation checks each use a read snapshot. Observation, artifact and segment
+records are verified directly from ordered scans with the same canonical decoding
+and projection checks as individual reads. Each source's ingestion state is
+verified once per ingestion snapshot; all receipts, withdrawals and state rows
+remain checked. No verification result is reused across snapshots, opening passes
+or operations.
 
 These snapshots can retain WAL pages while a concurrent writer commits. They
-end when their verification phase finishes or fails. Startup still reads and
-verifies retained history; the index does not make initialization independent
-of corpus size or establish larger-store capacity.
+end when their verification phase finishes or fails. Startup reads and verifies
+retained history, so initialization still depends on corpus size.
 
 ## JSONL input
 
@@ -796,7 +769,7 @@ selected `segment_id` values. Each evidence hit includes its text digest.
 use the length of `evidence` for the selected count. The old misleading
 `total_matches` field has been removed.
 
-Valid queries open the store writable and may create or migrate it before a later
+Valid queries open the store writable and may create it before a later
 operation fails. Retrieval rollback leaves no partial decision or trail; it does not
 undo that open boundary. Invalid invocation options are checked before open where
 possible, including zero budget, invalid policy and invalid boolean values.

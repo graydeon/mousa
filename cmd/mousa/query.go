@@ -22,13 +22,6 @@ func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, q
 }
 
 func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
-	needsRecovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
-	if err != nil {
-		return nil, err
-	}
-	if needsRecovery {
-		return nil, fmt.Errorf("source requires a complete directory sync after migration before querying")
-	}
 	terms, err := mousa.PrepareLexicalTerms(query, policy == "dedup")
 	if err != nil {
 		return nil, err

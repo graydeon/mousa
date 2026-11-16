@@ -391,7 +391,7 @@ func openFreshLexicalStore(t *testing.T) *Store {
 	return store
 }
 
-// Behavioral fixtures copy only a closed empty database; migration tests use fresh stores.
+// Behavioral fixtures copy only a closed empty database.
 var lexicalStoreTemplate = sync.OnceValues(func() ([]byte, error) {
 	root, err := os.MkdirTemp("", "mousa-empty-store-template-")
 	if err != nil {

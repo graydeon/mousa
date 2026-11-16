@@ -93,7 +93,7 @@ nothing. Each duplicate keeps its own provenance and references the retained
 segment in the trail. Equal text is not independent corroboration or shared
 authorization. Default `--packing-policy original` retains repeated passages.
 
-A valid query uses writable open and can create or migrate a store before a later operation fails;
+A valid query uses writable open and can create a store before a later operation fails;
 rollback does not undo that open boundary. The store's own limit rejects an
 oversized expression after the store is opened.
 

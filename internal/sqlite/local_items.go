@@ -219,21 +219,6 @@ func (store *Store) LocalItemIDs(ctx context.Context, sourceID mousa.SourceID) (
 	return items, nil
 }
 
-// LocalSourceNeedsRecovery reports whether a legacy directory needs a complete sync.
-func (store *Store) LocalSourceNeedsRecovery(ctx context.Context, sourceID mousa.SourceID) (bool, error) {
-	var required bool
-	err := store.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM local_recovery_sources WHERE source_id = ?)`, sourceID[:]).Scan(&required)
-	return required, classify("read local recovery state", err)
-}
-
-// CompleteLocalRecovery makes a legacy directory queryable after a successful full sync.
-func (store *Store) CompleteLocalRecovery(ctx context.Context, sourceID mousa.SourceID) error {
-	return store.writeImmediate(ctx, "complete local recovery", func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, `DELETE FROM local_recovery_sources WHERE source_id = ?`, sourceID[:])
-		return classify("complete local recovery", err)
-	})
-}
-
 func verifyLocalItemRecords(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

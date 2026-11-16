@@ -455,11 +455,7 @@ func sourceStatus(ctx context.Context, store *sqlite.Store, source mousa.Source,
 	if err != nil {
 		return statusResult{}, err
 	}
-	recovery, err := store.LocalSourceNeedsRecovery(ctx, source.ID)
-	if err != nil {
-		return statusResult{}, err
-	}
-	return statusResult{Source: label, CollectionState: string(state.CollectionState), ActiveItems: active, Observations: observations, NeedsRecovery: recovery}, nil
+	return statusResult{Source: label, CollectionState: string(state.CollectionState), ActiveItems: active, Observations: observations}, nil
 }
 
 // runSyncDirectory applies the complete selected set. Scope exclusions deactivate
@@ -513,9 +509,6 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 		}
 		result.record(action, path)
 	}
-	if err := store.CompleteLocalRecovery(ctx, source.ID); err != nil {
-		return err
-	}
 	result.TotalItems = len(selection.Items)
 	if info, err := os.Stat(storePath); err == nil {
 		result.StoreBytes = info.Size()
@@ -529,7 +522,6 @@ type statusResult struct {
 	CollectionState string `json:"collection_state"`
 	Observations    int    `json:"observations"`
 	ActiveItems     int    `json:"active_items"`
-	NeedsRecovery   bool   `json:"needs_recovery"`
 }
 type evidenceResult struct {
 	Query             string                       `json:"query"`

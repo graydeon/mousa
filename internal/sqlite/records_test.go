@@ -216,16 +216,13 @@ func TestRawBlobEncodingsPreserveFullUint64Range(t *testing.T) {
 			t.Fatalf("populate: %v", err)
 		}
 	}
-	var idType, hashType string
-	var idLength, hashLength int
+	var idType string
+	var idLength int
 	if err := store.db.QueryRow(`SELECT typeof(id), length(id) FROM sources WHERE id = ?`, source.ID[:]).Scan(&idType, &idLength); err != nil {
 		t.Fatalf("source ID projection: %v", err)
 	}
-	if err := store.db.QueryRow(`SELECT typeof(sha256), length(sha256) FROM schema_migrations WHERE version = 1`).Scan(&hashType, &hashLength); err != nil {
-		t.Fatalf("migration hash projection: %v", err)
-	}
-	if idType != "blob" || idLength != 32 || hashType != "blob" || hashLength != 32 {
-		t.Fatalf("raw types = id(%s,%d) hash(%s,%d), want 32-byte blobs", idType, idLength, hashType, hashLength)
+	if idType != "blob" || idLength != 32 {
+		t.Fatalf("raw types = id(%s,%d), want a 32-byte blob", idType, idLength)
 	}
 	var start, end []byte
 	if err := store.db.QueryRow(`SELECT selector_start, selector_end FROM segments WHERE id = ?`, segment.ID[:]).Scan(&start, &end); err != nil {

@@ -59,13 +59,6 @@ func (store *Store) ExportEmbeddingInputs(ctx context.Context, request mousa.Pol
 // currentVectorPassages bounds both item enumeration and total passage bytes.
 // The caller's transaction owns policy, current pointers and indexed byte reads.
 func currentVectorPassages(ctx context.Context, q queryer, source mousa.SourceID) ([]VectorPassage, error) {
-	var recovery bool
-	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM local_recovery_sources WHERE source_id=?)`, source[:]).Scan(&recovery); err != nil {
-		return nil, classify("vector recovery state", err)
-	}
-	if recovery {
-		return nil, wrap(CodeInvalidQuery, "vector current inputs", errors.New("source requires complete directory sync after migration"))
-	}
 	rows, err := q.QueryContext(ctx, `SELECT item_id FROM local_items WHERE source_id=? AND active=1 ORDER BY item_id LIMIT 101`, source[:])
 	if err != nil {
 		return nil, classify("enumerate vector items", err)

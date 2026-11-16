@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +20,15 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 		}
 	})
 
-	var applicationID int
-	if err := store.db.QueryRow("PRAGMA application_id").Scan(&applicationID); err != nil {
+	var id, version int
+	if err := store.db.QueryRow("PRAGMA application_id").Scan(&id); err != nil {
 		t.Fatalf("read application_id: %v", err)
 	}
-	if applicationID != 1297044819 {
-		t.Fatalf("application_id = %d, want 1297044819", applicationID)
+	if err := store.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("read user_version: %v", err)
+	}
+	if id != applicationID || version != schemaVersion {
+		t.Fatalf("header = (%d, %d), want (%d, %d)", id, version, applicationID, schemaVersion)
 	}
 
 	rows, err := store.db.Query(`
@@ -50,29 +52,11 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
-	want := []string{"artifacts", "callers", "classification_bases", "classifications", "embeddings", "ingest_gaps", "ingest_receipts", "local_items", "local_recovery_sources", "observations", "policy_activations", "policy_binding_state", "policy_bindings", "policy_decision_inputs", "policy_decisions", "policy_definitions", "purposes", "representation_inputs", "representations", "schema_migrations", "segment_lexical_fts", "segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data", "segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments", "source_access", "source_ingest_state", "source_trail_candidates", "source_trails", "source_withdrawals", "sources", "supersession_activation_state", "supersession_activations", "supersession_declarations", "vector_spaces"}
+	want := []string{"artifacts", "embeddings", "ingest_gaps", "ingest_receipts", "local_items", "observations", "policy_decisions", "representation_inputs", "representations", "segment_lexical_fts", "segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data", "segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments", "source_access", "source_ingest_state", "source_trail_candidates", "source_trails", "source_withdrawals", "sources", "vector_spaces"}
 	if !equalStrings(got, want) {
 		t.Fatalf("tables = %v, want %v", got, want)
 	}
 
-	var version int
-	var name string
-	var hash []byte
-	if err := store.db.QueryRow(`SELECT version, name, sha256 FROM schema_migrations`).Scan(&version, &name, &hash); err != nil {
-		if err == sql.ErrNoRows {
-			t.Fatal("schema_migrations is empty")
-		}
-		t.Fatalf("read schema migration: %v", err)
-	}
-	if version != 1 || name != "records" || len(hash) != 32 {
-		t.Fatalf("migration = (%d, %q, %x), want version 1, name records, 32-byte hash", version, name, hash)
-	}
-	if err := store.db.QueryRow(`SELECT version, name, sha256 FROM schema_migrations WHERE version = 9`).Scan(&version, &name, &hash); err != nil {
-		t.Fatalf("read source trails migration: %v", err)
-	}
-	if version != 9 || name != "source_trails" || len(hash) != 32 {
-		t.Fatalf("migration = (%d, %q, %x), want version 9, name source_trails, 32-byte hash", version, name, hash)
-	}
 }
 
 func TestOpenAppliesAndVerifiesConnectionCapabilities(t *testing.T) {

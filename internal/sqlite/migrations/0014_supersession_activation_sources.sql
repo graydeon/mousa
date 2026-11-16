@@ -1,1 +1,0 @@
-CREATE INDEX supersession_activations_source_idx ON supersession_activations(source_id);

@@ -58,12 +58,3 @@ func testRecordGraph(t *testing.T) (mousa.Source, mousa.Observation, mousa.Artif
 	segment := mousa.Segment{Schema: mousa.SegmentSchema, ID: segmentID, RepresentationID: mixed.ID, Selector: selector, ContentSHA256: testDigest("segment")}
 	return source, observation, artifact, base, mixed, segment
 }
-
-func mustMigrations(t testing.TB) []migration {
-	t.Helper()
-	migrations, err := loadMigrations(migrationFiles)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return migrations
-}

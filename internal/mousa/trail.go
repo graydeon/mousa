@@ -11,12 +11,11 @@ import (
 )
 
 const (
-	ContextPacketSchema   = "mousa.context_packet.v1"
-	ContextPacketSchemaV2 = "mousa.context_packet.v2"
-	SourceTrailSchema     = "mousa.source_trail.v1"
-	SourceTrailSchemaV2   = "mousa.source_trail.v2"
-	PackingOriginal       = "original"
-	PackingExactV1        = "exact-v1"
+	ContextPacketSchema = "mousa.context_packet.v1"
+	SourceTrailSchema   = "mousa.source_trail.v1"
+	SourceTrailSchemaV2 = "mousa.source_trail.v2"
+	PackingOriginal     = "original"
+	PackingExactV1      = "exact-v1"
 )
 
 // isSourceTrailSchema reports whether one schema literal is a supported Source Trail version.

@@ -728,7 +728,7 @@ func TestSearchEnforcedLexicalReadOnlyWritesNothing(t *testing.T) {
 
 func snapshotRowCounts(ctx context.Context, store *Store) (map[string]int, error) {
 	counts := map[string]int{}
-	for _, table := range []string{"policy_decisions", "policy_decision_inputs", "segment_lexical_rows"} {
+	for _, table := range []string{"policy_decisions", "segment_lexical_rows"} {
 		var count int
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {
 			return nil, err

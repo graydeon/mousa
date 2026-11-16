@@ -22,7 +22,7 @@ type LexicalCandidate struct {
 // IndexTextRepresentation indexes every canonical Segment of one text Representation.
 // Per-row verification (verifyLexicalRow) covers each written row inside this
 // transaction; corpus-wide lexical verification runs once per open (verifyLexicalRecords
-// via verifyVersion) and the FTS5 structural check runs once per writable open
+// via verifyStore) and the FTS5 structural check runs once per writable open
 // (checkLexicalIndexIntegrity), so indexing stays linear in the documents it touches
 // instead of re-verifying the whole index per call.
 func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.RepresentationID, content []byte) error {
@@ -392,7 +392,7 @@ func lexicalIntegrityError(ctx context.Context, op string, err error) error {
 // It is the only layer that catches same-length docsize drift, which quick_check and
 // verifyLexicalRecords both miss and which silently skews BM25 scores on search. The
 // special command is an INSERT, so it requires a writable connection and runs once
-// per writable open from verifyVersion, not per document or per query.
+// per writable open from verifyStore, not per document or per query.
 func checkLexicalIndexIntegrity(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `INSERT INTO segment_lexical_fts(segment_lexical_fts) VALUES('integrity-check')`); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
