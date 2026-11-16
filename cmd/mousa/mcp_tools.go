@@ -21,19 +21,18 @@ import (
 const mcpResultVersion = "mousa.mcp_result.v1"
 
 type mcpArguments struct {
-	Source             string
-	Items              []json.RawMessage
-	SegmentPolicy      string
-	Query              string
-	Policy             string
-	BudgetBytes        uint64
-	PackingPolicy      string
-	TrailID            mousa.SourceTrailID
-	RetrievalDetails   bool
-	SpaceID            mousa.SHA256
-	Values             []float64
-	VectorImport       mousa.VectorImport
-	ExpectedManifestID *mousa.SHA256
+	Source           string
+	Items            []json.RawMessage
+	SegmentPolicy    string
+	Query            string
+	Policy           string
+	BudgetBytes      uint64
+	PackingPolicy    string
+	TrailID          mousa.SourceTrailID
+	RetrievalDetails bool
+	SpaceID          mousa.SHA256
+	Values           []float64
+	VectorImport     mousa.VectorImport
 }
 
 type mcpToolError struct {
@@ -112,8 +111,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	allowed := []string{"source"}
 	required := []string{"source"}
 	switch operation {
-	case "mousa_source_manifest":
-		allowed = append(allowed, "expected_manifest_id")
 	case "mousa_sync":
 		allowed = append(allowed, "items", "segment_policy")
 		required = append(required, "items")
@@ -198,12 +195,6 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 				return args, fmt.Errorf("%s must be a lossless JSON string", key)
 			}
 			switch key {
-			case "expected_manifest_id":
-				id, err := mousa.ParseSourceManifestID(text)
-				if err != nil {
-					return args, err
-				}
-				args.ExpectedManifestID = &id
 			case "source":
 				if _, err := streamSource(text); err != nil {
 					return args, err
@@ -376,10 +367,5 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			"type": "object", "additionalProperties": false, "required": []string{"source", "import"}, "properties": map[string]any{"source": source, "import": mcpVectorImportSchema()},
 		}, OutputSchema: imported},
 	)
-	manifest, err := mcpSourceManifestTool(source)
-	if err != nil {
-		return nil, err
-	}
-	definitions = append(definitions, manifest)
 	return definitions, nil
 }

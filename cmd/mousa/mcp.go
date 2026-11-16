@@ -134,9 +134,6 @@ type mcpDisconnectConnection struct {
 
 func (c *mcpDisconnectConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
 	message, err := c.Connection.Read(ctx)
-	if err == nil && !mcpManifestRequestIDAllowed(message) {
-		err = errors.New("manifest request ID exceeds transport limit")
-	}
 	if err != nil {
 		c.cancel(err)
 	}
@@ -184,8 +181,6 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
-		case "mousa_source_manifest":
-			definition.Title = "Inspect Mousa source manifest"
 		}
 		closed := false
 		destructive := mcpIngestionTool(definition.Name)
@@ -243,16 +238,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	source := configured.source
 	var result any
 	switch operation {
-	case "mousa_source_manifest":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
-		if err == nil {
-			var inspection sqlite.SourceManifestInspection
-			inspection, err = a.store.InspectSourceManifest(ctx, request, args.ExpectedManifestID)
-			if err == nil {
-				result = sourceManifestProjection(inspection)
-			}
-		}
 	case "mousa_sync":
 		report := syncResult{Source: args.Source, Input: inputJSONL, SegmentPolicy: args.SegmentPolicy}
 		seen := make(map[string]struct{}, len(args.Items))
@@ -350,9 +335,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			err = ctx.Err()
 		}
 		return mcpFailure(operation, args.Source, mcpErrorCode(err), err, 0, 0)
-	}
-	if operation == "mousa_source_manifest" {
-		return mcpManifestSuccess(args.Source, result)
 	}
 	return mcpSuccess(operation, args.Source, result)
 }

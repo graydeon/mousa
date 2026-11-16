@@ -14,12 +14,6 @@ source is pre-alpha development, not a versioned release or stable SDK.
 These accepted source additions remain distinct from tagged releases and
 independently published observations.
 
-Source builds containing `manifest` add bounded current-source inspection through
-the native directory/JSONL selectors and MCP configured JSONL aliases. This is
-the source-manifest addition, not a tagged-release or accepted measurement claim.
-See [usage](USAGE.md#current-source-manifests) for caller refusal on mismatch or
-denial and the indexed-snapshot boundary.
-
 ## Why Mousa?
 
 *Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—the titan Goddess of Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
@@ -153,7 +147,7 @@ Implemented and planned capabilities, marked per item:
 - lexical retrieval through SQLite FTS5 or an equally portable built-in mechanism (FTS5 implemented);
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
-- deterministic ingestion, chunk identity and source hashing (implemented); caller-owned current indexed-source manifests with fresh-authorized native/MCP comparison (source builds containing `manifest`); full-store interchange and action-completion tracking (not implemented);
+- deterministic ingestion, chunk identity and source hashing (implemented); full-store interchange (not implemented);
 - authority, freshness, sensitivity and status metadata (lifecycle status and per-source access implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
 - byte-budget selection and opt-in exact-content deduplication; truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);

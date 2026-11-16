@@ -21,17 +21,6 @@ Reuse the supplied SQLite transaction for candidate, administrative and provenan
 
 Historical trail reads verify recorded immutable evidence and current authorization. Keep unavailable historical text verification limits explicit.
 
-For current-source manifests, follow the [closed identity recipe](../../docs/USAGE.md#canonical-identity-recipe).
-Keep content inspection and fresh authorization in the same writer transaction.
-Use transaction-local verified readers with canonical-blob length admission before
-allocation; reconstruct through the existing segmenter and verify complete current
-index membership. Historical canonical rows are not current index rows.
-Manifest limits are separate from vector retrieval limits and conjunctive.
-Check actual MCP serialization, including escaping, duplicated content and request
-ID framing. Denial omits the entire manifest and match result. Unknown-source
-denial is fresh but unpersisted because no source foreign-key target exists.
-Treat an expected-ID match as snapshot evidence, never a lease on later work.
-
 For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
 Native `vector inputs`, `vector import` and `query --vector-space` form one supported
 workflow; embedding inference stays external and never holds a canonical transaction.
