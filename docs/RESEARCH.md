@@ -94,43 +94,6 @@ or every possible altered native aggregate. No generation or judging result is
 implied by these retrieval/packing observations.
 
 
-## Native token packing evidence boundary
-
-Native directory/JSONL lexical, supplied-vector and hybrid queries can now select
-whole passages against the exact returned versioned rendering. The optional local
-backend is official `tiktoken==0.12.0`, encoding `o200k_base`, ordinary-text
-encoding. Its name does not establish the tokenizer of an unverified model.
-The [usage guide](USAGE.md#native-token-aware-context-packing) separates explicit
-runtime/cache preparation from offline query execution.
-
-Product checks cover native boundary fit and pressure changing canonical selection,
-original/exact-v1 duplicate behavior, multilingual/control/special-looking text,
-independent official recount of returned contexts, SQLite restart/history,
-fresh authorization/revision restrictions, writer ordering and rollback, retained
-digest corruption, missing/corrupt cache, process protocol failure and cancellation.
-Counts are measured producer evidence; hashes alone cannot prove a tokenizer ran.
-Normal history requires no Python, and retired text remains unarchived.
-Explicit recount refuses when original selected bytes are unavailable.
-Mixed-ancestry SQLite regressions cover lifecycle rejections before, between and
-after accepted candidates under both packers, ordinary history and official
-recount. Native serializer regressions check query/history aligned facts and
-canonical no-alias preservation. Public ingestion cannot construct arbitrary
-multi-source derivations; ordinary single-source native captures do not establish
-this internal graph case. Canonical v7 facts remain recorded; released token
-arrays contain only accepted candidates with consecutive release ranks.
-
-Retired text is unarchived; unknown application/model framing remains outside the cap.
-
-Public-client captures cannot establish internal graph, corruption or concurrency
-seams; those remain product-local checks, not semantic or performance evidence.
-
-Caller-declared prompt/output reservations provide bounded arithmetic, not
-authenticated model-window safety. No model was called and no answer quality,
-semantic relevance, performance or universal model-token equivalence is claimed.
-Earlier consumer-only token captures keep their producing pins and do not
-establish native token selection. Independent native observations are maintained
-separately in the companion repository.
-
 ## Caller-supplied vector evidence boundary
 
 Native export/import/query commands implement exact cosine retrieval over a bounded
@@ -166,9 +129,9 @@ check independently known cosine order, an overlapping second-ranked hit winning
 RRF(k60), both packers, duplicate/budget skips, strict boundary types, canonical
 identity strings, partial/stale coverage, source/caller authorization and closed
 discovered schemas. Default lexical definitions and trail property sets stay intact.
-Opted-in `retrieval_details` reads verified producing v5/v6 and safe v7
+Opted-in `retrieval_details` reads verified producing v5/v6
 vector/hybrid facts after fresh authorization, not a ranking recomputed on today's
-index. MCP tokenizer paths remain exclusively trusted startup configuration.
+index.
 
 The [runnable synthetic client](../examples/mcp_retrieval.py) exercises the public
 workflow without a model. A separate public-head stdio capture and fresh-store
@@ -186,17 +149,7 @@ write-scope enforcement and insertion state. No external snapshot lease exists;
 replacement during external computation requires a fresh export and embeddings.
 These observations do not attest an external producer or model integration.
 
-MCP lexical/vector/hybrid queries also accept explicit whole-rendering token
-budgets through the native v7 transactions. Product stdio checks independently
-count returned context with official `encode_ordinary` under both packers,
-exercise exact fit/one-token-short and byte pressure, reservation arithmetic,
-strict inputs, denial and recorded history after restart/replacement. A deterministic
-worker fault and cancellation after receiving a proposed rendering establish
-bounded errors, reap and no committed producing record at the application seam;
-they do not establish whole-store immutability across startup or inspection audits.
-`token_details` returns recorded accepted-only facts, not an MCP recount.
-The [runnable token client](USAGE.md#mcp-token-budget-example) requires explicit
-operator preparation. Separate public-head observations belong in the companion
+Separate public-head observations belong in the companion
 repository; historical archives keep their own pins and evidence boundaries.
 
 

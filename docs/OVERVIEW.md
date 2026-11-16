@@ -11,9 +11,6 @@ The supported installation is a source build with Go 1.25 or newer. At the
 2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
 source is pre-alpha development, not a versioned release or stable SDK.
 
-Accepted source includes measured token budgets. These source capabilities are
-not a claim about a tagged release; independent captures retain their own producing commits.
-
 These accepted source additions remain distinct from tagged releases and
 independently published observations.
 
@@ -32,10 +29,7 @@ denial and the indexed-snapshot boundary.
 Long-lived knowledge does not only grow. It becomes stale, duplicated, contradictory, and detached from its sources. Search can return matching text without showing why it was selected, whether it remains current, or what it replaced. Agent systems also pay a direct cost when retrieval sends more context than the task requires.
 
 Mousa offers source-linked lexical/vector/hybrid retrieval, source-lifecycle and
-policy checks, inspectable ranking, and whole-passage byte packing. Native
-`--context-tokens` optionally selects against the exact returned rendered context
-using a prepared official offline tokenizer. Caller-declared window reservations
-do not prove the safety of an application's complete model prompt.
+policy checks, inspectable ranking, and whole-passage byte packing.
 
 ## Current development boundary
 
@@ -64,7 +58,7 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
 | **7. Verify** | Check authority, freshness, sensitivity, and conflicts. | Partially implemented: source lifecycle and per-source access decisions. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
-| **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing and optional CLI/MCP whole-rendering token selection, with declared reservations. Provider/model prompt framing remains outside the count. |
+| **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing. Provider/model prompt framing remains outside the count. |
 
 Each stage has one responsibility and a visible boundary. The pipeline can be tested stage by stage, and no single model, provider, or harness owns the result.
 
@@ -95,23 +89,13 @@ The [hybrid contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval
 states those limits. Earlier canonical versions remain unchanged; MCP query and
 opted-in history have their own declared hybrid schemas.
 
-CLI and MCP token queries write `mousa.source_trail.v7` and packet v3, binding existing
-retrieval facts, the versioned rendering/backend, declared allowances, selections,
-precise omissions and measured digest/count. A prepared local Python process
-counts proposed whole renderings inside the authorized writer snapshot and is
-reaped before insertion. Default queries and v1, v2, v5 and v6 remain unchanged.
-See [token packing](CAPABILITIES.md#native-token-aware-packing).
-
 An unknown requested identity remains `not_found`, and legacy readers retain their behavior.
 Source-scoped inspection is narrower: if a missing decision parent prevents ownership
 verification in an already-open inspector, it returns `not_found` for own and foreign
 orphans alike. Fresh-open verification rejects the store instead. Successful denied
 inspection commits only fresh authorization evidence and never looks up history.
 Retired indexed text is not archived: historical byte comparisons can use only text
-still retained. Normal token-aware history verifies retained rendering digests
-without Python and reports the count as recorded producer evidence. Explicit
-native recount requires every original selected byte and the official backend.
-The separate documentation consumer's prompt projection is not a canonical packet.
+still retained. The separate documentation consumer's prompt projection is not a canonical packet.
 
 The goal is not to present a score as an explanation. The goal is to retain enough evidence to inspect what was selected, what was rejected, and why.
 
@@ -172,7 +156,7 @@ Implemented and planned capabilities, marked per item:
 - deterministic ingestion, chunk identity and source hashing (implemented); caller-owned current indexed-source manifests with fresh-authorized native/MCP comparison (source builds containing `manifest`); full-store interchange and action-completion tracking (not implemented);
 - authority, freshness, sensitivity and status metadata (lifecycle status and per-source access implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
 - secret filtering and non-indexable sensitivity classes (planned);
-- byte-budget selection and opt-in exact-content deduplication; optional native token-aware selection and declared window reservations (implemented); truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
+- byte-budget selection and opt-in exact-content deduplication; truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 

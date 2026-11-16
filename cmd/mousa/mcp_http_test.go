@@ -23,7 +23,7 @@ func TestHTTPSubjectAudienceScopeAndRevocation(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 	source, _ := streamSource("alpha")
-	application := &mcpApplication{store: store, path: run.store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source, write: true}}, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), openai: true, http: true}
+	application := &mcpApplication{store: store, path: run.store, caller: "cli", sources: map[string]mcpSource{"alpha": {source: source, write: true}}, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), http: true}
 	server, err := application.server(t.Context())
 	if err != nil {
 		t.Fatal(err)

@@ -15,10 +15,10 @@ import (
 // vector in one source/space. Authorization, both branches, packing and readback
 // share the immediate writer snapshot; a denied request enumerates neither branch.
 func (store *Store) EvaluateAndTraceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
-	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing, nil)
+	return store.traceHybrid(ctx, request, query, termPolicy, spaceID, values, budget, packing)
 }
 
-func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string, token *TokenQuery) (TracedVectorResult, error) {
+func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluationRequest, query, termPolicy string, spaceID mousa.SHA256, values []float64, budget uint64, packing string) (TracedVectorResult, error) {
 	if err := store.requireWritable("query hybrid"); err != nil {
 		return TracedVectorResult{}, err
 	}
@@ -164,10 +164,6 @@ func (store *Store) traceHybrid(ctx context.Context, request mousa.PolicyEvaluat
 		trail, err := mousa.NewHybridSourceTrail(request, decision, expression, h, candidates, budget, packing)
 		if err != nil {
 			return wrap(CodeInvalidRecord, "build hybrid trail", err)
-		}
-		trail, err = packRetrievalTokens(trail, request.SourceID, candidates, token, &result)
-		if err != nil {
-			return err
 		}
 		if err := insertSourceTrail(ctx, conn, trail); err != nil {
 			return err

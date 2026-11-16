@@ -3,7 +3,7 @@
 # Useful context. A trail back to its source.
 
 **Mousa turns local documents into compact, source-linked context for agents and applications.**
-Search your material, set a byte budget or opt into a rendered-context token cap,
+Search your material, set a byte budget,
 and receive passages with an inspectable record of how they were selected.
 
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) · [Capabilities](docs/CAPABILITIES.md) · [Public benchmarks](https://github.com/graydeon/mousa-benchmarks)
@@ -42,7 +42,7 @@ Mousa makes that context smaller and easier to inspect:
 | Your need | What Mousa gives you |
 |---|---|
 | Find useful passages | Source-scoped lexical, exact cosine, or hybrid RRF retrieval with caller-supplied vectors. |
-| Control context size | A released-text byte budget, optional exact-content deduplication, and CLI/MCP whole-context token packing with a prepared local tokenizer. |
+| Control context size | A released-text byte budget, optional exact-content deduplication. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
 | Use your own tools | One Go executable, SQLite storage, JSON output and local stdio MCP. |
@@ -88,18 +88,6 @@ preparation. Export requires retrieval authorization; import separately requires
 `mousa_trail` adds recorded vector/hybrid facts only when `retrieval_details` is
 true; default lexical tools and inspection stay unchanged.
 
-For an exact returned context string under a token cap, use
-[`query --context-tokens`](docs/USAGE.md#native-token-aware-context-packing)
-or the three [MCP query tools with `context_tokens`](docs/USAGE.md#mcp-token-budget-example).
-This opt-in counts the complete versioned rendering with official
-`tiktoken==0.12.0`, `o200k_base`, ordinary-text encoding. It requires a prepared
-local Python environment/cache; queries never download vocabulary assets.
-Ordinary queries and the CGO-disabled Go build do not require Python.
-Query and opted-in history token facts use an accepted-candidate release view;
-canonical v7 producing facts remain intact for integrity checks.
-Token outcomes distinguish lifecycle-only rejection from an accepted candidate
-omitted by a byte or token budget; see the [outcome rules](docs/USAGE.md#query-and-inspect).
-
 ## What works today?
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
@@ -115,13 +103,10 @@ See the [manifest workflow and example](docs/USAGE.md#current-source-manifests).
 This addition is not a tagged-release or independent capture acceptance claim.
 
 Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
-records branch contributions in v6. Native and MCP token-aware lexical/vector/hybrid
-selection records measured rendering and reservation facts in v7. MCP `mousa_trail`
-exposes those recorded facts only with `token_details: true`, without recounting.
+records branch contributions in v6.
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Historical record-by-ID reads remain native-only.
 Automatic embedding generation and secret filtering remain pending.
-Caller-declared reservations do not prove full model-window safety.
 
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
 The [research record](docs/RESEARCH.md) separates regression coverage from measured

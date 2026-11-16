@@ -6,7 +6,6 @@ import (
 	"errors"
 
 	"github.com/graydeon/mousa/internal/mousa"
-	"github.com/graydeon/mousa/internal/tokenizer"
 )
 
 // TrailInspection releases a historical projection only after a fresh source
@@ -35,10 +34,8 @@ type SourceTrailView struct {
 	Schema            string                       `json:"schema,omitempty"`
 	PackingPolicy     string                       `json:"packing_policy,omitempty"`
 	// Native callers expose vector history explicitly; the MCP view stays closed.
-	Vector            *mousa.VectorSelection    `json:"-"`
-	Hybrid            *mousa.HybridSelection    `json:"-"`
-	Token             *mousa.TokenSelectionView `json:"-"`
-	TokenVerification string                    `json:"-"`
+	Vector *mousa.VectorSelection `json:"-"`
+	Hybrid *mousa.HybridSelection `json:"-"`
 }
 
 // SourceTrailCandidateView describes a historically accepted candidate. An
@@ -59,18 +56,10 @@ type SourceTrailCandidateView struct {
 // exists. Authorization, verified history, and index membership share one writer
 // snapshot. Historical rejected candidates are counted but never projected.
 func (store *Store) InspectSourceTrail(ctx context.Context, request mousa.PolicyEvaluationRequest, id mousa.SourceTrailID) (TrailInspection, error) {
-	return store.inspectSourceTrail(ctx, request, id, nil)
+	return store.inspectSourceTrail(ctx, request, id)
 }
 
-// InspectSourceTrailWithTokens explicitly recounts retained rendering after fresh authorization.
-func (store *Store) InspectSourceTrailWithTokens(ctx context.Context, request mousa.PolicyEvaluationRequest, id mousa.SourceTrailID, counter *tokenizer.Counter) (TrailInspection, error) {
-	if counter == nil {
-		return TrailInspection{}, errors.New("token verification requires a ready counter")
-	}
-	return store.inspectSourceTrail(ctx, request, id, counter)
-}
-
-func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.PolicyEvaluationRequest, id mousa.SourceTrailID, counter *tokenizer.Counter) (TrailInspection, error) {
+func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.PolicyEvaluationRequest, id mousa.SourceTrailID) (TrailInspection, error) {
 	if err := store.requireWritable("inspect source trail"); err != nil {
 		return TrailInspection{}, err
 	}
@@ -123,46 +112,12 @@ func (store *Store) inspectSourceTrail(ctx context.Context, request mousa.Policy
 			UsedBytes: trail.UsedBytes, PacketID: trail.PacketID,
 			Candidates: []SourceTrailCandidateView{},
 		}
-		if trail.Token != nil {
-			view.Schema = trail.Schema
-			view.PackingPolicy = trail.PackingPolicy
-			view.Token, view.Vector, view.Hybrid = mousa.ReleasedTokenSelection(trail), trail.Vector, trail.Hybrid
-		}
-		if counter != nil && trail.Token == nil {
-			return errors.New("token verification requires a token-aware trail")
-		}
-		if trail.Token != nil {
-			text, complete, err := retainedTokenContext(ctx, conn, trail)
-			if err != nil {
-				return err
-			}
-			view.TokenVerification = "retired_text_unavailable"
-			if complete {
-				view.TokenVerification = "retained_digest_verified_count_recorded"
-			}
-			if counter != nil {
-				if !complete {
-					return errors.New("cannot recount: original selected text is retired and unarchived")
-				}
-				count, err := counter.Count(text)
-				if err != nil {
-					return err
-				}
-				if count != trail.Token.MeasuredTokens {
-					return integrity("verify token count", "official recount disagrees with producing record")
-				}
-				if err := counter.Finish(); err != nil {
-					return err
-				}
-				view.TokenVerification = "official_recount_verified"
-			}
-		}
-		if trail.Token == nil && trail.Hybrid != nil {
+		if trail.Hybrid != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Hybrid = trail.Hybrid
 		}
-		if trail.Token == nil && trail.Vector != nil {
+		if trail.Vector != nil {
 			view.Schema = trail.Schema
 			view.PackingPolicy = trail.PackingPolicy
 			view.Vector = trail.Vector

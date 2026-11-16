@@ -13,7 +13,6 @@ import (
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
-	"github.com/graydeon/mousa/internal/tokenizer"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -34,25 +33,19 @@ type mcpSource struct {
 }
 
 type mcpApplication struct {
-	store           *sqlite.Store
-	path            string
-	caller          string
-	sources         map[string]mcpSource
-	gate            chan struct{}
-	slots           chan struct{}
-	openai          bool
-	http            bool
-	tokenizerPython string
-	tokenizerCache  string
+	store   *sqlite.Store
+	path    string
+	caller  string
+	sources map[string]mcpSource
+	gate    chan struct{}
+	slots   chan struct{}
+	http    bool
 }
 
 func mcpCommand(parent context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("mcp")
 	caller := flags.String("caller", "", "trusted local caller ID (required; cli uses the existing CLI policy)")
-	openai := flags.Bool("openai-extensions", false, "enable OpenAI composer evidence mentions and resource reads; retrieved data is shared with the host")
 	httpConfigPath := flags.String("http-config", "", "OAuth-protected loopback HTTP configuration; stdio when omitted")
-	tokenPython := flags.String("tokenizer-python", "", "operator-prepared local tiktoken==0.12.0 interpreter; token mode disabled when omitted")
-	tokenCache := flags.String("tokenizer-cache", "", "operator-prepared offline o200k_base cache")
 	var allowed, writable []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })
 	flags.Func("ingest-source", "permit item ingestion and embedding import into an already permitted source; repeatable", func(value string) error { writable = append(writable, value); return nil })
@@ -61,9 +54,6 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	}
 	if len(flags.Args()) != 0 || *caller == "" || len(allowed) == 0 || len(allowed) > mcpMaxSources {
 		return usageError{"mcp requires --caller and 1 to 128 --source values, with no positional arguments"}
-	}
-	if (*tokenPython == "") != (*tokenCache == "") {
-		return usageError{"MCP token execution requires both --tokenizer-python and --tokenizer-cache"}
 	}
 	sources := make(map[string]mcpSource, len(allowed))
 	for _, label := range allowed {
@@ -104,8 +94,7 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	application := &mcpApplication{store: store, path: storePath, caller: *caller, sources: sources, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), openai: *openai, http: httpConfig != nil}
-	application.tokenizerPython, application.tokenizerCache = *tokenPython, *tokenCache
+	application := &mcpApplication{store: store, path: storePath, caller: *caller, sources: sources, gate: make(chan struct{}, 1), slots: make(chan struct{}, 8), http: httpConfig != nil}
 	server, err := application.server(ctx)
 	if err == nil {
 		if httpConfig != nil {
@@ -225,9 +214,6 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			return a.call(ctx, definition.Name, req.Params.Arguments)
 		})
 	}
-	if a.openai {
-		a.addOpenAIExtensions(server, serverContext, names)
-	}
 	return server, nil
 }
 
@@ -252,20 +238,6 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	}
 	if err := ctx.Err(); err != nil {
 		return mcpFailure(operation, args.Source, "cancelled", err, 0, 0)
-	}
-	var counter *tokenizer.Counter
-	if args.TokenBudget != nil {
-		if a.tokenizerPython == "" || a.tokenizerCache == "" {
-			return mcpFailure(operation, args.Source, "tokenizer_unavailable", errors.New("token mode requires operator-configured --tokenizer-python and --tokenizer-cache"), 0, 0)
-		}
-		counter, err = startTokenCounter(ctx, a.tokenizerPython, a.tokenizerCache)
-		if err != nil {
-			if ctx.Err() != nil {
-				return mcpFailure(operation, args.Source, "cancelled", ctx.Err(), 0, 0)
-			}
-			return mcpFailure(operation, args.Source, "tokenizer_unavailable", errors.New("tokenizer unavailable: require prepared offline tiktoken==0.12.0 / o200k_base backend"), 0, 0)
-		}
-		defer counter.Close()
 	}
 	started := time.Now()
 	source := configured.source
@@ -341,20 +313,8 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		request, err = callerRetrievalRequest(source.ID, a.caller)
 		if err == nil {
 			var evidence *evidenceResult
-			var rendered string
-			if args.TokenBudget != nil {
-				var traced sqlite.TracedLexicalResult
-				traced, rendered, err = a.store.EvaluateAndTraceTokenLexical(ctx, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy, sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter})
-				if err == nil {
-					evidence, err = lexicalEvidenceProjection(ctx, a.store, source, request, traced.Trail.Expression, args.Policy, args.PackingPolicy, traced)
-					if err == nil {
-						result = mcpLexicalResult{evidence, &rendered, mousa.ReleasedTokenSelection(traced.Trail)}
-					}
-				}
-			} else {
-				evidence, err = queryItemsForRequest(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy)
-				result = evidence
-			}
+			evidence, err = queryItemsForRequest(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy)
+			result = evidence
 			if err == nil {
 				evidence.Query, evidence.Source = args.Query, args.Source
 				evidence.LatencyMicros = time.Since(started).Microseconds()
@@ -365,14 +325,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		request, err = callerRetrievalRequest(source.ID, a.caller)
 		if err == nil {
 			var traced sqlite.TracedVectorResult
-			if args.TokenBudget != nil {
-				options := sqlite.TokenQuery{Budget: *args.TokenBudget, Counter: counter}
-				if operation == "mousa_vector_query" {
-					traced, err = a.store.EvaluateAndTraceTokenVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
-				} else {
-					traced, err = a.store.EvaluateAndTraceTokenHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy, options)
-				}
-			} else if operation == "mousa_vector_query" {
+			if operation == "mousa_vector_query" {
 				traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
 			} else {
 				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
@@ -387,7 +340,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		if err == nil {
 			var inspection sqlite.TrailInspection
 			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
-			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails, args.TokenDetails)
+			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails)
 		}
 	default:
 		return nil, fmt.Errorf("unregistered tool %q", operation)

@@ -135,7 +135,6 @@ type SourceTrail struct {
 	PackingPolicy string           `json:"packing_policy,omitempty"`
 	Vector        *VectorSelection `json:"vector,omitempty"`
 	Hybrid        *HybridSelection `json:"hybrid,omitempty"`
-	Token         *TokenSelection  `json:"token,omitempty"`
 }
 
 // trailCandidatesFromVerified maps one verified candidate list onto the text-free trail rows the
@@ -274,12 +273,6 @@ func NewSourceTrail(request PolicyEvaluationRequest, decision PolicyDecision, ex
 // Validate checks text-free structure, accounting and identities. Exact equality must be
 // checked against verified content at creation; an identity is not proof of that assertion.
 func (trail SourceTrail) Validate() error {
-	if trail.Schema == SourceTrailSchemaV7 {
-		return trail.validateTokenTrail()
-	}
-	if trail.Token != nil {
-		return errors.New("token field requires source trail v7")
-	}
 	if trail.Schema == SourceTrailSchemaV6 {
 		return trail.validateHybridTrail()
 	}
@@ -387,9 +380,6 @@ func itoa(value int) string {
 
 // NewSourceTrailID derives the trail identity from every bound field and every ordered candidate.
 func NewSourceTrailID(trail SourceTrail) (SourceTrailID, error) {
-	if trail.Schema == SourceTrailSchemaV7 {
-		return vectorTrailIdentity(trail)
-	}
 	if trail.Schema == SourceTrailSchemaV6 {
 		return vectorTrailIdentity(trail)
 	}
@@ -478,8 +468,6 @@ func DecodeSourceTrail(data []byte) (SourceTrail, error) {
 	}
 	if json.Unmarshal(data, &header) == nil {
 		switch header.Schema {
-		case SourceTrailSchemaV7:
-			return decodeTokenSourceTrail(data)
 		case SourceTrailSchemaV6:
 			return decodeHybridSourceTrail(data)
 		case SourceTrailSchemaV5:

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"reflect"
 	"regexp"
 	"strings"
@@ -151,7 +150,7 @@ func TestMCPRetrievalRankingAndRecordedHistory(t *testing.T) {
 			defaultView := client.call("mousa_trail", inspect, "")["historical"].(map[string]any)
 			inspect["retrieval_details"] = false
 			falseView := client.call("mousa_trail", inspect, "")["historical"].(map[string]any)
-			if !reflect.DeepEqual(defaultView, falseView) || defaultView["vector"] != nil || defaultView["hybrid"] != nil || defaultView["token"] != nil {
+			if !reflect.DeepEqual(defaultView, falseView) || defaultView["vector"] != nil || defaultView["hybrid"] != nil {
 				t.Fatalf("default history grew: %v", defaultView)
 			}
 			inspect["retrieval_details"] = true
@@ -243,7 +242,6 @@ func TestMCPRetrievalStrictInputsBeforeMutation(t *testing.T) {
 			"budget_bytes":   {`true`, `0`, `-1`, `1.5`, `262145`},
 			"space_id":       {`"bad"`, `"` + strings.Repeat("A", 64) + `"`, `"` + strings.Repeat("0", 64) + `"`},
 			"packing_policy": {`"unknown"`, `false`},
-			"context_tokens": {`0`, `null`, `true`, `524289`}, "tokenizer_python": {`"/bin/false"`},
 		} {
 			for _, value := range values {
 				clone := make(map[string]json.RawMessage)
@@ -313,46 +311,6 @@ func TestMCPRetrievalDuplicateAndBudgetPacking(t *testing.T) {
 					t.Fatalf("empty coverage: %v", empty)
 				}
 			})
-		}
-	}
-}
-
-func TestMCPRetrievalTokenHistorySafeProjection(t *testing.T) {
-	python, cache := os.Getenv("MOUSA_TEST_TOKENIZER_PYTHON"), os.Getenv("MOUSA_TEST_TOKENIZER_CACHE")
-	if python == "" || cache == "" {
-		t.Skip("official tokenizer acceptance environment not configured")
-	}
-	run, _ := setup(t)
-	jsonlSync(t, run, "alpha", record("a", "Drain sockets."))
-	space := prepareMCPVectors(t, run, map[string][]float64{"a": {1, 0}})
-	client := startMCPClient(t, run, "cli", false)
-	for _, mode := range []string{"lexical", "vector", "hybrid"} {
-		args := []string{"query", "--source", "alpha", "--context-tokens", "1000", "--tokenizer-python", python, "--tokenizer-cache", cache}
-		vector := ""
-		if mode != "lexical" {
-			args = append(args, "--"+mode+"-space", space)
-			vector = `{"schema":"mousa.vector_query.v1","values":[1,0]}`
-		}
-		if mode != "vector" {
-			args = append(args, "Drain")
-		}
-		_, produced := run.runInput(vector, false, args...)
-		h := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": produced["trail_id"], "retrieval_details": true}, "")["historical"].(map[string]any)
-		if h["schema"] != "mousa.source_trail.v7" || h["token"] != nil || h["token_verification"] != nil || h["packet_id"] != produced["packet_id"] {
-			t.Fatalf("unsafe token extension: %v", h)
-		}
-		if mode != "lexical" {
-			facts := produced[mode].(map[string]any)
-			delete(facts, "query_values")
-			if !reflect.DeepEqual(h[mode], facts) {
-				t.Fatalf("v7 retrieval differs from verified native facts: %v", h)
-			}
-		} else if h["vector"] != nil || h["hybrid"] != nil {
-			t.Fatalf("lexical history invented ranking: %v", h)
-		}
-		opted := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": produced["trail_id"], "token_details": true}, "")["historical"].(map[string]any)
-		if !reflect.DeepEqual(opted["token"], produced["token"]) || opted["vector"] != nil || opted["hybrid"] != nil {
-			t.Fatal("native-created token history opt-in changed producing facts")
 		}
 	}
 }

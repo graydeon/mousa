@@ -51,8 +51,8 @@ Preserve v1–v5 bytes and vector-only behavior. Verify immutable producing fact
 in history without rerunning lexical search or asserting past coverage completeness.
 MCP `mousa_hybrid_query` reuses this transaction. Its retrieval-details history
 opt-in projects the verified producing view without reranking. Preserve default
-lexical query and trail property sets, canonical hex identities and closed schemas;
-OpenAI mention/resource search stays lexical and byte-only. MCP exports current
+lexical query and trail property sets, canonical hex identities and closed schemas.
+MCP exports current
 authorized passage inputs through `mousa_vector_inputs` and imports exact pinned
 external values through `mousa_vector_import`. Reuse `ExportEmbeddingInputs`,
 `DecodeVectorImport` and atomic `ImportEmbeddings`; preserve their native bounds
@@ -61,30 +61,7 @@ ingestion permission. Import needs the alias's `--ingest-source` and runtime HTT
 `mousa:write` scope, not a new native retrieval-policy gate. Withdrawal/current
 pins still reject in native import. Exact retries count accepted submissions,
 not new rows; conflicts/stale/foreign pins cannot partially insert a space or batch.
-No external snapshot lease exists. Keep tokenizer paths out of tool arguments.
-v7 retrieval details use verified safe vector/hybrid fields.
-
-For token packing changes, read [native token-aware packing](../../docs/CAPABILITIES.md#native-token-aware-packing)
-and its runtime preparation/limits in the usage guide. Native token mode writes
-v7 and packet v3.
-Count the complete proposed versioned rendering through the bounded official offline process, after fresh
-authorization and within the same writer snapshot. Reap/verify the worker before
-canonical insertion. Skipped passages neither spend released budget nor seed
-duplicates. Keep byte equality separate from the retrieval identity union.
-Normal canonical reads need no Python: measured counts are recorded producer
-evidence, while retained rendering digests are rederived. Explicit authorized
-recount needs every original selected byte; retired text remains unarchived.
-Run optional-feature checks with a pinned prepared backend and report skips
-separately. MCP context_tokens uses these same native transactions with trusted
-startup-only tokenizer-python/cache; token_details independently releases recorded
-safe facts without recounting. Omitted token fields preserve byte defaults and
-Python independence; invalid budgets reject before mutation.
-Native query/history expose `TokenSelectionView`: accepted candidate identities
-align compact proposed-count and lexical arrays, with accepted-order lexical ranks.
-Keep rejected slots and original search ordinals out of release views. Accepted
-budget/duplicate omissions still have legitimate metadata. Internal canonical
-`TokenSelection` retains all producing facts; never mutate or rehash it to filter
-an inspection. Fresh inspection may append authorization evidence.
+No external snapshot lease exists. Fresh inspection may append authorization evidence.
 
 ## Prove and deliver the change
 

@@ -56,8 +56,6 @@ func main() {
 		err = withdrawCommand(ctx, *storePath, rest)
 	case "mcp":
 		err = mcpCommand(ctx, *storePath, rest)
-	case "plugin":
-		err = pluginCommand(*storePath, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mousa: unknown command %q\n", command)
 		usage()
@@ -99,34 +97,18 @@ commands:
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
   mcp --caller <id> --source <id>
                             serve configured JSONL sources over stdio MCP
-                            --openai-extensions enables evidence mentions/resources
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; --ingest-source <id> permits ingestion/import
-                            --tokenizer-python <path> --tokenizer-cache <dir> enables
-                            optional whole-rendering token budgets; prepared offline backend only
-  plugin --out <new-dir> --source <id> --consent-to-share
-                            create a consent-bound local desktop/Codex marketplace
 
 query options (before positional arguments):
   --policy original|dedup    query-term policy; default original retains repetition
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --packing-policy original|exact-v1
                             exact-v1 omits byte-equal copies of selected passages
-  --context-tokens <N>       native whole-rendering token cap, 1..524288; optional Python
-  --tokenizer-python <path>  prepared local tiktoken==0.12.0 interpreter; default python3
-  --tokenizer-cache <dir>    prepared offline o200k_base cache; default user cache/mousa/tiktoken
-  --context-window <W>       optional caller-declared window, at most 1000000000
-  --prompt-reserve <P>       caller-declared prompt/tool overhead; requires a window
-  --output-reserve <O>       caller-declared output tokens; requires a window
-                            all bytes of returned context count; JSON framing does not
   --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
                             cannot combine with an explicit policy flag
   --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
                             supports --policy; no vector-space flag
-
-trail options:
-  --verify-tokens            explicitly recount retained token-aware context with the
-                            same tokenizer-python/cache options; retired bytes refuse
 
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
@@ -218,12 +200,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
 	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
 	hybridSpace := flags.String("hybrid-space", "", "RRF lexical/vector space identity; query text argument and vector JSON on stdin")
-	contextTokens := flags.Uint64("context-tokens", 0, "opt-in whole rendered context token cap")
-	tokenPython := flags.String("tokenizer-python", "python3", "local interpreter with tiktoken==0.12.0")
-	tokenCache := flags.String("tokenizer-cache", "", "prepared offline o200k_base cache directory")
-	contextWindow := flags.Uint64("context-window", 0, "caller-declared context window, at most 1000000000")
-	promptReserve := flags.Uint64("prompt-reserve", 0, "caller-declared prompt/tool overhead tokens")
-	outputReserve := flags.Uint64("output-reserve", 0, "caller-declared output tokens")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -239,39 +215,6 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 			hybridMode = true
 		}
 	})
-	tokenMode, tokenSpecific := false, false
-	flags.Visit(func(option *flag.Flag) {
-		switch option.Name {
-		case "context-tokens":
-			tokenMode = true
-		case "tokenizer-python", "tokenizer-cache", "context-window", "prompt-reserve", "output-reserve":
-			tokenSpecific = true
-		}
-	})
-	if tokenSpecific && !tokenMode {
-		return usageError{"tokenizer options require --context-tokens"}
-	}
-	if tokenMode {
-		if vectorMode && hybridMode {
-			return usageError{"token mode cannot combine both vector modes"}
-		}
-		mode, space := "lexical", ""
-		if hybridMode {
-			mode, space = "hybrid", *hybridSpace
-		} else if vectorMode {
-			mode, space = "vector", *vectorSpace
-			badPolicy := false
-			flags.Visit(func(option *flag.Flag) {
-				if option.Name == "policy" {
-					badPolicy = true
-				}
-			})
-			if badPolicy {
-				return usageError{"vector mode cannot use an explicit policy"}
-			}
-		}
-		return tokenQueryCommand(ctx, storePath, *sourceID, flags.Args(), space, mode, *policy, *budget, *packing, mousa.TokenBudget{Cap: *contextTokens, Window: *contextWindow, PromptReserve: *promptReserve, OutputReserve: *outputReserve}, *tokenPython, *tokenCache)
-	}
 	if hybridMode {
 		if vectorMode {
 			return usageError{"hybrid mode cannot be combined with vector-space"}

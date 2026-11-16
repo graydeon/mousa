@@ -30,18 +30,16 @@ The [research record](RESEARCH.md) documents published measurements and limitati
 | Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
 | Source lifecycle and per-source access decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
-| Rendered-context token packing | Yes | Native `query --context-tokens`; MCP queries with `context_tokens` and operator-prepared backend | Official offline local process, whole-rendering boundary fit, both packers, Unicode/special-looking text, v7 history, authorization and rollback; native-only recount | Synthetic counting/protocol evidence only; no model-window or retrieval-quality guarantee |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
 | Embedding inference, answer generation | No | No | Not implemented | None |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
-| OpenAI MCP Extensions | Yes | Opt-in `mcp --openai-extensions`; `plugin` packaging | Real executable mention/resource authorization and reconnect; native Codex install, component recognition, tool discovery and resource read; actual desktop rendering not verified | None; protocol/client checks are not model-driven evaluation |
 | OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries | None; live identity-provider/deployment interoperability not verified |
 | Stable SDK, general connectors, public pairing relay | No supported interface | No | Not implemented as supported interfaces | None |
 
 The [Git documentation consumer](../examples/docs/README.md) is a separate
 Python CLI example. Its opt-in `ask --context-tokens` counts its own rendered
-prompt with pinned `o200k_base`; unlike native token packing, it does not change
+prompt with pinned `o200k_base`; it does not change
 the byte-packed canonical packet. Message framing and reserved output remain
 outside that example's cap.
 The [pinned development case](https://github.com/graydeon/mousa-benchmarks/tree/4a9a477907b7f0eb7af708118e50c047ba9b2a5d/results/2026-09-29-context-512)
@@ -49,81 +47,6 @@ keeps the fragment and verified parent passage at 511 of 512 content tokens
 by omitting a duplicate path from citation headers; an unrelated `git-switch`
 passage is not selected. It does not establish model-window safety, answer
 quality or general relevance.
-
-## Native token-aware packing
-
-The [preparation and runnable queries](USAGE.md#native-token-aware-context-packing)
-use official `tiktoken==0.12.0`, `o200k_base`, `encode_ordinary` through one bounded
-local process per token query. The helper is embedded in the pure-Go executable;
-Python is optional and invoked by argv, never a shell. The immutable encoder is
-loaded and its exact backend identity handshaken before source text is sent.
-The pinned loader's vocabulary SHA256 check remains active; missing/corrupt cache
-cannot fall back to a download. No daemon, model service or provider credentials
-are involved. Ordinary queries, startup and canonical reads need no tokenizer.
-
-Token mode preserves existing lexical order, cosine order or hybrid identity
-union/RRF order. Fresh authorization, current eligibility, retrieval, token
-selection, insertion and canonical readback share one immediate writer snapshot.
-Only freshly authorized verified text reaches the counter. Denial/withdrawal
-enumerates no candidates and releases no context or source-derived count facts.
-Current revisions and vector space/content pins retain their existing restrictions.
-
-Each addition measures the entire proposed `mousa.context_text.v1` rendering,
-including provenance headers and two-LF passage separators. The exact string,
-UTF-8 byte digest and measured ordinary-text count are returned together.
-The independent released-text byte budget excludes headers/separators.
-Oversized passages are skipped without trimming; later candidates are tried.
-Original packing retains byte-equal passages when they fit; exact-v1 compares
-actual bytes against selected passages only. Identity union is separate from
-byte equality. Unselected passages consume neither released-text nor rendered
-token allowance and never seed the retained duplicate set.
-
-`mousa.source_trail.v7` records mode, existing vector/hybrid producing facts or
-aligned lexical rank/BM25 facts, backend/rendering identities, source, cap/window/
-reservation declarations, effective allowance, ordered selections, measured
-proposed-rendering counts, exact omissions and final digest/count/byte accounting.
-Omissions distinguish `bytes`, `tokens`, `rendered_bytes` and `duplicate`; lifecycle
-rejection remains separate. Packet v3 binds the complete token selection under
-its own domain; v1, v2, v5 and v6 encodings, default responses and packet identities do not
-change. No context text is archived and no parallel canonical store is introduced.
-A denied v7 trail carries no candidates, proposed source counts or selected text;
-canonical validation rejects candidate facts even when identities are recomputed.
-
-Canonical reads/startup validate identities, projections, policy/source parents,
-retrieval facts, packing accounting and the rendered digest when all selected
-bytes remain retained, without Python. A recorded measured count is producer
-evidence, not proof of tokenizer execution. Native `trail --verify-tokens`
-reauthorizes and independently recounts retained selected bytes with a ready
-backend; retired original bytes make that explicit recount unavailable.
-Neither current content nor a hash can replace those missing historical bytes.
-Historical BM25 and past coverage completeness retain their existing limits.
-
-Native query and normal/recount history release a `TokenSelectionView`, not the
-canonical `TokenSelection`. Its `candidate_ids`, `proposed_tokens` and (for lexical
-mode) `lexical` arrays align only with historically accepted candidates, including
-accepted budget/duplicate omissions. Lexical ranks are consecutive within this
-accepted order; BM25 and proposed counts retain their accepted producing values.
-Rejected candidates leave no identity, null slot or original ordinal in those
-arrays. The deliberate history `lifecycle_excluded` aggregate remains available.
-Vector/hybrid producing arrays already require accepted candidates only. Measured
-rendering/count/digest and budget declarations do not change. Canonical internal
-reads retain every producing fact; projection never edits the record or its
-identity. Fresh inspection still records its authorization audit evidence.
-
-Token query outcomes distinguish authorized all-lifecycle-rejected candidates
-(`lifecycle_excluded`) from no candidates (`no_candidates`) and accepted
-candidates omitted by a byte or token budget (`budget_omitted`). Policy denial
-takes precedence as `policy_excluded`; any selected evidence yields `evidence`.
-Mixed accepted/rejected lists follow the accepted selection or budget outcome,
-without releasing rejected positional details.
-
-Caps, process/work limits, reservation arithmetic and errors are specified in the
-usage guide. Window
-and reservation values are caller declarations, not authenticated provider/model
-facts. Only the returned context is counted; unknown final prompts and JSON/tool
-framing outside it are not. MCP exposes the same packing through explicit
-`context_tokens` and recorded safe facts through independent `token_details`.
-Tokenizer paths are trusted process-startup configuration only.
 
 ## Caller-supplied exact vector retrieval
 
@@ -214,7 +137,7 @@ scan. No ANN index, automatic embeddings or authenticated model-window guarantee
 Vector mode rejects explicit `--policy`; declared support is described below.
 MCP `mousa_vector_query` uses the same native transaction for configured JSONL
 sources. `mousa_trail` can release recorded vector facts with `retrieval_details`.
-OpenAI mention/resource search stays lexical. No SDK or connector framework is introduced.
+No SDK or connector framework is introduced.
 
 ## Native hybrid lexical and vector retrieval
 
@@ -323,9 +246,9 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items, observations and recovery state |
 | `mousa_query` | `source`, `query`, `policy`: `original` or `dedup`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Existing evidence response, including authorization, selected text/ranges/digests, packet and trail IDs |
-| `mousa_trail` | `source`, `trail_id` | Independent `retrieval_details` and `token_details` booleans (default `false`) | Filtered history under fresh authorization; no text. Opt-ins add only the recorded vector/hybrid facts or safe v7 token view that exists |
-| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1`; token budget fields | Primary evidence, cosine/ranks, coverage and producing IDs |
-| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing and token options | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
+| `mousa_trail` | `source`, `trail_id` | `retrieval_details` boolean (default `false`) | Filtered history under fresh authorization; no text. The opt-in adds only the recorded vector/hybrid facts that exist |
+| `mousa_vector_query` | `source`, `space_id`, `values`, `budget_bytes` | `packing_policy`: `original` (default) or `exact-v1` | Primary evidence, cosine/ranks, coverage and producing IDs |
+| `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing option | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
 | `mousa_source_manifest` | `source` | `expected_manifest_id`: nonzero lowercase 64-hex ID | Fresh `decision_id`, `decision_outcome`, `decision_reasons`; authorized `manifest`; `matches` only for an authorized expected-ID check |
@@ -345,45 +268,6 @@ The native item/passage/text/dimension/input bounds remain; MCP's 2 MiB input-fr
 bound can refuse a request before the 8 MiB codec bound. See the
 [end-to-end client workflow](USAGE.md#mcp-vector-and-hybrid-example).
 
-
-All three query tools accept optional `context_tokens` (integer 1..524288),
-`window_tokens`, `prompt_reserve_tokens` and `output_reserve_tokens` (integers
-0..1000000000). Window/reservation fields require explicit `context_tokens`,
-even when zero. Nonzero reservations require a positive window; their sum must
-not exceed it. The effective limit is the lesser of the cap and window minus
-reservations, or just the cap without a window. Zero remaining allowance is valid.
-
-### MCP measured context and recorded token details
-
-The operator must configure both `mcp --tokenizer-python PATH --tokenizer-cache DIR`.
-These values never come from tool arguments, aliases or resources. Startup and
-byte-only tools do not execute Python. Missing configuration or unusable prepared
-backend gives bounded `tokenizer_unavailable`, never a byte fallback.
-No packages or vocabulary are downloaded during a query.
-
-Token execution calls `EvaluateAndTraceTokenLexical`, `EvaluateAndTraceTokenVector`
-or `EvaluateAndTraceTokenHybrid` with the configured source and trusted caller.
-The native transaction owns authorization, ranking, packing and v7/v11 recording.
-The result adds exact `context` bytes and the accepted-only `TokenSelectionView`
-as `token`; the existing byte constraint still applies. Selected evidence and
-packing counts describe token-constrained survivors. The count covers headers
-and separators in `mousa.context_text.v1`, not tool/JSON-RPC envelopes or unknown
-client/model framing. Reservations are declarations, not a complete-window guarantee.
-Without `context_tokens`, the released property set, byte selection and Python
-independence are unchanged. Refresh closed schema caches with `tools/list`.
-
-`mousa_trail` with `token_details: true` releases the verified recorded safe
-`token` view for v7/v11, including native-created history. Omitted/false hides it;
-legacy trails have no member. This is independent of `retrieval_details`.
-It does not start a tokenizer, remeasure an old count or rerank.
-Fresh denial withholds history and existence. Retired text remains unarchived;
-retained digest verification and producing-count limits are unchanged.
-
-Failed counting, failed worker completion and cancellation during counting do
-not commit a successful producing decision/trail/packet. Invalid token arguments
-reject before query mutation. This does not undo server startup/store migration
-or legitimate fresh inspection authorization audit writes.
-See the [runnable token example](USAGE.md#mcp-token-budget-example).
 
 ### MCP supplied-vector retrieval and recorded details
 
@@ -427,9 +311,6 @@ Fresh authorization precedes historical lookup; denied inspection discloses no
 history or existence. Restart and revision replacement preserve recorded facts,
 while `indexed_now` can change. Retired passage bytes remain unarchived, and
 historical completeness/BM25 are producing observations, not reconstructed proof.
-For native v7, retrieval details release the corresponding verified vector/hybrid
-fields; the independent `token_details` opt-in releases the safe token view.
-Canonical TokenSelection and rejected token metadata are never exposed.
 See the [runnable synthetic MCP example](USAGE.md#mcp-vector-and-hybrid-example).
 
 
@@ -454,7 +335,7 @@ Then call `mousa_query` with:
 Use the returned `result.trail_id` with `mousa_trail`. Items use the same strict
 record validation, normalization, immutable revision identities and atomic
 current-item activation as [JSONL input](#jsonl-input). There are no new
-packing/token-window rules. Evidence coordinates refer to
+packing rules. Evidence coordinates refer to
 normalized UTF-8 bytes; use the [same digest and range checks](#verify-a-selected-passages-location)
 as for CLI evidence. Treat every source text as untrusted data, not protocol,
 shell commands or instructions to the client.
@@ -544,75 +425,6 @@ executable with the official SDK client and temporary SQLite stores, validates
 discovered output schemas and logs client/server receipts. It is not a
 model-driven agent run or a comparative measurement.
 
-## OpenAI MCP Extensions
-
-The MVP follows the [OpenAI MCP Extensions specification](https://github.com/openai/mcp-extensions/blob/e314720a0daac326217d1f123fcf51647868fa9f/docs/spec.md)
-and its Bits & Bolts registration/onboarding example. Enable it explicitly with
-`--openai-extensions`. The six base tools retain their contracts; one additional
-`mousa_mentions` tool and an evidence resource template are advertised. Mention
-and resource search remain lexical.
-
-`mousa_mentions` accepts only `{ "query": "cedar" }`. The tool advertises
-`_meta["openai/extensions"]["mentions/search"]: {}` and app visibility through
-`_meta["ui"]["visibility"]: ["app"]`. It returns `structuredContent.items` as
-resource links. Empty/whitespace queries return an empty list. Nonempty queries
-use the existing source-authorized retrieval and trails, original query policy
-and a 65536-byte evidence budget per source. Results contain at most 30 links;
-configured sources are searched in sorted label order, not globally ranked.
-Argument strings are limited to 4096 UTF-8 bytes and reject null, duplicates,
-unknown fields, invalid Unicode and embedded NUL.
-
-Resource URIs use `mousa://evidence/<source-id>/<segment-id>`. Both identities
-are canonical lowercase SHA-256 IDs, not filesystem paths. `resources/read`
-performs a fresh policy evaluation before looking up text, then verifies current
-indexed bytes, canonical ancestry and restrictive lifecycle in one writer
-snapshot. A previous link grants no authority. Denied, retired, withdrawn,
-unscoped and absent evidence is unavailable. The JSON resource uses schema
-`mousa.evidence_resource.v1`, a fresh `decision_id`, and `evidence` containing
-`segment`, `text` and `paths`. Paths contain representation, artifact, observation
-and source IDs projected only for the authorized source. Text is limited to
-65536 bytes and the complete resource to 1048576 bytes. Treat text as untrusted data.
-
-No custom viewer, global/thread UI entrypoint, file handler, filesystem access,
-settings mutation or extended form is implemented. These are optional extensions,
-not required to make mention search useful. The specification lists desktop
-composer mentions; its Web column means ChatGPT Work and excludes classic
-ChatGPT. It does not establish CLI rendering support. Codex CLI uses the
-core tools and evidence skill when desktop features are absent.
-
-### Consent, packaging and privacy
-
-`mousa -store STORE plugin --out NEW_DIRECTORY --source ID --consent-to-share`
-creates a local marketplace only after explicit consent. Repeat `--source`.
-The portable plugin has root `plugin.json`, `mcp.json`, `skills/` and `bin/`;
-OpenAI presentation and `onboardingSkill` are under `extensions.com.openai`.
-Portable stdio commands must be bare names or contained `./` paths, so the
-package uses `./bin/mousa`, not an absolute executable path. The store path is
-user-specific startup configuration. The generator does not open/ingest the
-store, install credentials, alter host configuration or publish anything.
-It refuses an existing destination. If generation fails before all package
-files are written, it removes its newly created partial directory and reports
-any cleanup error. A complete package remains if only emitting the final CLI
-result fails. Protect the package/config like the store.
-
-The setup skill explains sharing and reuses explicit user authorization for the
-configured source labels and sharing with the configured host/provider. It asks
-for confirmation before retrieval when that authorization is missing or the
-source scope changes. Installation or tool discovery alone is not authorization.
-The evidence skill explains querying, quotations and Source Trails.
-Data sent to the host/provider includes query/tool arguments, selected evidence
-text, source/item labels, canonical IDs, byte coordinates, hashes and provenance/
-audit metadata. Local audit records remain in the canonical store. Host/provider
-retention, account controls and deletion are governed by that host/provider.
-Mousa does not detect secrets or control retention outside its process.
-
-Default access does not mutate source content. Query, mention and trail/resource
-inspection append authorization/audit records, so their tool annotations do not
-claim `readOnlyHint: true`. Status is read-only/idempotent; sync can update/delete
-explicit items and is marked destructive. All tools are closed-world. To enable
-ingestion, separately configure an already permitted `--ingest-source`; consent
-to retrieval is not consent to ingestion.
-
 ### Authenticated HTTP and deployment
 
 HTTP is a separate transport, not an extension. `mcp --http-config FILE` serves
@@ -658,32 +470,6 @@ The unauthenticated metadata endpoint is
 admission to eight concurrent requests including token verification. Stateless
 requests retain no session identity/replay buffer. Shutdown drains handlers before
 closing the canonical store.
-
-### Local connectivity and public directory gates
-
-Same-host desktop/Codex stdio needs neither HTTPS nor a tunnel. Hosted private
-testing can use an operator-configured [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels);
-workspace permissions, runtime credentials and activation are separate prerequisites.
-A development tunnel is not public distribution.
-
-The generated package reports `directory_submission_ready: false`. It is usable
-for local/private testing, not a completed shared-directory submission. Public
-submission needs stable authenticated HTTPS, verified publisher/domain, product,
-support, privacy and terms URLs, icons, account-isolation/deployment review,
-dedicated reviewer access, an actual walkthrough recording and executed positive/
-negative review cases. Do not place reviewer credentials in the ZIP. No URLs,
-account access or demo results are invented. Local stores cannot become generally
-accessible through a public listing without an authorized deployed connectivity
-solution. This implementation does not deploy that solution.
-
-[Submission requirements](https://developers.openai.com/plugins/deploy/submission)
-remain separate from extension support. The maintained
-[integration matrix](../eval/local/openai-matrix.json) supplies five positive and
-three negative review specifications and a synthetic fixture. It names ChatGPT
-desktop and Codex CLI as primary, OMP/Hermes as secondary; Goose is not a current
-benchmark. Protocol checks, actual native discovery/resource reads, desktop UI
-checks and model-driven review cases must have separate PASS/FAIL/NOT RUN receipts.
-
 
 ## Item identity and lifecycle
 
@@ -1164,6 +950,4 @@ correctness are separate properties; none substitutes for the others.
 
 ## Maintained agent skills
 
-The generated plugin includes `mousa-setup` and `mousa-evidence` for consent, configured-source retrieval and authorized provenance. They distinguish retrieval policy from packing policy and native administration from the MCP tool surface.
-
-The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa. Client skills remain bundled with the plugin; they are not development startup instructions.
+The repository-owned [mousa-development skill](../skills/mousa-development/SKILL.md) guides implementation and review of canonical records, transaction snapshots, compatibility and reproducible evidence. Development hosts can register the `skills/` directory with their skill loader and read this skill when working on Mousa.
