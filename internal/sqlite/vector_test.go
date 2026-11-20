@@ -25,6 +25,7 @@ func vectorFixture(t *testing.T) (*Store, mousa.Source, mousa.VectorImport) {
 	}
 	seedLocalItem(t, store, batch.Source, "a", "Drain sockets before stopping the host.")
 	seedLocalItem(t, store, batch.Source, "b", "Radishes prefer damp soil.")
+	allowSource(t, store, batch.Source.ID)
 	inputs, err := store.ExportEmbeddingInputs(context.Background(), testEvaluationRequest(t, batch.Source.ID, "vector-export"))
 	if err != nil {
 		t.Fatal(err)

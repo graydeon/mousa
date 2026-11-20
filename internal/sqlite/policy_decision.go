@@ -125,12 +125,8 @@ func readPolicyEvaluationSnapshot(ctx context.Context, q queryer, request mousa.
 	default:
 		return snapshot, err
 	}
-	access, err := getSourceAccess(ctx, q, request.SourceID)
-	if err != nil {
-		return snapshot, err
-	}
-	snapshot.Access = access
-	return snapshot, nil
+	snapshot.Access, snapshot.AccessEventID, err = snapshotAccess(ctx, q, request.SourceID)
+	return snapshot, err
 }
 
 func insertPolicyDecision(ctx context.Context, conn *sql.Conn, decision mousa.PolicyDecision) error {
@@ -225,6 +221,18 @@ func verifyPolicyDecisionRecords(ctx context.Context, db *sql.DB) error {
 			return integrity("verify policy decisions", "typed source parent is missing")
 		} else if err != nil {
 			return err
+		}
+		if record.AccessEventID != nil {
+			event, _, err := getAccessEvent(ctx, db, *record.AccessEventID)
+			if err != nil {
+				if IsCode(err, CodeNotFound) {
+					return integrity("verify policy decisions", "cited access event is missing")
+				}
+				return err
+			}
+			if event.SourceID != record.Request.SourceID || event.Access != record.Access {
+				return integrity("verify policy decisions", "cited access event disagrees with the decision")
+			}
 		}
 		if record.CurrentWithdrawalID != nil {
 			withdrawal, err := getSourceWithdrawal(ctx, db, *record.CurrentWithdrawalID)

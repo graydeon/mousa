@@ -35,15 +35,31 @@ func accessCommand(ctx context.Context, storePath string, args []string) error {
 	if _, err := store.GetSource(ctx, source.ID); err != nil {
 		return err
 	}
-	changed, err := store.SetSourceAccess(ctx, source.ID, access)
+	event, changed, err := store.SetSourceAccess(ctx, source.ID, access, accessActor)
 	if err != nil {
 		return err
 	}
 	return emit(struct {
-		Source  string             `json:"source"`
-		Access  mousa.SourceAccess `json:"access"`
-		Changed bool               `json:"changed"`
-	}{label, access, changed})
+		Source        string              `json:"source"`
+		Access        mousa.SourceAccess  `json:"access"`
+		AccessEventID mousa.AccessEventID `json:"access_event_id"`
+		Changed       bool                `json:"changed"`
+	}{label, event.Access, event.ID, changed})
+}
+
+// accessActor is the actor this CLI records on the access events it appends.
+const accessActor = localNamespace + ".cli"
+
+// allowAfterSync records allow for a source that sync has just written if it has no access
+// event, and reports the current access either way; sync --allow uses it.
+func allowAfterSync(ctx context.Context, store *sqlite.Store, sourceID mousa.SourceID, result *syncResult) error {
+	event, _, err := store.AllowSourceIfUnset(ctx, sourceID, accessActor)
+	if err != nil {
+		return err
+	}
+	result.Access = string(event.Access)
+	result.AccessEventID = event.ID.String()
+	return nil
 }
 
 func withdrawCommand(ctx context.Context, storePath string, args []string) error {

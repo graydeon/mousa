@@ -85,8 +85,9 @@ commands:
   vector inputs --source <id>
   vector import <dir>       import one bounded vector batch from stdin (JSON)
   vector import --source <id>
-  access <dir> allow|deny     set this CLI caller's source-scoped access policy (JSON)
+  access <dir> allow|deny     record an access event for every caller of the source (JSON)
   access --source <id> allow|deny
+                            a source with no access event is denied to every caller
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
   mcp --caller <id> --source <id>
@@ -107,6 +108,7 @@ query options (before positional arguments):
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
                             ingestion boundaries; default fixed-v1, repeat on resync
+  --allow                   after syncing, record allow if the source has no access event
 
 directory sync options (before the root argument):
   --preview                 list selection without opening or changing the store
@@ -143,6 +145,7 @@ func syncCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("sync")
 	sourceID := flags.String("source", "", "external source ID; reads JSONL item records from stdin instead of a directory")
 	segmentPolicy := flags.String("segment-policy", mousa.TextSegmentFixedV1, "ingestion segmentation: fixed-v1 or passage-v1")
+	allow := flags.Bool("allow", false, "after syncing, record allow if the source has no access event")
 	options := directoryFlags(flags)
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
@@ -153,18 +156,18 @@ func syncCommand(ctx context.Context, storePath string, args []string) error {
 	rest := flags.Args()
 	switch {
 	case *sourceID == "" && len(rest) == 1:
-		return runSyncDirectory(ctx, storePath, rest[0], *options, *segmentPolicy)
+		return runSyncDirectory(ctx, storePath, rest[0], *options, *segmentPolicy, *allow)
 	case *sourceID != "" && len(rest) == 0:
 		directoryOption := false
 		flags.Visit(func(option *flag.Flag) {
-			if option.Name != "source" && option.Name != "segment-policy" {
+			if option.Name != "source" && option.Name != "segment-policy" && option.Name != "allow" {
 				directoryOption = true
 			}
 		})
 		if directoryOption {
 			return usageError{"directory selection flags cannot be used with --source"}
 		}
-		return runSyncJSONL(ctx, storePath, *sourceID, os.Stdin, *segmentPolicy)
+		return runSyncJSONL(ctx, storePath, *sourceID, os.Stdin, *segmentPolicy, *allow)
 	default:
 		return usageError{"sync takes one directory argument, or --source <external-id> with JSONL records on stdin"}
 	}
@@ -409,6 +412,8 @@ type syncResult struct {
 	TotalItems    int             `json:"total_items"`
 	StoreBytes    int64           `json:"store_bytes"`
 	ElapsedSecs   float64         `json:"elapsed_seconds"`
+	Access        string          `json:"access,omitempty"`
+	AccessEventID string          `json:"access_event_id,omitempty"`
 }
 
 // record files one applied item under the action that was taken.
@@ -460,7 +465,10 @@ func sourceStatus(ctx context.Context, store *sqlite.Store, source mousa.Source,
 
 // runSyncDirectory applies the complete selected set. Scope exclusions deactivate
 // old items just like removal; selection errors leave the store untouched.
-func runSyncDirectory(ctx context.Context, storePath, root string, options directoryOptions, segmentPolicy string) error {
+func runSyncDirectory(ctx context.Context, storePath, root string, options directoryOptions, segmentPolicy string, allow bool) error {
+	if options.Preview && allow {
+		return usageError{"--allow cannot be used with --preview"}
+	}
 	started := time.Now()
 	source, absolute, err := directorySource(root)
 	if err != nil {
@@ -510,6 +518,11 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 		result.record(action, path)
 	}
 	result.TotalItems = len(selection.Items)
+	if allow {
+		if err := allowAfterSync(ctx, store, source.ID, &result); err != nil {
+			return err
+		}
+	}
 	if info, err := os.Stat(storePath); err == nil {
 		result.StoreBytes = info.Size()
 	}
@@ -532,6 +545,7 @@ type evidenceResult struct {
 	DecisionID        string                       `json:"decision_id"`
 	DecisionOutcome   string                       `json:"decision_outcome"`
 	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
+	AccessEvent       string                       `json:"access_event"`
 	EvaluatedAtUsec   int64                        `json:"evaluated_at_usec"`
 	TrailID           string                       `json:"trail_id"`
 	PacketID          string                       `json:"packet_id"`

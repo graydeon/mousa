@@ -19,9 +19,9 @@ func TestNativeHybridDirectoryAndJSONL(t *testing.T) {
 			writeFile(t, root, "a.md", "Drain sockets before stopping the host.")
 			writeFile(t, root, "b.md", "Radishes prefer damp soil.")
 			writeFile(t, root, "c.md", "Drain sockets.")
-			run.run(false, "sync", root)
+			run.run(false, "sync", "--allow", root)
 		} else {
-			run.runInput("{\"id\":\"a.md\",\"text\":\"Drain sockets before stopping the host.\"}\n{\"id\":\"b.md\",\"text\":\"Radishes prefer damp soil.\"}\n{\"id\":\"c.md\",\"text\":\"Drain sockets.\"}\n", false, append([]string{"sync"}, selector...)...)
+			run.runInput("{\"id\":\"a.md\",\"text\":\"Drain sockets before stopping the host.\"}\n{\"id\":\"b.md\",\"text\":\"Radishes prefer damp soil.\"}\n{\"id\":\"c.md\",\"text\":\"Drain sockets.\"}\n", false, append([]string{"sync", "--allow"}, selector...)...)
 		}
 		_, exported := run.run(false, append([]string{"vector", "inputs"}, selector...)...)
 		embeddings := []map[string]any{}

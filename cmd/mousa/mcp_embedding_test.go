@@ -84,6 +84,7 @@ func TestMCPEmbeddingWorkflowAndWriteBoundary(t *testing.T) {
 		map[string]any{"id": "overlap", "text": "\ufeffDrain sockets before stopping the host.\r\n"},
 		map[string]any{"id": "vector", "text": "Radishes prefer damp soil."},
 		map[string]any{"id": "lexical", "text": "Drain sockets."}), "")
+	run.run(false, "access", "--source", "alpha", "allow")
 	exported := client.call("mousa_vector_inputs", map[string]any{"source": "alpha"}, "")
 	_, native := run.run(false, "vector", "inputs", "--source", "alpha")
 	if !reflect.DeepEqual(exported["passages"], native["passages"]) || exported["decision_outcome"] != "allow" || exported["decision_id"] == native["decision_id"] {
@@ -209,6 +210,7 @@ func TestMCPEmbeddingStrictImportAtomicity(t *testing.T) {
 	run, _ := setup(t)
 	client := startMCPClient(t, run, "cli", true)
 	client.call("mousa_sync", mcpItems("alpha", map[string]any{"id": "a", "text": "Drain"}), "")
+	run.run(false, "access", "--source", "alpha", "allow")
 	exported := client.call("mousa_vector_inputs", map[string]any{"source": "alpha"}, "")
 	input := embeddingImport(t, exported["passages"].([]any))
 	base := string(mustJSON(t, input))
@@ -243,6 +245,7 @@ func TestMCPEmbeddingStrictImportAtomicity(t *testing.T) {
 	}
 	// A valid foreign-source pin fails inside native atomic current-pin validation.
 	client.call("mousa_sync", mcpItems("beta", map[string]any{"id": "b", "text": "Foreign"}), "")
+	run.run(false, "access", "--source", "beta", "allow")
 	foreign := client.call("mousa_vector_inputs", map[string]any{"source": "beta"}, "")
 	mixed := append(exported["passages"].([]any), foreign["passages"].([]any)...)
 	client.call("mousa_vector_import", map[string]any{"source": "alpha", "import": embeddingImport(t, mixed)}, "invalid_record")
@@ -259,6 +262,7 @@ func TestMCPEmbeddingBoundsAndAdmission(t *testing.T) {
 		items = append(items, map[string]any{"id": fmt.Sprintf("item-%03d", i), "text": "Drain"})
 	}
 	client.call("mousa_sync", mcpItems("alpha", items...), "")
+	run.run(false, "access", "--source", "alpha", "allow")
 	exported := client.call("mousa_vector_inputs", map[string]any{"source": "alpha"}, "")
 	input := embeddingImport(t, exported["passages"].([]any))
 	input["space"].(map[string]any)["dimensions"] = 2048

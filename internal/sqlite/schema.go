@@ -32,17 +32,20 @@ var requiredObjects = []string{
 	"index:ingest_receipts_source_id_idx",
 	"index:local_items_active_representation_idx",
 	"index:local_items_vector_current_idx",
+	"index:log_source_kind_seq_idx",
 	"index:observations_source_id_idx",
 	"index:representation_inputs_artifact_id_idx",
 	"index:representation_inputs_representation_id_idx",
 	"index:segments_representation_id_idx",
 	"index:segments_vector_order_idx",
 	"index:source_withdrawals_source_id_idx",
+	"table:access_events",
 	"table:artifacts",
 	"table:embeddings",
 	"table:ingest_gaps",
 	"table:ingest_receipts",
 	"table:local_items",
+	"table:log",
 	"table:observations",
 	"table:policy_decisions",
 	"table:representation_inputs",
@@ -55,12 +58,12 @@ var requiredObjects = []string{
 	"table:segment_lexical_fts_idx",
 	"table:segment_lexical_rows",
 	"table:segments",
-	"table:source_access",
 	"table:source_ingest_state",
 	"table:source_trail_candidates",
 	"table:source_trails",
 	"table:source_withdrawals",
 	"table:sources",
+	"table:store_identity",
 	"table:vector_spaces",
 }
 
@@ -92,7 +95,8 @@ func checkStoreIdentity(ctx context.Context, db *sql.DB) (empty bool, err error)
 	}
 }
 
-// createSchema applies schema.sql and stamps the header in one transaction.
+// createSchema applies schema.sql, stamps the header and stores a random store ID in one
+// transaction.
 func createSchema(ctx context.Context, db *sql.DB) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
@@ -111,6 +115,13 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 	statements := schemaSQL + fmt.Sprintf("\nPRAGMA application_id = %d;\nPRAGMA user_version = %d;\n", applicationID, schemaVersion)
 	if _, err := conn.ExecContext(ctx, statements); err != nil {
 		return startupError("apply schema", err)
+	}
+	storeID, err := newStoreID()
+	if err != nil {
+		return wrap(CodeInternal, "create store ID", err)
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO store_identity(id) VALUES(?)`, storeID); err != nil {
+		return startupError("store store ID", err)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return startupError("commit schema", err)
@@ -154,6 +165,9 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 		return err
 	}
 	if err := verifyIngestRecords(ctx, db); err != nil {
+		return err
+	}
+	if err := verifyLog(ctx, db); err != nil {
 		return err
 	}
 	if err := verifyLexicalRecords(ctx, db); err != nil {

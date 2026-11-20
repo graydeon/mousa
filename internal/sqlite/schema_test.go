@@ -236,7 +236,7 @@ func TestReadOnlyStoreRejectsEveryWriteMethodFirst(t *testing.T) {
 		{"PutRepresentation", func() error { return store.PutRepresentation(ctx, mousa.Representation{}) }},
 		{"PutSegment", func() error { return store.PutSegment(ctx, mousa.Segment{}) }},
 		{"SetSourceAccess", func() error {
-			_, err := store.SetSourceAccess(ctx, mousa.SourceID{1}, mousa.SourceAccessDeny)
+			_, _, err := store.SetSourceAccess(ctx, mousa.SourceID{1}, mousa.SourceAccessDeny, "test")
 			return err
 		}},
 		{"Checkpoint", func() error { return store.Checkpoint(ctx) }},

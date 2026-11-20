@@ -119,6 +119,7 @@ func TestVectorNormalizedTextBoundary(t *testing.T) {
 		if _, err := store.ActivateLocalItem(ctx, source.ID, "bounded", rep.ID, normalized); err != nil {
 			t.Fatal(err)
 		}
+		allowSource(t, store, source.ID)
 		result, err := store.ExportEmbeddingInputs(ctx, testEvaluationRequest(t, source.ID, "text-boundary-"+strconv.Itoa(size)))
 		if size == mousa.MaxVectorTextBytes {
 			if err != nil || len(result.Passages) != 64 {

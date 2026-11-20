@@ -17,7 +17,7 @@ func record(id, text string) string {
 
 func jsonlSync(t *testing.T, run testRun, sourceID, stream string) map[string]any {
 	t.Helper()
-	_, report := run.runInput(stream, false, "sync", "--source", sourceID)
+	_, report := run.runInput(stream, false, "sync", "--source", sourceID, "--allow")
 	return report
 }
 
@@ -122,7 +122,7 @@ func TestJSONLStreamTombstoneRemovesContentAndReaddRestoresIt(t *testing.T) {
 
 func TestJSONLStreamTombstoneForUnknownItemIsReportedAbsent(t *testing.T) {
 	run, _ := setup(t)
-	report := jsonlSync(t, run, "pipeline/absent", `{"id":"ghost","deleted":true}`+"\n")
+	_, report := run.runInput(`{"id":"ghost","deleted":true}`+"\n", false, "sync", "--source", "pipeline/absent")
 	if got := lenOf(report, "absent"); got != 1 {
 		t.Fatalf("unknown tombstone should be reported absent, got %d: %v", got, report)
 	}
@@ -233,6 +233,7 @@ func TestJSONLStreamPartialFailureKeepsCommittedPrefixAndReplayCompletes(t *test
 	if !strings.Contains(out, "line 3") {
 		t.Fatalf("failure should name line 3, got %q", out)
 	}
+	run.run(false, "access", "--source", source, "allow")
 	// The prefix stays committed and retrievable.
 	if item := firstItem(t, querySource(t, run, source, "walruses")); item != "doc-1" {
 		t.Fatalf("committed prefix lost: %v", out)
@@ -278,7 +279,7 @@ func TestJSONLStreamStatusReportsSourceState(t *testing.T) {
 func TestJSONLSourceCannotCollideWithDirectoryPath(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "doc", "Directory walruses.")
-	run.run(false, "sync", "--all-text", root)
+	run.run(false, "sync", "--all-text", "--allow", root)
 	jsonlSync(t, run, root, record("doc@draft", "Stream ferrets."))
 	_, directory := run.run(false, "query", root, "walruses ferrets")
 	if firstItem(t, directory) != "doc" || len(hits(directory)) != 1 {
@@ -309,6 +310,7 @@ func TestJSONLRecordLimitRetainsOnlyAcceptedPrefix(t *testing.T) {
 	input.WriteString(record("accepted", "Walrus observations.") + "\n")
 	input.WriteString(record("late", "Walrus sightings after the limit.") + "\n")
 	run.runInput(input.String(), true, "sync", "--source", "bounded")
+	run.run(false, "access", "--source", "bounded", "allow")
 	found := querySource(t, run, "bounded", "walrus")
 	if len(hits(found)) != 1 || firstItem(t, found) != "accepted" {
 		t.Fatalf("record cap did not preserve exactly the accepted prefix: %v", found)
@@ -320,6 +322,7 @@ func TestJSONLLineLimitRetainsCommittedPrefix(t *testing.T) {
 	input := record("accepted", "Walrus observations.") + "\n" +
 		record("oversized", strings.Repeat("x", maxItemRecordBytes)) + "\n"
 	run.runInput(input, true, "sync", "--source", "line-limit")
+	run.run(false, "access", "--source", "line-limit", "allow")
 	found := querySource(t, run, "line-limit", "walrus")
 	if len(hits(found)) != 1 || firstItem(t, found) != "accepted" {
 		t.Fatalf("oversized record discarded accepted evidence: %v", found)

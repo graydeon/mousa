@@ -17,8 +17,14 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, document := seedEnforcedRetrieval(t, store, "harbor access evidence")
-	sourceID := request.SourceID
+	seedEvaluationFixture(t, store)
+	sequence := uint64(1)
+	batch := testPushBatch(t, "access", &sequence)
+	if err := store.ApplyIngest(ctx, batch); err != nil {
+		t.Fatalf("ApplyIngest: %v", err)
+	}
+	document := addEnforcedDocument(t, store, batch.Observation, "access-body", "harbor access evidence")
+	sourceID := batch.Source.ID
 	search := func(externalRequestID string) (mousa.PolicyDecision, []mousa.VerifiedLexicalCandidate) {
 		t.Helper()
 		request := testEvaluationRequest(t, sourceID, externalRequestID)
@@ -40,30 +46,59 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	}
 
 	decision, candidates := search("default")
-	requireReasons(decision, mousa.PolicyOutcomeAllow, mousa.SourceAccessAllow, mousa.PolicyReasonAllow)
-	if len(candidates) != 1 || candidates[0].Segment.ID != document.segments[0].ID {
-		t.Fatalf("default allow candidates = %#v", candidates)
+	requireReasons(decision, mousa.PolicyOutcomeDeny, mousa.SourceAccessDeny, mousa.PolicyReasonAccessDefault)
+	if decision.AccessEventID != nil {
+		t.Fatalf("default decision cited an event: %v", decision.AccessEventID)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("default-denied source released candidates: %#v", candidates)
 	}
 
+	allowEvent, changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "test")
+	if err != nil || !changed || allowEvent.Access != mousa.SourceAccessAllow {
+		t.Fatalf("SetSourceAccess(allow) = %#v, %v, %v", allowEvent, changed, err)
+	}
+	decision, candidates = search("allowed")
+	requireReasons(decision, mousa.PolicyOutcomeAllow, mousa.SourceAccessAllow, mousa.PolicyReasonAllow)
+	if decision.AccessEventID == nil || *decision.AccessEventID != allowEvent.ID {
+		t.Fatalf("allow decision cited %v, want %v", decision.AccessEventID, allowEvent.ID)
+	}
+	if len(candidates) != 1 || candidates[0].Segment.ID != document.segments[0].ID {
+		t.Fatalf("allowed candidates = %#v", candidates)
+	}
+
+	var denyEvent mousa.AccessEvent
 	for _, want := range []bool{true, false} {
-		changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessDeny)
+		event, changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessDeny, "test")
 		if err != nil || changed != want {
 			t.Fatalf("SetSourceAccess(deny) = %v, %v, want changed %v", changed, err, want)
 		}
+		if want {
+			denyEvent = event
+		} else if event != denyEvent {
+			t.Fatalf("deny repeat returned %#v, want %#v", event, denyEvent)
+		}
+	}
+	var eventRows int
+	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM access_events WHERE source_id = ?`, sourceID[:]).Scan(&eventRows); err != nil || eventRows != 2 {
+		t.Fatalf("access_events rows = %d, %v, want 2", eventRows, err)
 	}
 	decision, candidates = search("denied")
 	requireReasons(decision, mousa.PolicyOutcomeDeny, mousa.SourceAccessDeny, mousa.PolicyReasonAccessDenied)
+	if decision.AccessEventID == nil || *decision.AccessEventID != denyEvent.ID {
+		t.Fatalf("deny decision cited %v, want %v", decision.AccessEventID, denyEvent.ID)
+	}
 	if len(candidates) != 0 {
 		t.Fatalf("denied source released candidates: %#v", candidates)
 	}
 
-	if changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow); err != nil || !changed {
+	if _, changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "test"); err != nil || !changed {
 		t.Fatalf("SetSourceAccess(allow) = %v, %v", changed, err)
 	}
-	decision, candidates = search("allowed")
+	decision, candidates = search("re-allowed")
 	requireReasons(decision, mousa.PolicyOutcomeAllow, mousa.SourceAccessAllow, mousa.PolicyReasonAllow)
 	if len(candidates) != 1 {
-		t.Fatalf("allowed source candidates = %#v", candidates)
+		t.Fatalf("re-allowed source candidates = %#v", candidates)
 	}
 
 	withdrawalID, err := mousa.NewWithdrawalID(sourceID, "access-withdrawal")
@@ -82,10 +117,10 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 
 	var missing mousa.SourceID
 	missing[0] = 1
-	if _, err := store.SetSourceAccess(ctx, missing, mousa.SourceAccessDeny); !IsCode(err, CodeConflict) {
+	if _, _, err := store.SetSourceAccess(ctx, missing, mousa.SourceAccessDeny, "test"); !IsCode(err, CodeConflict) {
 		t.Fatalf("missing source = %v, want conflict", err)
 	}
-	if _, err := store.SetSourceAccess(ctx, sourceID, "maybe"); !IsCode(err, CodeInvalidRecord) {
+	if _, _, err := store.SetSourceAccess(ctx, sourceID, "maybe", "test"); !IsCode(err, CodeInvalidRecord) {
 		t.Fatalf("unknown access = %v, want invalid_record", err)
 	}
 	if err := store.Close(); err != nil {
@@ -96,7 +131,7 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer readOnly.Close()
-	if _, err := readOnly.SetSourceAccess(ctx, sourceID, mousa.SourceAccessDeny); !IsCode(err, CodeReadOnly) {
+	if _, _, err := readOnly.SetSourceAccess(ctx, sourceID, mousa.SourceAccessDeny, "test"); !IsCode(err, CodeReadOnly) {
 		t.Fatalf("read-only = %v, want read_only", err)
 	}
 }

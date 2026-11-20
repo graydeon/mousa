@@ -220,8 +220,32 @@ CREATE TABLE embeddings (
 CREATE INDEX local_items_vector_current_idx ON local_items(source_id, active, item_id);
 CREATE INDEX segments_vector_order_idx ON segments(representation_id, selector_start, selector_end, id);
 
--- One access decision per source. A source without a row is allowed.
-CREATE TABLE source_access (
-    source_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
-    access TEXT NOT NULL COLLATE BINARY CHECK (access IN ('allow', 'deny'))
+-- The random identity given to this store when it was created. Exactly one row.
+CREATE TABLE store_identity (
+    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16)
 ) STRICT;
+
+-- Append-only access changes. A source's current access is its latest event in log order;
+-- a source with no event is denied for every caller.
+CREATE TABLE access_events (
+    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32)),
+    source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
+    access TEXT NOT NULL COLLATE BINARY CHECK (access IN ('allow', 'deny')),
+    occurred_at_usec INTEGER NOT NULL CHECK (typeof(occurred_at_usec) = 'integer' AND occurred_at_usec > 0),
+    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0)
+) STRICT;
+
+-- The append-only store log. Every ingest receipt, access event and withdrawal is one leaf,
+-- written in the same transaction as its record. seq runs 1, 2, 3 ... with no gaps; leaf_hash
+-- is the RFC 6962 leaf hash SHA-256(0x00 || record_json) of the record named by kind and
+-- record_id.
+CREATE TABLE log (
+    seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
+    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal')),
+    record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
+    source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
+    leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),
+    UNIQUE (kind, record_id)
+) STRICT;
+
+CREATE INDEX log_source_kind_seq_idx ON log(source_id, kind, seq);

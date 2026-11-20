@@ -116,7 +116,7 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 	// 1. Fresh initial import.
 	writeFile(t, root, "alpha.md", "# Alpha\n\nMousa retrieves evidence from canonical records.")
 	writeFile(t, root, "beta/gamma.md", "The zebra arc ontology lives here.")
-	_, sync1 := run.run(false, "sync", root)
+	_, sync1 := run.run(false, "sync", "--allow", root)
 	if got := sync1["total_items"].(float64); got != 2 {
 		t.Fatalf("initial import total_items = %v, want 2", got)
 	}
@@ -191,7 +191,7 @@ func TestLocalSliceErrorsAndEdgeCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, root, "ok.md", "readable text about walruses")
-	_, sync1 := run.run(false, "sync", root)
+	_, sync1 := run.run(false, "sync", "--allow", root)
 	if lenOf(sync1, "skipped") != 1 {
 		t.Fatalf("non-UTF-8 file should be skipped, got %v", sync1["skipped"])
 	}
@@ -228,7 +228,7 @@ func TestLocalSliceBudgetBoundsOutput(t *testing.T) {
 		large.WriteString("\n")
 	}
 	writeFile(t, root, "large.md", large.String())
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	_, query := run.run(false, "query", root, "quokkas")
 	if used := query["used_bytes"].(float64); used > query["budget_bytes"].(float64) {
 		t.Fatalf("used bytes %v exceed budget %v", used, query["budget_bytes"])
@@ -242,7 +242,7 @@ func TestLocalSliceRestoresIndexAfterDeletedFileIsRecreated(t *testing.T) {
 	run, root := setup(t)
 	content := "Marmalade ferrets dominate the northern shore."
 	writeFile(t, root, "a.md", content)
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	if err := os.Remove(filepath.Join(root, "a.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestLocalSliceRevertsToStoredRevisionContent(t *testing.T) {
 	run, root := setup(t)
 	older := "The older revision mentions aardvarks."
 	writeFile(t, root, "a.md", older)
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	writeFile(t, root, "a.md", "The newer revision mentions beetles.")
 	run.run(false, "sync", root)
 	// Reverting the file to content the store already accepted must succeed:
@@ -308,7 +308,7 @@ func TestLocalSliceEmptyFileIsStoredWithoutRetrievableText(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "empty.md", "")
 	writeFile(t, root, "ok.md", "Readable text about walruses.")
-	_, sync := run.run(false, "sync", root)
+	_, sync := run.run(false, "sync", "--allow", root)
 	if got := lenOf(sync, "added"); got != 2 {
 		t.Fatalf("empty file must be stored, not fatal; added = %d: %v", got, sync)
 	}
@@ -335,7 +335,7 @@ func TestLocalSliceNormalizedFilesRemainUnchanged(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "crlf.md", "Walrus colony\r\nNorthern shore\r\n")
 	writeFile(t, root, "bom.md", "\ufeffWalrus habitat\n")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	_, resync := run.run(false, "sync", root)
 	if lenOf(resync, "unchanged") != 2 || lenOf(resync, "updated") != 0 {
 		t.Fatalf("normalization must not change raw-content retry identity: %v", resync)
@@ -351,7 +351,7 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 	writeFile(t, root, "doc", "Walrus baseline")
 	writeFile(t, root, "doc@draft.md", "Walrus draft")
 	writeFile(t, root, "nested@folder/note@review.md", "Walrus review")
-	run.run(false, "sync", "--all-text", root)
+	run.run(false, "sync", "--all-text", "--allow", root)
 	_, query := run.run(false, "query", root, "walrus")
 	want := map[string]bool{"doc": true, "doc@draft.md": true, "nested@folder/note@review.md": true}
 	for _, raw := range query["evidence"].([]any) {
@@ -381,8 +381,8 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 func TestLocalSliceQueryIsScopedToItsSource(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "only.md", "Private walrus colony on the southern cliff.")
-	run.run(false, "sync", root)
-	run.runInput(record("leaked.md", "Private walrus colony details."), false, "sync", "--source", "pipeline/other")
+	run.run(false, "sync", "--allow", root)
+	run.runInput(record("leaked.md", "Private walrus colony details."), false, "sync", "--source", "pipeline/other", "--allow")
 	_, scoped := run.run(false, "query", root, "walrus")
 	for _, hit := range scoped["evidence"].([]any) {
 		if item := hit.(map[string]any)["item"].(string); item == "leaked.md" {

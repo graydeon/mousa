@@ -36,7 +36,7 @@ func trailDecision(t *testing.T, request PolicyEvaluationRequest, outcome Policy
 	if outcome == PolicyOutcomeDeny {
 		access = SourceAccessDeny
 	}
-	decision, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: collectionStatePtr(CollectionActive), Access: access}, 2000)
+	decision, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: collectionStatePtr(CollectionActive), Access: access, AccessEventID: &testAccessEventID}, 2000)
 	if err != nil {
 		t.Fatalf("EvaluateSourceRetrieval: %v", err)
 	}

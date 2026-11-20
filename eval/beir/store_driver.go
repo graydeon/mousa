@@ -108,6 +108,10 @@ func IngestCorpusWithPolicy(ctx context.Context, dataset *Dataset, storePath str
 			nextReport = index + 1 + total/20
 		}
 	}
+	if _, _, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "mousa-local.eval"); err != nil {
+		store.Close()
+		return nil, err
+	}
 	ingested.IndexingSeconds = time.Since(started).Seconds()
 	info, err := os.Stat(storePath)
 	if err == nil {
@@ -683,6 +687,10 @@ func OpenExistingWithPolicy(ctx context.Context, dataset *Dataset, storePath str
 	if _, err := store.GetSource(ctx, ingested.Source.ID); err != nil {
 		store.Close()
 		return nil, fmt.Errorf("reuse validation failed: store %s was not indexed as dataset %q: %w", storePath, dataset.Name, err)
+	}
+	if _, _, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "mousa-local.eval"); err != nil {
+		store.Close()
+		return nil, err
 	}
 	return ingested, nil
 }

@@ -49,6 +49,7 @@ func TestPolicyDecisionEvaluationAllowDenyAndRetry(t *testing.T) {
 	defer store.Close()
 	seedEvaluationFixture(t, store)
 	source := testSource(t)
+	allowSource(t, store, source.ID)
 
 	request := testEvaluationRequest(t, source.ID, "request-1")
 	decision, err := store.EvaluateSourceRetrieval(ctx, request)
@@ -105,6 +106,7 @@ func TestPolicyDecisionEvaluationAllowWithActiveIngestState(t *testing.T) {
 	if err := store.ApplyIngest(ctx, batch); err != nil {
 		t.Fatalf("ApplyIngest: %v", err)
 	}
+	allowSource(t, store, batch.Source.ID)
 
 	request := testEvaluationRequest(t, batch.Source.ID, "request-allow")
 	decision, err := store.EvaluateSourceRetrieval(ctx, request)

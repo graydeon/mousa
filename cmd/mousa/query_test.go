@@ -72,7 +72,7 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 	const oldText = "Cedar launch is Tuesday."
 	const newText = "Cedar launch moved to Friday."
 	writeFile(t, root, "schedule.md", oldText)
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	_, original := run.run(false, "query", root, "cedar")
 	oldHit := hits(original)[0].(map[string]any)
 	trailID := original["trail_id"].(string)

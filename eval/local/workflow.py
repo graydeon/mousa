@@ -166,7 +166,7 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
         row["segment_policy"] = policy
         return response
     original = "\ufeffCedar launch starts Tuesday.\r\nCafé 東京.\r".encode("utf-8")
-    call("initial", "sync", "--source", "bulletins", records=[
+    call("initial", "sync", "--allow", "--source", "bulletins", records=[
         {"id": "schedule@draft", "text": original.decode("utf-8")},
         {"id": "inventory", "text": "Orchid inventory is separate."},
     ])

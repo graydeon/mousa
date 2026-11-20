@@ -44,7 +44,7 @@ type mcpApplication struct {
 
 func mcpCommand(parent context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("mcp")
-	caller := flags.String("caller", "", "trusted local caller ID (required; cli uses the existing CLI policy)")
+	caller := flags.String("caller", "", "trusted local caller ID (required); recorded on each decision, access is per source")
 	httpConfigPath := flags.String("http-config", "", "OAuth-protected loopback HTTP configuration; stdio when omitted")
 	var allowed, writable []string
 	flags.Func("source", "permitted JSONL source ID; repeatable", func(value string) error { allowed = append(allowed, value); return nil })

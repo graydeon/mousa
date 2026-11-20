@@ -34,9 +34,12 @@ func testPolicyEvaluationRequest(t testing.TB) PolicyEvaluationRequest {
 	return request
 }
 
+// testAccessEventID stands in for the access event a store would cite.
+var testAccessEventID = AccessEventID{0xac}
+
 func testEvaluationSnapshot(access SourceAccess) PolicyEvaluationSnapshot {
 	state := CollectionActive
-	return PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: access}
+	return PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: access, AccessEventID: &testAccessEventID}
 }
 
 func TestPolicyEvaluationRequestIdentityAndValidation(t *testing.T) {
@@ -141,7 +144,7 @@ func TestEvaluateSourceRetrievalReasonOrderAndIdentity(t *testing.T) {
 		}
 	}
 
-	missingState := PolicyEvaluationSnapshot{Access: SourceAccessAllow}
+	missingState := PolicyEvaluationSnapshot{Access: SourceAccessAllow, AccessEventID: &testAccessEventID}
 	missing, err := EvaluateSourceRetrieval(request, missingState, 500)
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +153,20 @@ func TestEvaluateSourceRetrievalReasonOrderAndIdentity(t *testing.T) {
 		t.Fatalf("missing state reasons = %v", missing.ReasonCodes)
 	}
 
+	// No access event denies by default and says so; allow without an event is refused.
+	unmarked := testEvaluationSnapshot(SourceAccessDeny)
+	unmarked.AccessEventID = nil
+	byDefault, err := EvaluateSourceRetrieval(request, unmarked, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byDefault.Outcome != PolicyOutcomeDeny || byDefault.AccessEventID != nil || !reflect.DeepEqual(byDefault.ReasonCodes, []PolicyDecisionReason{PolicyReasonAccessDefault}) || byDefault.ID == denied.ID {
+		t.Fatalf("default decision = %#v", byDefault)
+	}
+	unmarked.Access = SourceAccessAllow
+	if _, err := EvaluateSourceRetrieval(request, unmarked, 500); err == nil {
+		t.Fatal("allow without an access event accepted")
+	}
 	if _, err := EvaluateSourceRetrieval(request, testEvaluationSnapshot(""), 500); err == nil {
 		t.Fatal("unset access accepted")
 	}
@@ -267,18 +284,18 @@ func TestPolicyDecisionGoldenVectors(t *testing.T) {
 	}
 
 	state := CollectionActive
-	decision, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: SourceAccessAllow}, 500)
+	decision, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: SourceAccessAllow, AccessEventID: &testAccessEventID}, 500)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := hex.EncodeToString(decision.ID[:]); got != "53e2a2966b7f084087dc0e2e37eb001cfe0d2c73ba968f10ac6ea58d360c5fbd" {
+	if got := hex.EncodeToString(decision.ID[:]); got != "e456ca08a2f42e2c1bafb8bd977a938081efbbb1fd0674fe181cbae40f61ffdf" {
 		t.Fatalf("decision identity = %s", got)
 	}
 	var evaluated [8]byte
 	binary.BigEndian.PutUint64(evaluated[:], 500)
 	wantID := testTupleSHA256(
 		[]byte(PolicyDecisionSchema), request.ID[:], []byte(PolicyEvaluatorID), []byte(PolicyEvaluatorVersion), evaluated[:],
-		[]byte{1}, []byte(CollectionActive), nil, []byte(SourceAccessAllow), []byte(PolicyOutcomeAllow), []byte(PolicyReasonAllow),
+		[]byte{1}, []byte(CollectionActive), nil, []byte(SourceAccessAllow), testAccessEventID[:], []byte(PolicyOutcomeAllow), []byte(PolicyReasonAllow),
 	)
 	if decision.ID != PolicyDecisionID(wantID) {
 		t.Fatal("decision identity does not match the contract field tuple")
@@ -287,12 +304,12 @@ func TestPolicyDecisionGoldenVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDecision := `{"schema":"mousa.policy_decision.v2","id":"53e2a2966b7f084087dc0e2e37eb001cfe0d2c73ba968f10ac6ea58d360c5fbd","request":{"schema":"mousa.policy_evaluation_request.v1","id":"de97652c1f223588781f6f4ed33fe319839837ec51e444098fd7cd0d9dd42265","action":"source.retrieve","caller_namespace":"example.caller","external_caller_id":"caller-1","external_request_id":"request-1","purpose_namespace":"example.purpose","external_purpose_id":"purpose-1","source_id":"3d2fe6ed8b99d0cadef9f4ff85fb524a7ef5fddd8b249600acb40c7c8c615521","requested_at_usec":100},"evaluator_id":"mousa.policy.source_retrieval","evaluator_version":"2","evaluated_at_usec":500,"state_present":true,"collection_state":"active","current_withdrawal_id":null,"access":"allow","outcome":"allow","reason_codes":["allow"]}` + "\n"
+	wantDecision := `{"schema":"mousa.policy_decision.v3","id":"e456ca08a2f42e2c1bafb8bd977a938081efbbb1fd0674fe181cbae40f61ffdf","request":{"schema":"mousa.policy_evaluation_request.v1","id":"de97652c1f223588781f6f4ed33fe319839837ec51e444098fd7cd0d9dd42265","action":"source.retrieve","caller_namespace":"example.caller","external_caller_id":"caller-1","external_request_id":"request-1","purpose_namespace":"example.purpose","external_purpose_id":"purpose-1","source_id":"3d2fe6ed8b99d0cadef9f4ff85fb524a7ef5fddd8b249600acb40c7c8c615521","requested_at_usec":100},"evaluator_id":"mousa.policy.source_retrieval","evaluator_version":"3","evaluated_at_usec":500,"state_present":true,"collection_state":"active","current_withdrawal_id":null,"access":"allow","access_event_id":"ac00000000000000000000000000000000000000000000000000000000000000","outcome":"allow","reason_codes":["allow"]}` + "\n"
 	if string(encoded) != wantDecision {
 		t.Fatalf("canonical decision bytes = %q, want %q", encoded, wantDecision)
 	}
 	// The identity binds the evaluation time: one changed input must change the pinned identity.
-	later, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: SourceAccessAllow}, 501)
+	later, err := EvaluateSourceRetrieval(request, PolicyEvaluationSnapshot{StatePresent: true, CollectionState: &state, Access: SourceAccessAllow, AccessEventID: &testAccessEventID}, 501)
 	if err != nil {
 		t.Fatal(err)
 	}

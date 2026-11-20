@@ -16,7 +16,7 @@ import (
 
 func TestHTTPSubjectAudienceScopeAndRevocation(t *testing.T) {
 	run, _ := setup(t)
-	run.runInput(`{"id":"note","text":"Cedar HTTP evidence."}`+"\n", false, "sync", "--source", "alpha")
+	run.runInput(`{"id":"note","text":"Cedar HTTP evidence."}`+"\n", false, "sync", "--source", "alpha", "--allow")
 	store, err := sqlite.Open(t.Context(), run.store)
 	if err != nil {
 		t.Fatal(err)

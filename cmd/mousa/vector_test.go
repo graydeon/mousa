@@ -16,9 +16,9 @@ func TestNativeVectorWorkflowDirectoryAndJSONL(t *testing.T) {
 			selector = []string{root}
 			writeFile(t, root, "runbook.md", "Drain sockets before stopping the host.\r\n")
 			writeFile(t, root, "garden.md", "Radishes prefer damp soil.\n")
-			run.run(false, "sync", root)
+			run.run(false, "sync", "--allow", root)
 		} else {
-			run.runInput("{\"id\":\"runbook.md\",\"text\":\"Drain sockets before stopping the host.\\r\\n\"}\n{\"id\":\"garden.md\",\"text\":\"Radishes prefer damp soil.\\n\"}\n", false, append([]string{"sync"}, selector...)...)
+			run.runInput("{\"id\":\"runbook.md\",\"text\":\"Drain sockets before stopping the host.\\r\\n\"}\n{\"id\":\"garden.md\",\"text\":\"Radishes prefer damp soil.\\n\"}\n", false, append([]string{"sync", "--allow"}, selector...)...)
 		}
 		_, lexical := run.run(false, append(append([]string{"query"}, selector...), "unplug")...)
 		if len(hits(lexical)) != 0 {
@@ -71,9 +71,9 @@ func TestNativeVectorWorkflowDirectoryAndJSONL(t *testing.T) {
 		}
 		if directory {
 			writeFile(t, root, "runbook.md", "Use the replacement switch.\n")
-			run.run(false, "sync", root)
+			run.run(false, "sync", "--allow", root)
 		} else {
-			run.runInput("{\"id\":\"runbook.md\",\"text\":\"Use the replacement switch.\\n\"}\n", false, append([]string{"sync"}, selector...)...)
+			run.runInput("{\"id\":\"runbook.md\",\"text\":\"Use the replacement switch.\\n\"}\n", false, append([]string{"sync", "--allow"}, selector...)...)
 		}
 		_, stale := run.runInput(`{"schema":"mousa.vector_query.v1","values":[1,0]}`, false, queryArgs...)
 		if stale["indexed"] != float64(1) || stale["missing"] != float64(1) || strings.Contains(fmt.Sprint(stale), "Drain sockets") {

@@ -14,7 +14,7 @@ func TestExactPackingDisplacement(t *testing.T) {
 			writeFile(t, root, "copy-a.md", "amber amber")
 			writeFile(t, root, "copy-b.md", "amber amber")
 			writeFile(t, root, "repair.md", "amber repair code ZX17")
-			run.run(false, "sync", "--segment-policy", policy, root)
+			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
 			_, original := run.run(false, "query", "--budget-bytes", "33", root, "amber")
 			if original["used_bytes"] != float64(22) || original["budget_omitted"] != float64(1) {
 				t.Fatalf("baseline: %v", original)
@@ -47,7 +47,7 @@ func TestExactPackingDisplacement(t *testing.T) {
 			if err := os.Remove(filepath.Join(root, retained["item"].(string))); err != nil {
 				t.Fatal(err)
 			}
-			run.run(false, "sync", "--segment-policy", policy, root)
+			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
 			_, deleted := run.run(false, "query", "--packing-policy", "exact-v1", "--budget-bytes", "33", root, "amber")
 			if deleted["duplicate_omitted"] != float64(0) || deleted["used_bytes"] != float64(33) || hits(deleted)[0].(map[string]any)["segment_id"] == retained["segment_id"] {
 				t.Fatalf("deleted retained passage suppressed its surviving copy: %v", deleted)
@@ -58,7 +58,7 @@ func TestExactPackingDisplacement(t *testing.T) {
 				t.Fatal("history lost its retired retained relationship")
 			}
 			writeFile(t, root, retained["item"].(string), "amber amber")
-			run.run(false, "sync", "--segment-policy", policy, root)
+			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
 			_, restored := run.run(false, "query", "--packing-policy", "exact-v1", "--budget-bytes", "33", root, "amber")
 			if restored["packet_id"] != exact["packet_id"] {
 				t.Fatal("restoration changed exact packet identity")

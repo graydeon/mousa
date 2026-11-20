@@ -164,7 +164,7 @@ func decodeItemString(raw []byte) (string, error) {
 	return value, nil
 }
 
-func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input io.Reader, segmentPolicy string) error {
+func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input io.Reader, segmentPolicy string, allow bool) error {
 	started := time.Now()
 	source, err := streamSource(externalSourceID)
 	if err != nil {
@@ -225,6 +225,11 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 		return recordError{Line: line + 1, Err: err}
 	}
 	result.TotalItems = len(lineOf)
+	if allow {
+		if err := allowAfterSync(ctx, store, source.ID, &result); err != nil {
+			return err
+		}
+	}
 	if info, err := os.Stat(storePath); err == nil {
 		result.StoreBytes = info.Size()
 	}

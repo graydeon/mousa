@@ -35,7 +35,7 @@ func TestDirectoryPreviewAndScopeChanges(t *testing.T) {
 	if _, err := os.Stat(run.store); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("preview opened or created the store: %v", err)
 	}
-	run.run(false, "sync", "--exclude", "notes/draft.txt", root)
+	run.run(false, "sync", "--exclude", "notes/draft.txt", "--allow", root)
 	_, queried := run.run(false, "query", root, "cedar")
 	want := map[string]bool{"notes/note.txt": true, "public.md": true}
 	for _, value := range hits(queried) {
@@ -70,7 +70,7 @@ func TestDirectoryPreviewAndScopeChanges(t *testing.T) {
 func TestDirectoryValidationFailurePreservesActivation(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "note.md", "Cedar accepted revision.")
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte{0xff, 0xfe}, 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	const required = "# Recovery\n\nRestart the amber service with `service amber restart`.\n\n"
 	text := required + strings.Repeat("Ordinary background material without the recovery keyword.\n\n", 60)
 	writeFile(t, root, "runbook.md", text)
-	run.run(false, "sync", root)
+	run.run(false, "sync", "--allow", root)
 	_, old := run.run(false, "query", root, "amber")
 	_, omitted := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
 	if omitted["outcome"] != "budget_omitted" {
@@ -71,7 +71,7 @@ func TestPassageJSONLAccessAndWithdrawal(t *testing.T) {
 	const source = "passage-access"
 	const original = "Café secret schedule Tuesday."
 	sync := func(text string) map[string]any {
-		_, result := run.runInput(record("private-note", text), false, "sync", "--source", source, "--segment-policy", "passage-v1")
+		_, result := run.runInput(record("private-note", text), false, "sync", "--source", source, "--segment-policy", "passage-v1", "--allow")
 		return result
 	}
 	sync(original)
@@ -116,7 +116,7 @@ func TestEvidenceNormalizedLocations(t *testing.T) {
 			raw := "\ufeff" + strings.Repeat("Café amber 東京.\r\n\r\n", 300) + "amber end\r"
 			normalized := strings.ReplaceAll(strings.ReplaceAll(strings.TrimPrefix(raw, "\ufeff"), "\r\n", "\n"), "\r", "\n")
 			writeFile(t, root, "locations.md", raw)
-			run.run(false, "sync", "--segment-policy", policy, root)
+			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
 			_, result := run.run(false, "query", "--budget-bytes", "16384", root, "amber")
 			if len(hits(result)) < 2 {
 				t.Fatalf("expected multiple selected segments: %v", result)

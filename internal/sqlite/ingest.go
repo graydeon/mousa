@@ -172,6 +172,9 @@ func (store *Store) ApplyIngest(ctx context.Context, batch mousa.IngestBatch) er
 		if err := oneRow(result); err != nil {
 			return integrity("apply ingest", err.Error())
 		}
+		if err := appendLog(ctx, conn, mousa.LogKindIngestReceipt, receipt.ObservationID[:], receipt.SourceID[:], receiptData); err != nil {
+			return err
+		}
 		for ordinal, gap := range receipt.Gaps {
 			if _, err := conn.ExecContext(ctx, `INSERT INTO ingest_gaps(observation_id, ordinal, gap_start, gap_end) VALUES(?, ?, ?, ?)`, receipt.ObservationID[:], ordinal, uint64Blob(gap.Start), uint64Blob(gap.End)); err != nil {
 				return classify("apply ingest gap", err)
@@ -432,6 +435,9 @@ func (store *Store) WithdrawSource(ctx context.Context, withdrawal mousa.SourceW
 		}
 		if _, err := conn.ExecContext(ctx, `INSERT INTO source_withdrawals(id, source_id, occurred_at_usec, record_json) VALUES(?, ?, ?, ?)`, withdrawal.ID[:], withdrawal.SourceID[:], withdrawal.OccurredAtUsec, data); err != nil {
 			return classify("withdraw source", err)
+		}
+		if err := appendLog(ctx, conn, mousa.LogKindSourceWithdrawal, withdrawal.ID[:], withdrawal.SourceID[:], data); err != nil {
+			return err
 		}
 		state.CollectionState = mousa.CollectionWithdrawn
 		state.CurrentWithdrawalID = &withdrawal.ID

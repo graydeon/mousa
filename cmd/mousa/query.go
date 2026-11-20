@@ -44,7 +44,11 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 		PackingPolicy: traced.Trail.PackingPolicy,
 		UsedBytes:     traced.Trail.UsedBytes, BudgetBytes: traced.Trail.BudgetBytes,
 		MatchedCandidates: len(traced.Candidates), CandidateLimit: queryCandidateLimit,
-		Evidence: []evidenceHit{},
+		AccessEvent: "default",
+		Evidence:    []evidenceHit{},
+	}
+	if traced.Decision.AccessEventID != nil {
+		result.AccessEvent = traced.Decision.AccessEventID.String()
 	}
 	if packingPolicy == mousa.PackingExactV1 {
 		result.DuplicateOmitted = new(int)

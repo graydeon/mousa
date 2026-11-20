@@ -513,8 +513,17 @@ func seedEnforcedRetrieval(t *testing.T, store *Store, text string) (mousa.Polic
 		t.Fatalf("ApplyIngest: %v", err)
 	}
 	document := addEnforcedDocument(t, store, batch.Observation, "enforced-body", text)
+	allowSource(t, store, batch.Source.ID)
 	request := testEvaluationRequest(t, batch.Source.ID, "request-enforced")
 	return request, document
+}
+
+// allowSource records an allow event; a source without one is denied.
+func allowSource(t *testing.T, store *Store, sourceID mousa.SourceID) {
+	t.Helper()
+	if _, _, err := store.SetSourceAccess(context.Background(), sourceID, mousa.SourceAccessAllow, "test"); err != nil {
+		t.Fatalf("SetSourceAccess(allow): %v", err)
+	}
 }
 
 func acceptedSegmentIDs(candidates []mousa.VerifiedLexicalCandidate, sourceID mousa.SourceID) []mousa.SegmentID {

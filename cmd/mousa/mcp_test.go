@@ -211,6 +211,8 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 		t.Fatalf("retry not unchanged: %v", replay)
 	}
 	client.call("mousa_sync", mcpItems("beta", map[string]any{"id": "beta-item", "text": "Cedar isolated beta"}), "")
+	run.run(false, "access", "--source", "alpha", "allow")
+	run.run(false, "access", "--source", "beta", "allow")
 	status := client.call("mousa_status", map[string]any{"source": "alpha"}, "")
 	if status["active_items"] != float64(1) || status["observations"] != float64(1) {
 		t.Fatalf("wrong current/historical counts: %v", status)
@@ -560,6 +562,7 @@ func TestMCPConcurrentIngestionAndPacking(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	run.run(false, "access", "--source", "alpha", "allow")
 	query := mcpQuery("alpha", "cedar birch maple willow", 256)
 	original := client.call("mousa_query", query, "")
 	evidence := hits(original)

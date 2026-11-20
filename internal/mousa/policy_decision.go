@@ -12,12 +12,12 @@ const (
 	// PolicyEvaluationRequestSchema names one validated transient policy evaluation request.
 	PolicyEvaluationRequestSchema = "mousa.policy_evaluation_request.v1"
 	// PolicyDecisionSchema names one immutable stored policy decision.
-	PolicyDecisionSchema = "mousa.policy_decision.v2"
+	PolicyDecisionSchema = "mousa.policy_decision.v3"
 	// SourceRetrievalAction is the only action the source retrieval evaluator accepts.
 	SourceRetrievalAction = "source.retrieve"
 	// PolicyEvaluatorID and PolicyEvaluatorVersion identify the source-retrieval evaluator.
 	PolicyEvaluatorID      = "mousa.policy.source_retrieval"
-	PolicyEvaluatorVersion = "2"
+	PolicyEvaluatorVersion = "3"
 )
 
 // PolicyDecisionOutcome names the closed set of decision outcomes.
@@ -36,10 +36,11 @@ const (
 	PolicyReasonMissingSourceState PolicyDecisionReason = "missing_source_state"
 	PolicyReasonSourceWithdrawn    PolicyDecisionReason = "source_withdrawn"
 	PolicyReasonAccessDenied       PolicyDecisionReason = "access_denied"
+	PolicyReasonAccessDefault      PolicyDecisionReason = "access_default"
 )
 
-// SourceAccess is the one stored access decision for a source. A source with no
-// stored decision is allowed.
+// SourceAccess is the state an access event sets for a source. A source with no access event
+// is denied.
 type SourceAccess string
 
 const (
@@ -209,6 +210,7 @@ type PolicyEvaluationSnapshot struct {
 	CollectionState     *CollectionState
 	CurrentWithdrawalID *WithdrawalID
 	Access              SourceAccess
+	AccessEventID       *AccessEventID
 }
 
 type PolicyDecisionID [sha256.Size]byte
@@ -225,15 +227,17 @@ type PolicyDecision struct {
 	CollectionState     *CollectionState        `json:"collection_state"`
 	CurrentWithdrawalID *WithdrawalID           `json:"current_withdrawal_id"`
 	Access              SourceAccess            `json:"access"`
+	AccessEventID       *AccessEventID          `json:"access_event_id"`
 	Outcome             PolicyDecisionOutcome   `json:"outcome"`
 	ReasonCodes         []PolicyDecisionReason  `json:"reason_codes"`
 }
 
 // NewPolicyDecisionID derives the decision identity from the decision schema, request identity,
-// evaluator identity, evaluation time, lifecycle evidence, source access, outcome and reasons.
+// evaluator identity, evaluation time, lifecycle evidence, source access, the cited access event
+// (empty for the default), outcome and reasons.
 func NewPolicyDecisionID(decision PolicyDecision) (PolicyDecisionID, error) {
 	if decision.Schema != PolicyDecisionSchema {
-		return PolicyDecisionID{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
+		return PolicyDecisionID{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v3", nil)
 	}
 	if decision.Request.ID == (PolicyEvaluationRequestID{}) {
 		return PolicyDecisionID{}, newValidationError("request.id", ValidationCodeInvalidID, "must not be zero", nil)
@@ -252,7 +256,11 @@ func NewPolicyDecisionID(decision PolicyDecision) (PolicyDecisionID, error) {
 	binary.BigEndian.PutUint64(time[:], uint64(decision.EvaluatedAtUsec))
 	fields = append(fields, time[:])
 	fields = append(fields, lifecycleFields(decision)...)
-	fields = append(fields, []byte(decision.Access), []byte(decision.Outcome))
+	var event []byte
+	if decision.AccessEventID != nil {
+		event = decision.AccessEventID[:]
+	}
+	fields = append(fields, []byte(decision.Access), event, []byte(decision.Outcome))
 	for _, reason := range decision.ReasonCodes {
 		fields = append(fields, []byte(reason))
 	}
@@ -282,7 +290,7 @@ func lifecycleFields(decision PolicyDecision) [][]byte {
 // derivable relation between lifecycle evidence, source access, outcome, and reason order.
 func (decision PolicyDecision) Validate() error {
 	if decision.Schema != PolicyDecisionSchema {
-		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
+		return newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v3", nil)
 	}
 	if decision.ID == (PolicyDecisionID{}) {
 		return newValidationError("id", ValidationCodeInvalidID, "must not be zero", nil)
@@ -294,7 +302,7 @@ func (decision PolicyDecision) Validate() error {
 		return newValidationError("evaluator_id", ValidationCodeInvalidValue, "must be mousa.policy.source_retrieval", nil)
 	}
 	if decision.EvaluatorVersion != PolicyEvaluatorVersion {
-		return newValidationError("evaluator_version", ValidationCodeInvalidValue, "must be 2", nil)
+		return newValidationError("evaluator_version", ValidationCodeInvalidValue, "must be 3", nil)
 	}
 	if decision.EvaluatedAtUsec <= 0 {
 		return newValidationError("evaluated_at_usec", ValidationCodeInvalidRange, "must be positive", nil)
@@ -323,12 +331,15 @@ func (decision PolicyDecision) Validate() error {
 	if err := decision.Access.Validate(); err != nil {
 		return err
 	}
+	if decision.AccessEventID == nil && decision.Access != SourceAccessDeny {
+		return newValidationError("access", ValidationCodeInvalidValue, "must be deny without an access event", nil)
+	}
 	switch decision.Outcome {
 	case PolicyOutcomeAllow, PolicyOutcomeDeny:
 	default:
 		return newValidationError("outcome", ValidationCodeInvalidEnum, "must be allow or deny", nil)
 	}
-	wantOutcome, wantReasons := deriveDecisionOutcome(decision.StatePresent, decision.CurrentWithdrawalID, decision.Access)
+	wantOutcome, wantReasons := deriveDecisionOutcome(decision.StatePresent, decision.CurrentWithdrawalID, decision.Access, decision.AccessEventID)
 	if decision.Outcome != wantOutcome {
 		return newValidationError("outcome", ValidationCodeInvalidValue, "does not follow lifecycle evidence and source access", nil)
 	}
@@ -346,8 +357,9 @@ func (decision PolicyDecision) Validate() error {
 }
 
 // deriveDecisionOutcome computes the outcome and ordered reason codes: lifecycle checks first,
-// then source access. Any reason other than allow denies.
-func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, access SourceAccess) (PolicyDecisionOutcome, []PolicyDecisionReason) {
+// then source access. A source with no access event is denied by default. Any reason other than
+// allow denies.
+func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, access SourceAccess, event *AccessEventID) (PolicyDecisionOutcome, []PolicyDecisionReason) {
 	var reasons []PolicyDecisionReason
 	if !statePresent {
 		reasons = append(reasons, PolicyReasonMissingSourceState)
@@ -355,7 +367,10 @@ func deriveDecisionOutcome(statePresent bool, withdrawal *WithdrawalID, access S
 	if withdrawal != nil {
 		reasons = append(reasons, PolicyReasonSourceWithdrawn)
 	}
-	if access != SourceAccessAllow {
+	switch {
+	case event == nil:
+		reasons = append(reasons, PolicyReasonAccessDefault)
+	case access != SourceAccessAllow:
 		reasons = append(reasons, PolicyReasonAccessDenied)
 	}
 	if len(reasons) == 0 {
@@ -376,7 +391,7 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 	if err := snapshot.Access.Validate(); err != nil {
 		return PolicyDecision{}, err
 	}
-	outcome, reasons := deriveDecisionOutcome(snapshot.StatePresent, snapshot.CurrentWithdrawalID, snapshot.Access)
+	outcome, reasons := deriveDecisionOutcome(snapshot.StatePresent, snapshot.CurrentWithdrawalID, snapshot.Access, snapshot.AccessEventID)
 	decision := PolicyDecision{
 		Schema:              PolicyDecisionSchema,
 		Request:             request,
@@ -387,6 +402,7 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 		CollectionState:     cloneCollectionState(snapshot.CollectionState),
 		CurrentWithdrawalID: cloneWithdrawalID(snapshot.CurrentWithdrawalID),
 		Access:              snapshot.Access,
+		AccessEventID:       cloneAccessEventID(snapshot.AccessEventID),
 		Outcome:             outcome,
 		ReasonCodes:         reasons,
 	}
@@ -399,6 +415,14 @@ func EvaluateSourceRetrieval(request PolicyEvaluationRequest, snapshot PolicyEva
 		return PolicyDecision{}, err
 	}
 	return decision, nil
+}
+
+func cloneAccessEventID(value *AccessEventID) *AccessEventID {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func cloneCollectionState(value *CollectionState) *CollectionState {
@@ -433,6 +457,7 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 		CollectionState     *string         `json:"collection_state"`
 		CurrentWithdrawalID *string         `json:"current_withdrawal_id"`
 		Access              string          `json:"access"`
+		AccessEventID       *AccessEventID  `json:"access_event_id"`
 		Outcome             string          `json:"outcome"`
 		ReasonCodes         []string        `json:"reason_codes"`
 	}
@@ -440,7 +465,7 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 		return PolicyDecision{}, err
 	}
 	if wire.Schema != PolicyDecisionSchema {
-		return PolicyDecision{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v2", nil)
+		return PolicyDecision{}, newValidationError("schema", ValidationCodeInvalidSchema, "must be mousa.policy_decision.v3", nil)
 	}
 	id, err := ParsePolicyDecisionID(wire.ID)
 	if err != nil {
@@ -478,6 +503,7 @@ func DecodePolicyDecision(data []byte) (PolicyDecision, error) {
 		CollectionState:     collectionState,
 		CurrentWithdrawalID: withdrawal,
 		Access:              SourceAccess(wire.Access),
+		AccessEventID:       wire.AccessEventID,
 		Outcome:             PolicyDecisionOutcome(wire.Outcome),
 		ReasonCodes:         reasons,
 	}

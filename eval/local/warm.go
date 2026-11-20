@@ -123,6 +123,9 @@ func measureStage(fixture string, sourceID mousa.SourceID, query, stage string, 
 			return stageCost{}, err
 		}
 		defer store.Close()
+		if _, _, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "mousa-local.eval"); err != nil {
+			return stageCost{}, err
+		}
 	}
 	if stage == "new_historical_trace" || stage == "fresh_current_query" {
 		requests = make([]mousa.PolicyEvaluationRequest, iterations+1)
