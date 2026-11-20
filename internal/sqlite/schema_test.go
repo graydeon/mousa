@@ -26,7 +26,7 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 		}, CodeIncompatibleSchema},
 		{"newer schema version", func(t *testing.T, path string) {
 			createCurrent(t, path)
-			rawExec(t, path, `PRAGMA user_version = 2`)
+			rawExec(t, path, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion+1))
 		}, CodeIncompatibleSchema},
 		{"missing object", func(t *testing.T, path string) { createCurrent(t, path); rawExec(t, path, `DROP TABLE segments`) }, CodeIntegrity},
 		{"noncanonical record", func(t *testing.T, path string) {
@@ -91,6 +91,7 @@ func TestOpenRefusesOtherStoresBeforeVerifyingRecords(t *testing.T) {
 	}{
 		{"pre-rework application ID", `PRAGMA application_id = 1297044819`, true},
 		{"earlier schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = 0`, applicationID), true},
+		{"previous schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = %d`, applicationID, schemaVersion-1), true},
 		{"foreign application ID", `PRAGMA application_id = 7`, false},
 		{"no application ID", `PRAGMA application_id = 0`, false},
 	} {
@@ -143,10 +144,10 @@ func TestOpenRejectsFutureSchemaWithoutMutation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "future.sqlite")
 			createCurrent(t, path)
-			rawExec(t, path, `
-				PRAGMA user_version = 2;
+			rawExec(t, path, fmt.Sprintf(`
+				PRAGMA user_version = %d;
 				CREATE TABLE future_object(id INTEGER PRIMARY KEY) STRICT;
-			`)
+			`, schemaVersion+1))
 			before, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read before open: %v", err)

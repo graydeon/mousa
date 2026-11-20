@@ -235,6 +235,8 @@ CREATE TABLE access_events (
     record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0)
 ) STRICT;
 
+CREATE INDEX access_events_source_id_idx ON access_events(source_id);
+
 -- The append-only store log. Every ingest receipt, access event and withdrawal is one leaf,
 -- written in the same transaction as its record. seq runs 1, 2, 3 ... with no gaps; leaf_hash
 -- is the RFC 6962 leaf hash SHA-256(0x00 || record_json) of the record named by kind and
