@@ -58,7 +58,8 @@ def main():
                     store = work / f'{arm}-{count}-{repeat}.sqlite'
 
                     def command(operation, stage, query=None, expected_items=None, expected_generation=None, expected_action=None, expected_count=None):
-                        invocation = [str(binaries[arm]), '-store', str(store), operation, str(root)]
+                        allow = ['--allow'] if arm == 'candidate' and operation == 'sync' else []
+                        invocation = [str(binaries[arm]), '-store', str(store), operation, *allow, str(root)]
                         if query is not None:
                             invocation.append(query)
                         rss_path = work / 'rss.txt'
