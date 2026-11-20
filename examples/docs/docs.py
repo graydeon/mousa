@@ -161,46 +161,6 @@ def ask(binary, store, directory, question, budget, timeout, arguments=()):
             "response": response}
 
 
-def render_prompt(question, evidence):
-    return ("Use only the cited Git 2.51.0 passages. If evidence is insufficient, say so.\n"
-            "Question: " + question + "\nEvidence:\n" + "".join(
-                f'[{index}] {hit["location"]["url"]} '
-                f'lines {hit["location"]["line_start"]}-{hit["location"]["line_end"]}\n'
-                f'{hit["text"]}\n' for index, hit in enumerate(evidence, 1)))
-
-
-def project_context(packet, limit):
-    try:
-        import tiktoken
-        from importlib.metadata import version
-    except ImportError as error:
-        raise RuntimeError("context projection requires tiktoken==0.12.0") from error
-    if version("tiktoken") != "0.12.0":
-        raise ValueError("context projection requires tiktoken==0.12.0")
-    encoding = tiktoken.get_encoding("o200k_base")
-    response = packet["response"]
-    selected = []
-    omitted = []
-    def count(text):
-        return len(encoding.encode(text, disallowed_special=()))
-
-    text = render_prompt(response["query"], selected)
-    if count(text) > limit:
-        raise ValueError("question and prompt instructions exceed context token limit")
-    for hit in response["evidence"]:
-        trial = render_prompt(response["query"], [*selected, hit])
-        if count(trial) <= limit:
-            selected.append(hit)
-            text = trial
-        else:
-            omitted.append(hit["segment_id"])
-    return {"encoding": "o200k_base", "limit": limit, "tokens": count(text),
-            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "text": text,
-            "selected_segment_ids": [hit["segment_id"] for hit in selected],
-            "omitted_segment_ids": omitted,
-            "source_packet_id": response["packet_id"]}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mousa", type=Path, default=Path("./mousa"))
@@ -212,12 +172,10 @@ def main():
     commands.add_parser("sync", help="replace current corpus evidence from verified files")
     query = commands.add_parser("ask", help="retrieve passages; does not generate an answer")
     query.add_argument("--budget-bytes", type=int, default=4096)
-    query.add_argument("--context-tokens", type=int, help="o200k_base prompt-content limit; requires tiktoken==0.12.0")
     query.add_argument("question")
     args = parser.parse_args()
-    if args.timeout <= 0 or (args.operation == "ask" and
-                             (args.budget_bytes <= 0 or args.context_tokens is not None and args.context_tokens <= 0)):
-        parser.error("timeout, byte budget and optional context token limit must be positive")
+    if args.timeout <= 0 or (args.operation == "ask" and args.budget_bytes <= 0):
+        parser.error("timeout and byte budget must be positive")
     started = time.perf_counter_ns()
     try:
         directory = Path(os.path.abspath(args.directory))
@@ -228,8 +186,6 @@ def main():
         else:
             result = ask(args.mousa.resolve(strict=True), args.store, directory,
                          args.question, args.budget_bytes, args.timeout)
-            if args.context_tokens is not None:
-                result["context"] = project_context(result, args.context_tokens)
         result["elapsed_ms"] = (time.perf_counter_ns() - started) / 1e6
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

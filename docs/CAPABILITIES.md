@@ -11,40 +11,35 @@ factual truth.
 ## Capability matrix
 
 “Core” means an implementation exists. “CLI” means an operator can use it through
-`cmd/mousa`. Tests and measurements describe different kinds of evidence: passing
-behavior tests do not establish retrieval quality or performance on other workloads.
-The [research record](RESEARCH.md) documents published measurements and limitations.
+`cmd/mousa`. Passing behavior tests do not establish retrieval quality or performance
+on other workloads. Measurements are published separately in
+[mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks); the pre-rework
+research record is archived at [archive/research-pre-rework.md](archive/research-pre-rework.md)
+and does not describe the current code.
 
-| Capability | Core | CLI | Behavioral coverage | Published measurements |
-|---|---|---|---|---|
-| UTF-8 directory import and resync | Yes | `sync <dir>` | Import, repeated no-op, update, revert, delete, restore, restart | Synthetic cold-CLI lifecycle comparison in the research record |
-| Directory preview and selection controls | Yes | `sync --preview`, include/exclude globs, explicit overrides and limits | Actual-CLI scope changes, preview without store creation, failed validation preserving activation, rooted link rejection | Synthetic preview and sync observations; no performance claim from boundary smoke tests |
-| JSONL item input | Yes | `sync --source <id>` | Retry, replacement, tombstone, malformed input, committed prefix, input limits | Small evolving CLI example; not a throughput benchmark |
-| Raw-content identity and normalized text | Yes | Both input forms | CRLF, BOM, empty text, exact retries | Core evaluation includes normalization; no separate normalization ablation |
-| Versioned passage boundaries | Yes | `sync --segment-policy passage-v1`; source-built BEIR `-segment-policy fixed-v1|passage-v1` | Exact source slices, policy replacement, retries, interrupted activation, historical identities and access exclusion; evaluator identity/reuse/resume and explicit comparison axis | Bounded documentation and synthetic comparison in the research record; no general quality claim |
-| Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry | Included in the directory lifecycle comparison; no isolated transaction ablation |
-| Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence | BEIR core evaluation and synthetic native-CLI comparison; no general CLI quality claim |
-| Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history | Synthetic vectors establish protocol/ranking arithmetic only, not model or retrieval quality |
-| Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history | Synthetic arithmetic/protocol only; no model-quality acceptance |
-| Source lifecycle and per-source access decisions | Yes | Fresh query evaluation; `access` and `withdraw` | CLI deny/allow, source withdrawal, and cross-source isolation | Evolving CLI example and warm current-query costs; not an isolated policy ablation |
-| Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility | Bounded exact-content packing measurements; no general retrieval-quality claim |
-| Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping | Published BEIR original/dedup results, not a new CLI quality claim |
-| Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering | Cold CLI and separate warm traced/current-query observations |
-| Embedding inference, answer generation | No | No | Not implemented | None |
-| Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown | None; acceptance is not a performance or model-driven evaluation |
-| OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries | None; live identity-provider/deployment interoperability not verified |
-| Stable SDK, general connectors, public pairing relay | No supported interface | No | Not implemented as supported interfaces | None |
+| Capability | Core | CLI | Behavioral coverage |
+|---|---|---|---|
+| UTF-8 directory import and resync | Yes | `sync <dir>` | Import, repeated no-op, update, revert, delete, restore, restart |
+| Directory preview and selection controls | Yes | `sync --preview`, include/exclude globs, explicit overrides and limits | Actual-CLI scope changes, preview without store creation, failed validation preserving activation, rooted link rejection |
+| JSONL item input | Yes | `sync --source <id>` | Retry, replacement, tombstone, malformed input, committed prefix, input limits |
+| Raw-content identity and normalized text | Yes | Both input forms | CRLF, BOM, empty text, exact retries |
+| Versioned passage boundaries | Yes | `sync --segment-policy passage-v1`; source-built BEIR `-segment-policy fixed-v1|passage-v1` | Exact source slices, policy replacement, retries, interrupted activation, historical identities and source exclusion; evaluator identity/reuse/resume and explicit comparison axis |
+| Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry |
+| Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence |
+| Caller-supplied exact vector retrieval | Yes | Native `vector inputs`/`vector import` and `query --vector-space`; MCP `mousa_vector_inputs`/`mousa_vector_import`/`mousa_vector_query` for configured JSONL | Synthetic cosine/tie arithmetic, strict imports/arguments, current-only source pins, explicit write gates, partial coverage, restart, both packing policies, v5 history |
+| Hybrid lexical/vector retrieval | Yes | Native `query --hybrid-space`; MCP `mousa_hybrid_query` for configured JSONL | Equal-weight RRF(k=60), current snapshot, partial/zero coverage, both packers, v6 branch history |
+| Source lifecycle (withdrawal) | Yes | `withdraw` | Withdrawn sources release no evidence; cross-source isolation |
+| Per-source access decisions | Yes | `access <dir>|--source <id> allow|deny`; `sync --allow`; default deny with no event | Append-only events, default deny, no-op repeats, MCP-synced sources denied until native allow; see [Access](USAGE.md#access) |
+| Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility |
+| Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping |
+| Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering |
+| Embedding inference, answer generation | No | No | Not implemented |
+| Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown |
+| OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries |
+| Stable SDK, general connectors, public pairing relay | No supported interface | No | Not implemented as supported interfaces |
 
-The [Git documentation consumer](../examples/docs/README.md) is a separate
-Python CLI example. Its opt-in `ask --context-tokens` counts its own rendered
-prompt with pinned `o200k_base`; it does not change
-the byte-packed canonical packet. Message framing and reserved output remain
-outside that example's cap.
-The [pinned development case](https://github.com/graydeon/mousa-benchmarks/tree/4a9a477907b7f0eb7af708118e50c047ba9b2a5d/results/2026-09-29-context-512)
-keeps the fragment and verified parent passage at 511 of 512 content tokens
-by omitting a duplicate path from citation headers; an unrelated `git-switch`
-passage is not selected. It does not establish model-window safety, answer
-quality or general relevance.
+The [Git documentation example](../examples/docs/README.md) is a separate Python CLI
+example. It returns source passages and does not generate an answer.
 
 ## Caller-supplied exact vector retrieval
 
@@ -222,13 +217,10 @@ An operator may configure an opaque source ID that looks like a path; it still
 does not grant filesystem access. Protect the executable invocation, store,
 WAL, backups and released output with local filesystem controls.
 
-Every caller sees the same per-source access decision. A source is allowed
-unless `access` has set it to deny, and no access value resumes a withdrawn
-source. Caller IDs use namespace `mousa-local.caller` and purpose
-`mousa-local.purpose` / `retrieval`; the caller is recorded in each decision but
-does not change it. MCP does not expose access administration or authenticate
-the startup identity. CLI `access --source ID allow|deny` and
-`withdraw --source ID` remain operator controls.
+Access is per source and applies to every caller, including MCP. MCP exposes no
+access tool and `mousa_sync` has no allow option, so an MCP-synced source stays
+denied until the operator runs `access ... allow` natively; see
+[Access](USAGE.md#access). MCP does not authenticate the startup identity.
 
 ### Protocol and tools
 
@@ -323,7 +315,9 @@ For example, call `mousa_sync` with:
 }
 ```
 
-Then call `mousa_query` with:
+`mousa_sync` records no access event, so the source is denied until the operator
+runs `mousa -store STORE access --source inspection-notes allow` natively. Then
+call `mousa_query` with:
 
 ```json
 {"source":"inspection-notes","query":"harbor inspection","policy":"original","budget_bytes":4096}
@@ -518,8 +512,6 @@ zero active items.
 For sync reports, `total_items` counts selected directory files or processed JSONL
 records, not the source's active item count. `store_bytes` samples the main database
 file before close and excludes WAL and other files; it is not total disk usage.
-Use the separately reported post-exit file sizes in the lifecycle experiment when
-comparing those measured stores.
 
 ## Ingestion segment policies
 
@@ -527,9 +519,9 @@ Both input forms accept `--segment-policy fixed-v1|passage-v1`. The default is
 `fixed-v1`; query-term `--policy` is a separate option. For example:
 
 ```sh
-./mousa -store local.sqlite sync --segment-policy passage-v1 ./documents
+./mousa -store local.sqlite sync --segment-policy passage-v1 --allow ./documents
 ./mousa -store local.sqlite query --budget-bytes 1024 ./documents 'restart procedure'
-./mousa -store notes.sqlite sync --source notes --segment-policy passage-v1 < items.jsonl
+./mousa -store notes.sqlite sync --source notes --segment-policy passage-v1 --allow < items.jsonl
 ```
 
 Repeat the selected policy on every sync. It is not saved as a source default.
@@ -585,8 +577,7 @@ is rejected before activation, leaving its previous searchable revision intact.
 Passages make smaller evidence units eligible for packing, not necessarily more
 relevant. They change lexical document frequencies and ranking. A complete
 structure larger than the budget cannot fit; smaller budgets can still omit all
-matching segments. The [research record](RESEARCH.md) reports the bounded
-development comparison and its costs, not general superiority.
+matching segments.
 
 ## Store schema and older stores
 
@@ -622,7 +613,7 @@ Each nonblank line contains one object with `id` and exactly one of `text` or
 ```
 
 ```sh
-./mousa -store local.sqlite sync --source inspection-notes < items.jsonl
+./mousa -store local.sqlite sync --source inspection-notes --allow < items.jsonl
 ./mousa -store local.sqlite query --source inspection-notes 'harbor inspection'
 ```
 
@@ -649,7 +640,7 @@ no-op, and repeated tombstones are reported as `absent`.
 ```sh
 ./mousa -store local.sqlite sync --preview ./documents
 ./mousa -store local.sqlite sync --preview --include '*.md' --exclude 'drafts' ./documents
-./mousa -store local.sqlite sync --include '*.md' --exclude 'drafts' ./documents
+./mousa -store local.sqlite sync --include '*.md' --exclude 'drafts' --allow ./documents
 ```
 
 Preview uses the same selection and content validation as sync, but does not open,
@@ -836,19 +827,15 @@ that does not assert the corpus has no matches.
 The decision authorizes the query's transaction snapshot, not all future access.
 The trail records a packet plan, not proof that stdout reached its recipient.
 `latency_micros` includes store opening and query work but excludes JSON output and
-store close; external process timing is needed for full cold-CLI cost. Existing
-published measurements remain bound to their recorded source manifests, not to
-later implementations.
+store close; external process timing is needed for full cold-CLI cost.
 
-## Authorized trail inspection and source controls
+## Authorized trail inspection and withdrawal
 
 Replace `TRAIL_ID` with the identifier returned by a query.
 
 ```sh
 ./mousa -store local.sqlite trail ./documents TRAIL_ID
 ./mousa -store local.sqlite trail --source inspection-notes TRAIL_ID
-./mousa -store local.sqlite access --source inspection-notes deny
-./mousa -store local.sqlite access --source inspection-notes allow
 ./mousa -store local.sqlite withdraw --source inspection-notes
 ```
 
@@ -903,17 +890,16 @@ historical equality cannot be re-proved from this text-free record alone.
 Neither a trail ID nor a content digest is a signature against an attacker who
 can rewrite the entire store. Inspection still requires fresh source authorization.
 
-`access` stores one allow or deny decision per source; a source with none is
-allowed. Each query or trail inspection records the access value it used in its
-decision. This is an operator control, not caller authentication or protection
-against someone who can directly read or modify the store.
+Per-source access is an append-only event log with default deny; see
+[Access](USAGE.md#access). It is an operator
+control, not caller authentication, and it does not protect against someone who can read
+or modify the store directly.
 
 `withdraw` changes source lifecycle state without erasing index or canonical
-records. Access allow does not resume a withdrawn source. The CLI has no resume
-command, and sync does not implicitly resume it. Item deletion/restoration is a
-different operation from source withdrawal.
+records. The CLI has no resume command, and sync does not implicitly resume a withdrawn
+source. Item deletion/restoration is a different operation from source withdrawal.
 
-Directory identities remain usable by `query`, `status`, `trail`, `access`, and
+Directory identities remain usable by `query`, `status`, `trail`, and
 `withdraw` after the physical directory disappears. `sync` still requires an
 existing directory. Stored activation is not a claim about current filesystem
 contents. Integrity checks, authorization, current activation, and factual

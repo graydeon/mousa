@@ -1,7 +1,9 @@
+> Archived: this research record describes the pre-rework design. It is kept at the `pre-rework` tag and is not current.
+
 # Mousa research record
 
 For source-build versus release status and composition availability,
-see [development status](OVERVIEW.md#source-and-release-status).
+see [development status](../OVERVIEW.md#source-and-release-status).
 
 Raw benchmark reports and optional comparison dependencies are maintained in
 [mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks).
@@ -13,8 +15,8 @@ change their original source identities, protocols, or conclusions.
 
 This record collects engine measurements, hypotheses, methods, raw results,
 limitations and reproduction. Bounded caller-specific observations also appear
-with the [documentation consumer](../examples/docs/README.md) and the
-[backup checklist](../examples/backup/README.md). Development subsets and
+with the [documentation consumer](../../examples/docs/README.md) and the
+[backup checklist](../../examples/backup/README.md). Development subsets and
 modified protocols are labeled as such; none is described as a full-suite
 result. Timings from different machines are not combined into one software
 comparison.
@@ -30,7 +32,7 @@ tokenizer; this does not bound the full packet or a model's context window. No b
 pipeline exists. A separately declared caller can evaluate answers using Mousa
 evidence, but those results would evaluate that complete configuration, not the
 retriever alone. General temporal-memory benchmarks await explicit semantics; see the
-[implemented and planned capabilities](OVERVIEW.md#foundation).
+[implemented and planned capabilities](../OVERVIEW.md#foundation).
 
 ## Evaluation priorities and promotion gates
 
@@ -97,7 +99,7 @@ implied by these retrieval/packing observations.
 ## Caller-supplied vector evidence boundary
 
 Native export/import/query commands implement exact cosine retrieval over a bounded
-single source and explicitly declared space. The [runnable synthetic example](USAGE.md#caller-supplied-vector-workflow)
+single source and explicitly declared space. The [runnable synthetic example](../USAGE.md#caller-supplied-vector-workflow)
 demonstrates a no-query-word-overlap selection, native v5 trail/packet readback and
 stale-revision exclusion. Product regressions cover cosine cases and ties, both
 packing policies, strict inputs, source/space/content isolation, restart, lifecycle
@@ -112,7 +114,7 @@ historical lexical captures do not validate this path.
 
 Native hybrid retrieval now combines the established lexical branch and supplied
 vector branch with equal-weight reciprocal rank fusion, fixed k=60. The
-[runnable example](USAGE.md#hybrid-lexical-and-vector-query) makes an overlapping
+[runnable example](../USAGE.md#hybrid-lexical-and-vector-query) makes an overlapping
 second-ranked hit outrank either branch's first hit; v6 history records the actual
 branch ranks, BM25/cosine and fused selection. Regression cases cover canonical-ID
 ties, partial/zero current coverage, both packers, lifecycle/revision isolation,
@@ -133,7 +135,7 @@ Opted-in `retrieval_details` reads verified producing v5/v6
 vector/hybrid facts after fresh authorization, not a ranking recomputed on today's
 index.
 
-The [runnable synthetic client](../examples/mcp_retrieval.py) exercises the public
+The [runnable synthetic client](../../examples/mcp_retrieval.py) exercises the public
 workflow without a model. A separate public-head stdio capture and fresh-store
 reproduction belong in the companion repository; old native and MCP archives
 retain their own pins. Protocol/arithmetic and authorization observations do not

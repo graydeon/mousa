@@ -94,6 +94,8 @@ commands:
                             serve configured JSONL sources over stdio MCP
                             --http-config <file> selects OAuth-protected loopback HTTP
                             repeat --source; --ingest-source <id> permits ingestion/import
+                            MCP has no allow option; MCP-synced sources stay denied
+                            until access <dir>|--source <id> allow
 
 query options (before positional arguments):
   --policy original|dedup    query-term policy; default original retains repetition

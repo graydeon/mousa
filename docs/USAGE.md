@@ -5,8 +5,9 @@ see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
 
-Full CLI, MCP and consumer examples. Run commands from the repository root;
-build the executable from source before using the examples.
+Full CLI and MCP usage. Consumer examples are linked where they exist; several
+predate the default-deny access model and are marked as such. Run commands from
+the repository root; build the executable from source before using the examples.
 
 ## Local usage (cmd/mousa)
 
@@ -16,7 +17,7 @@ source-linked evidence under a byte budget. Build with Go 1.25 or newer:
 ```sh
 CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 ./mousa -store local.sqlite sync --preview ./documents
-./mousa -store local.sqlite sync ./documents
+./mousa -store local.sqlite sync --allow ./documents
 ./mousa -store local.sqlite status ./documents
 ./mousa -store local.sqlite query --budget-bytes 4096 ./documents 'zebra habitat'
 ```
@@ -36,7 +37,7 @@ See [directory selection and limits](CAPABILITIES.md#directory-selection-and-inp
 
 The default ingestion policy, `fixed-v1`, uses segments of at most 4,096 UTF-8 bytes.
 To opt into bounded passage boundaries, use
-`./mousa -store local.sqlite sync --segment-policy passage-v1 ./documents`.
+`./mousa -store local.sqlite sync --segment-policy passage-v1 --allow ./documents`.
 This policy groups document blocks into at most 1,024-byte source slices, with
 explicit fallback for oversized blocks. Repeat the flag on resync; a policy change
 replaces current evidence even when source bytes are unchanged. Smaller passages
@@ -47,15 +48,13 @@ The source-built BEIR evaluator exposes the same choice with
 `-segment-policy fixed-v1|passage-v1`; its default remains `fixed-v1`.
 Use separate output directories for the policies because each dataset has one
 indexed store per directory. Repeat the flag on reuse and resume.
-See [evaluator provenance and commands](RESEARCH.md#reproduction) for store
-compatibility and explicit segmentation comparisons. This option does not
-change the runtime ranking or packing defaults.
+This option does not change the runtime ranking or packing defaults.
 
 For an explicit item stream:
 
 ```sh
 printf '%s\n' '{"id":"note@draft","text":"The harbor inspection is on Friday."}' |
-  ./mousa -store local.sqlite sync --source inspection-notes
+  ./mousa -store local.sqlite sync --source inspection-notes --allow
 ./mousa -store local.sqlite query --source inspection-notes 'harbor inspection'
 ```
 
@@ -99,7 +98,8 @@ oversized expression after the store is opened.
 
 ### Caller-supplied vector workflow
 
-Build `./mousa` as above. Export the exact current normalized passages for your
+Build `./mousa` as above and sync the source with `--allow` (see [Access](#access)).
+Export the exact current normalized passages for your
 external embedding producer, then import its vectors. Use the same source selector
 for all three operations:
 
@@ -145,7 +145,7 @@ with tempfile.TemporaryDirectory() as temporary:
         result = subprocess.run([binary, "-store", store, *args],
                                 input=data, text=True, capture_output=True, check=True)
         return json.loads(result.stdout)
-    call("sync", "--source", "synthetic-vectors",
+    call("sync", "--allow", "--source", "synthetic-vectors",
          value={"id": "runbook", "text": "Drain sockets before stopping the host."})
     lexical = call("query", "--source", "synthetic-vectors", "unplug")
     assert lexical["evidence"] == []
@@ -230,7 +230,7 @@ with tempfile.TemporaryDirectory() as temporary:
         "b": "Radishes prefer damp soil.",
         "c": "Drain sockets."
     }.items():
-        call("sync", *selector, value={"id": item, "text": text})
+        call("sync", "--allow", *selector, value={"id": item, "text": text})
     exported = call("vector", "inputs", *selector)
     pins = ("source_id", "segment_id", "representation_id",
             "representation_sha256", "content_sha256")
@@ -260,98 +260,75 @@ byte-equal passages with different identities separately from the identity union
 
 ### CLI client example
 
-For a persistent documentation lookup, see the
-[versioned Git documentation example](../examples/docs/README.md). It imports
-pinned public manuals and their direct include fragments, then returns passages
-with verified byte ranges, normalized line locations and upstream links. Its
-optional `--context-tokens` mode renders cited passages within a
-prompt-content cap counted by the example itself; the raw packet still
-contains the full byte-packed response. The example does not generate answers.
+Two Python consumers show the CLI contract. Neither has been updated for the
+default-deny access model, so their syncs record no access event and their
+queries return `decision_outcome: deny` with no evidence:
 
-For an explicit caller decision over those retrieval contracts, see the
-[SQLite backup checklist](../examples/backup/README.md). It verifies saved passages
-from pinned Python documentation, accepts caller-authored fact judgments, and
-reports coverage, unresolved facts, or one requested follow-up retrieval.
-Citation consistency is separate from the caller's assessment of semantic support.
+- The [versioned Git documentation example](../examples/docs/README.md) imports
+  pinned public manuals and returns passages with verified byte ranges.
+- The [SQLite backup checklist](../examples/backup/README.md) verifies saved
+  passages and accepts caller-authored fact judgments.
 
-Run the maintained Python standard-library example against the built CLI:
+The maintained client workflow [`eval/local/workflow.py`](../eval/local/workflow.py)
+(`--example-only`) and its acceptance suite
+[`eval/local/workflow_test.py`](../eval/local/workflow_test.py) also predate
+default deny: both currently fail at the cross-source trail stage, because the
+peer source is synced without an access event and its trail inspection now
+answers deny instead of `not_found`.
 
-```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 eval/local/workflow.py --example-only --mousa ./mousa \
-  --output client-results.json --timeout 5
-```
+## Access
 
-Prerequisites: Go 1.25 or later to build Mousa, and Python 3.9 or later
-with its standard-library `sqlite3` module on Linux. Process-group timeout
-handling and executable test fixtures are Linux-supported; other operating
-systems are not validated. GNU `time` is optional for peak-RSS measurements;
-if `time` is on `PATH`, it must support GNU `-f` and `-o` options.
-No QMD, Node, models, network access, or third-party Python packages are needed
-to run the client example or acceptance suite. Building requires the Go module
-dependencies, downloaded beforehand for an offline build.
-The example creates an isolated temporary store and removes it after the run;
-`client-results.json` retains the responses and command results.
-
-The client passes argument arrays and JSONL stdin without shell interpolation.
-It runs the same lifecycle checks with `fixed-v1` and `passage-v1`, repeating the
-chosen policy on resync. It ingests two bulletins, a separate peer source and a
-multibyte directory fixture, then checks update, deletion, restoration, denial,
-withdrawal and cross-source trail rejection. It distinguishes `no_matches`,
-`budget_omitted`, `policy_excluded`, and `lifecycle_excluded`. Denied trail
-inspection releases no historical metadata.
-It also verifies exact-content packing and the retained-segment explanation under
-both policies, including the small-budget duplicate-displacement regression.
-
-The example retains original source bytes and uses `verify_evidence` to check
-the normalized representation digest before slicing the returned byte range.
-It verifies the selected text and its content digest, rejects changed bytes for
-an old saved response, and checks policy changes on identical source bytes.
-The directory fixture exercises multiple passages, UTF-8, BOM, CRLF and CR.
-See [normalized passage coordinates](CAPABILITIES.md#verify-a-selected-passages-location)
-for the additive output fields, normalization rules and limits of saved evidence.
-
-Success exits zero and writes `"result": "PASS"`. An unexpected child exit,
-invalid JSON object, or failed behavioral check stops the workflow with exit
-one and a partial `"result": "FAIL"` report. Each child has the `--timeout`
-deadline; expiration kills and reaps its process group and records exit 124.
-Missing prerequisites or invalid arguments can fail before a report is created.
-Inspect the report's `error`, `rows`, and `summary`; timings are single-invocation
-diagnostics, not a speedup or retrieval-quality claim.
-
-This is a supported example of the CLI, not a stable SDK or a general client
-library. It does not implement retrieval or packing. The same
-[evolving workflow](RESEARCH.md#evolving-evidence-and-native-lexical-cli-comparison)
-can separately run native lexical comparisons when `--example-only` is omitted.
-Run the required client acceptance suite from the repository root:
+A source with no access event is denied to every caller: queries return no
+evidence, and trail inspection and `vector inputs` export release nothing.
+Two commands record access. `sync --allow` records allow after the sync, but
+only when the source has no access event yet; it never reverses an earlier
+allow or deny. `access <dir> allow|deny`, or `access --source <id> allow|deny`,
+changes access afterwards. A plain `sync ./documents` without `--allow` leaves a
+new source denied, with reason `access_default`. Each change appends a new access event with its time
+and actor; earlier events are never edited or removed. Repeating the current
+access is a no-op reported as `changed: false`. Access is per source and
+applies to every caller.
 
 ```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 eval/local/workflow_test.py --mousa ./mousa
+./mousa -store local.sqlite access ./documents deny
+./mousa -store local.sqlite access ./documents allow
+./mousa -store local.sqlite access --source inspection-notes deny
 ```
 
-The command requires an explicit readable executable and runs the actual CLI
-workflow plus nonzero-exit, malformed-JSON, wrong-shaped-output, and timeout
-consumer tests. It also runs the versioned documentation and caller-reviewed
-backup consumer suites. It exits nonzero on a failed top-level check, missing
-prerequisite, or skipped top-level test. The optional tokenizer test inside the
-documentation suite skips if `tiktoken` is absent; that nested skip does not
-fail this command. Run `python3 examples/docs/docs_test.py --mousa ./mousa`
-with `tiktoken==0.12.0` installed to exercise the opt-in projection. Failures
-include captured workflow output for diagnosis. Each run uses temporary
-stores; the original workflow's CLI calls have five-second deadlines (0.2
-seconds for the intentional timeout), documentation and backup calls have
-30-second deadlines, and each workflow subprocess has a 120-second deadline.
-The suite does not run comparisons or benchmarks. Ad hoc `unittest`
-discovery may still skip the real-CLI test when `MOUSA_EXECUTABLE` is unset;
-it is not a substitute for this required command.
+`./mousa -store local.sqlite withdraw ./documents` (or `withdraw --source <id>`)
+withdraws the source from retrieval; there is no resume command, and withdrawal
+is not erasure (see [retention](#what-the-store-does-not-protect-against)).
 
-`access ./documents deny` blocks retrieval and trail inspection of that source for
-every caller; `access ./documents allow` restores it. A source is allowed until
-denied. Both also accept `--source <id>`. `withdraw ./documents` changes source
-lifecycle state: access allow
-does not undo withdrawal, and the CLI has no resume command. These controls are not
-secure erasure or a replacement for filesystem access controls.
+A denied query still commits its trail and returns `decision_outcome: deny`,
+reason `access_default` (or `access_denied` after an explicit deny), outcome
+`policy_excluded`, zero candidate counts and empty evidence. A denied trail
+inspection returns the fresh authorization decision ID and reasons with no
+historical payload, and a denied `vector inputs` returns the decision metadata
+with an empty `passages` array. Withdrawal is stronger than access: a withdrawn
+source is denied with reason `source_withdrawn` and outcome
+`lifecycle_excluded` even after `access ... allow`,
+and `sync` does not resume it.
+
+A source synced by an agent through MCP stays denied until the operator runs
+`mousa -store STORE access --source ID allow`. MCP has no allow option, on
+purpose: a client that can write a source cannot also release it.
+
+## What the store does not protect against
+
+Integrity. Each ingest receipt, access event and withdrawal appends a hashed
+leaf to an append-only log in the same transaction. Until signed checkpoints
+exist, anyone who can write the SQLite file can forge a consistent history.
+The log detects accidental damage and partial edits, not a deliberate rewrite.
+
+Retention. Trails keep the query's prepared search expression; hybrid trails
+also keep the raw query text. The caller of every query is recorded on its
+policy decision. Item replacement and explicit deletion remove the indexed
+text row, but its bytes can remain in SQLite free pages until `VACUUM`
+reclaims them. Withdrawal
+removes nothing: withdrawn text stays indexed in the store. Removal is not
+secure erasure: canonical records keep digests rather than old text, but copies
+can remain in free pages, WAL files, backups and previously released output.
+Retention limits and erasure are not handled yet.
 
 ## Local MCP usage
 
@@ -378,7 +355,9 @@ arguments, for example:
 The client launches the process and performs initialization and tool discovery.
 The eight tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
 `mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs` and
-`mousa_vector_import`.
+`mousa_vector_import`. MCP has no access tool and no allow option: a source
+synced through `mousa_sync` stays denied until the operator runs
+`mousa -store STORE access --source ID allow` natively (see [Access](#access)).
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, access administration or withdrawal tool.
@@ -393,22 +372,10 @@ rejects that damaged store as `integrity`. Neither path repairs history.
 
 ### MCP vector and hybrid example
 
-Build `./mousa`, then run this synthetic standard-library Python example on Linux:
-
-```sh
-CGO_ENABLED=0 go build -o mousa ./cmd/mousa
-python3 examples/mcp_retrieval.py --mousa ./mousa
-```
-
-The source-build example creates separate fresh stores for native directory,
-native JSONL and configured MCP JSONL workflows. Each syncs two items, exports
-normalized passage pins, imports two hand-assigned vectors, and queries vector
-and hybrid retrieval with both packers. The MCP form also queries lexical
-retrieval. Assertions check released bytes against the packet accounting and
-inspect producing history. Temporary stores and wire receipts are removed on
-exit; printed results remain available for inspection. Synthetic vectors
-establish protocol/arithmetic only, not semantic quality, model integration,
-performance or model-window safety.
+[`examples/mcp_retrieval.py`](../examples/mcp_retrieval.py) is a synthetic
+standard-library example that drives native and MCP vector/hybrid calls. It has
+not been updated for the default-deny access model: its syncs record no access
+event, so the export returns no passages and the script fails.
 
 For real use:
 
@@ -467,134 +434,12 @@ space/dimension/current-coverage errors apply, without lexical fallback.
 ### Bounded project-history consumer
 
 [`examples/memory/memory.py`](../examples/memory/memory.py) uses native stdio MCP
-with an explicit history source. The default is an independently authored,
-28-document synthetic fixture. It releases attributed passages, not answers.
-Python 3 on Linux is optional; no package, model, service or second store is required.
-
-Each command starts a fresh consumer and Mousa process, negotiates MCP, captures
-decoded JSON request/response receipts, then closes and reaps the process.
-Receipts are not original wire framing. Use an isolated
-store and a distinct receipt file for each command:
-
-```sh
-python3 examples/memory/memory.py --mousa ./mousa --store memory.sqlite --receipts ingest.jsonl ingest
-python3 examples/memory/memory.py --mousa ./mousa --store memory.sqlite --receipts before.jsonl ask 'How does saving an edit survive the computer losing power?' --budget-bytes 2048
-python3 examples/memory/memory.py --mousa ./mousa --store memory.sqlite --receipts change.jsonl change
-python3 examples/memory/memory.py --mousa ./mousa --store memory.sqlite --receipts after.jsonl ask 'How long may delivery attempts continue after the first failure?' --budget-bytes 2048
-```
-
-`ingest` applies explicit item identities; `change` applies the fixture's same-item
-correction and explicit tombstone. Omission never deletes an item. The tombstone
-deactivates that item, not its source. `inspect TRAIL_ID` inspects an original
-query's historical selection under fresh authorization without releasing text.
-Do not run `ingest` again after `change` unless restoring the initial fixture is
-intentional. Receipt files must not already exist.
-
-Custom histories are validated before receipt creation or server startup.
-Originals and corrections require nonempty UTF-8 author, date and URI strings,
-string text and its raw UTF-8 SHA-256 digest. Item IDs contain 1–4096 UTF-8 bytes
-without NUL. Text, serialized items and complete sync requests must fit the
-native MCP limits (262144, 1048576 and 2097152 bytes respectively).
-The declared source must be nonempty lossless UTF-8 without NUL (the process argv
-boundary). Startup permits only that source; ingestion permission is added only
-for `ingest`, `change` or `apply`. The v1 fixture retains `documents` and distinct
-existing-item `changes`, containing corrected text or `deleted: true`, never both.
-Empty change commands are rejected before startup.
-
-For multiple lifecycle epochs, use `mousa-project-history-v2`:
-
-```json
-{
-  "schema": "mousa-project-history-v2",
-  "source": "project-alpha",
-  "revisions": [
-    {
-      "revision": "initial",
-      "id": "note",
-      "text": "",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "author": "Synthetic author",
-      "date": "epoch-1",
-      "uri": "synthetic://project/note"
-    }
-  ],
-  "epochs": [
-    {"epoch": "create", "operations": [{"id": "note", "revision": "initial"}]},
-    {"epoch": "delete", "operations": [{"id": "note", "deleted": true}]},
-    {"epoch": "restore", "operations": [{"id": "note", "revision": "initial"}]}
-  ]
-}
-```
-
-Save this as `history.json`, then run with a fresh store and distinct receipts:
-
-```sh
-python3 examples/memory/memory.py --mousa ./mousa --history history.json --store chronology.sqlite --receipts create.jsonl apply create
-python3 examples/memory/memory.py --mousa ./mousa --history history.json --store chronology.sqlite --receipts delete.jsonl apply delete
-python3 examples/memory/memory.py --mousa ./mousa --history history.json --store chronology.sqlite --receipts restore.jsonl apply restore
-python3 examples/memory/memory.py --mousa ./mousa --history history.json --store chronology.sqlite --receipts status.jsonl status
-python3 examples/memory/memory.py --mousa ./mousa --history history.json --store chronology.sqlite --receipts query.jsonl ask note --policy dedup --packing-policy exact-v1 --budget-bytes 2048
-```
-
-`apply EPOCH` sends only that epoch's ordered operations. It neither replays
-predecessors nor checks a Python progress ledger. A revert explicitly references
-old content; a restore also supplies the referenced content. Exact replay is
-allowed. Each epoch contains 1–128 distinct item operations; histories contain
-1–128 distinct epoch labels and 1–4096 distinct revision labels. Array order is
-fixture chronology, not authenticated time. The store may already be ahead of
-the requested epoch. `requested_epoch` describes the invocation, while native
-actions and `source_status` describe observed state.
-
-Native sync commits each item separately. A later failure retains its committed
-prefix, reported by `native_error.error.completed_items` and `failed_item`.
-There is no automatic retry, batch splitting or rollback. Repair requires a new
-explicit invocation. Known input and frame bounds are preflighted before launch.
-
-`ask` accepts native query policies `original` (default) and `dedup`, and packing
-policies `original` (default) and `exact-v1`. Dedup folds repeated query terms;
-exact packing omits byte-identical passages after the first fitting selection.
-Neither mode supplies semantic support. Requested and returned identities must
-agree. Evidence budgets are 1–65536 bytes; queries contain 1–4096 UTF-8 bytes.
-
-JSON reports distinguish `operation_status`, overall `status`, `capture_complete`
-and process teardown. Consumer `PASS` means completed operation/capture/cleanup,
-not scenario acceptance. `assertion_status` and `agent_acceptance` remain `NOT RUN`
-in consumer output. Preflight failures emit a report without creating receipts.
-
-`--timeout` must be finite and positive. It bounds each request's pipe writes
-and response wait, including unrelated notifications; history and executable
-hashing, receipt-file I/O, JSON parsing and process teardown are separate
-boundaries. Partial writes are completed before a request receipt is recorded.
-Each response frame is limited to 32 MiB, excluding its newline.
-Responses already buffered before a request cannot fulfill it, even if their
-IDs predict that request.
-Native text and structured tool results must agree, including their source.
-Transport, tool and receipt errors fail the command rather than produce
-successful empty evidence. Reports distinguish incomplete receipt capture and
-process cleanup diagnostics from the causal error.
-
-The consumer checks released text, digests and normalized byte coordinates
-against the attributed fixture revision. Revision matching removes a leading
-UTF-8 BOM and normalizes CRLF or bare CR to LF, as ingestion does. Revisions
-with equal normalized bytes must have identical author/date/URI attribution;
-conflicts fail preflight and rendering. Equivalent revisions with identical
-attribution share the evidence identity and expose all matching `revision_labels`,
-not an arbitrarily chosen epoch. Corrected, restored and reverted selections use
-their own revision's metadata.
-These synthetic attribution labels are not signatures or
-authenticated authorship. The rendered context retains the exact passages and
-identities; its byte count and digest are separate from the evidence-text budget.
-No tokenizer or whole-model context limit is supplied.
-
-Twenty frozen development cases retrieved all 21 required initial passages,
-including separately attributed multi-document passages. Correction, tombstone,
-restart and original-trail checks passed. All three unsupported questions also
-released unrelated passages; `evidence_available` does not establish semantic
-support. Across 25 initial/post-change observations, 309 of 334 released passages
-did not support the frozen requirements. Literal OR-term retrieval can release
-misleading near matches. This is deterministic retrieval/lifecycle evaluation,
-not held-out relevance, semantic memory or successful model-driven agent use.
+with an explicit history source and a bundled 28-document synthetic fixture. It
+releases attributed passages, not answers, and captures request/response
+receipts per invocation. It has not been updated for the default-deny access
+model: `ingest` writes items through `mousa_sync`, but MCP has no allow option,
+so `ask` returns `decision_outcome: deny` with no evidence until the operator
+records `access --source memory allow` natively.
 
 The [frozen protocol, measured source and exact receipts](https://github.com/graydeon/mousa-benchmarks/tree/b1be28ac9f12134a7513c1e28fe884e7f657c988/results/2026-09-30-agent-memory)
-retain the measured consumer's original identity. Later transport and validation
-fixes are not relabeled as that run or as native-agent acceptance.
+are pinned in the benchmarks repository. That run predates default deny.

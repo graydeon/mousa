@@ -7,12 +7,9 @@ and measured results are distinguished below and in the capability matrix.
 
 ## Source and release status
 
-The supported installation is a source build with Go 1.25 or newer. At the
-2026-10-24 documentation audit there were no Git tags or GitHub releases; merged
-source is pre-alpha development, not a versioned release or stable SDK.
-
-These accepted source additions remain distinct from tagged releases and
-independently published observations.
+The supported installation is a source build with Go 1.25 or newer. No release has
+been tagged; merged source is pre-alpha development, not a versioned release or stable
+SDK. The `pre-rework` tag marks the last state before the 2026 rework.
 
 ## Why Mousa?
 
@@ -20,10 +17,10 @@ independently published observations.
 
 ## The problem
 
-Long-lived knowledge does not only grow. It becomes stale, duplicated, contradictory, and detached from its sources. Search can return matching text without showing why it was selected, whether it remains current, or what it replaced. Agent systems also pay a direct cost when retrieval sends more context than the task requires.
+Long-lived knowledge does not only grow. It becomes stale, duplicated, contradictory, and detached from its sources. Search can return matching text without showing why it was selected or whether it remains current. Agent systems also pay a direct cost when retrieval sends more context than the task requires.
 
-Mousa offers source-linked lexical/vector/hybrid retrieval, source-lifecycle and
-policy checks, inspectable ranking, and whole-passage byte packing.
+Mousa offers source-linked lexical/vector/hybrid retrieval, source-lifecycle checks,
+inspectable ranking, and whole-passage byte packing.
 
 ## Current development boundary
 
@@ -44,13 +41,13 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 
 | Stage | Responsibility | Status |
 |---|---|---|
-| **1. Ingest** | Register source material with its origin, identity, and policy metadata. | Implemented. |
+| **1. Ingest** | Register source material with its origin and identity. | Implemented. |
 | **2. Normalize** | Convert input into a stable representation while preserving the original source. | Implemented for UTF-8 text. |
 | **3. Segment** | Produce deterministic, addressable chunks. | Implemented for byte-range text segments. |
 | **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
 | **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
 | **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
-| **7. Verify** | Check authority, freshness, sensitivity, and conflicts. | Partially implemented: source lifecycle and per-source access decisions. Defaults remain uncurated; factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
+| **7. Verify** | Check source state and, later, freshness and conflicts. | Partially implemented: source lifecycle checks and append-only per-source access events with default deny ([Access](USAGE.md#access)). Factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
 | **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing. Provider/model prompt framing remains outside the count. |
 
@@ -89,7 +86,7 @@ verification in an already-open inspector, it returns `not_found` for own and fo
 orphans alike. Fresh-open verification rejects the store instead. Successful denied
 inspection commits only fresh authorization evidence and never looks up history.
 Retired indexed text is not archived: historical byte comparisons can use only text
-still retained. The separate documentation consumer's prompt projection is not a canonical packet.
+still retained. The documentation example's output is not a canonical packet.
 
 The goal is not to present a score as an explanation. The goal is to retain enough evidence to inspect what was selected, what was rejected, and why.
 
@@ -113,7 +110,7 @@ The supported executable, `cmd/mousa`, provides the local CLI and a stdio MCP in
 - **Lean:** use the smallest reliable components and avoid mandatory services.
 - **Portable:** start with ordinary files, SQLite, documented protocols, and a tested CPU-only baseline.
 - **Inspectable:** ranking, filtering, transformation, and packet assembly should be traceable.
-- **Deterministic where possible:** stable identities, hashes, manifests, and truncation rules should make results reproducible.
+- **Deterministic where possible:** stable identities, hashes, and truncation rules should make results reproducible.
 - **Token-aware:** retrieval quality and context cost should be measured together.
 - **Provider-independent:** no model provider, accelerator, agent harness, or database service should own the canonical store.
 
@@ -137,7 +134,6 @@ Deletion removes current searchable evidence under the adapter's contract; it
 does not promise secure erasure of canonical metadata, backups or copies held by
 callers. A retrieval trail describes evidence selection, not execution or task
 completion. Empty retrieval is a bounded observation, not proof of absence.
-See the [evaluation priorities](RESEARCH.md#evaluation-priorities-and-promotion-gates).
 
 ## Foundation
 
@@ -148,10 +144,10 @@ Implemented and planned capabilities, marked per item:
 - bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
 - inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); full-store interchange (not implemented);
-- authority, freshness, sensitivity and status metadata (lifecycle status and per-source access implemented; factual freshness, authenticated authorship and semantic conflicts not implemented);
-- secret filtering and non-indexable sensitivity classes (planned);
+- source status and lifecycle (implemented); per-source access events with default deny (implemented); factual freshness, authenticated authorship and semantic conflicts (not implemented);
+- secret filtering (planned);
 - byte-budget selection and opt-in exact-content deduplication; truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
 - source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
 - documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
 
-Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs; the research record binds observations to their measured revisions and limitations.
+Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs.

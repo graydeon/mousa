@@ -2,7 +2,6 @@
 
 import argparse
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -49,56 +48,6 @@ class DocumentationConsumerTest(unittest.TestCase):
 
     def cli(self, *arguments):
         return docs.invoke(self.binary, self.store, list(arguments), 30)
-
-    @unittest.skipUnless(importlib.util.find_spec("tiktoken"), "optional tiktoken not installed")
-    def test_token_limited_prompt_retains_auditable_evidence(self):
-        import tiktoken
-
-        self.directory.rmdir()
-        self.example("prepare")
-        self.example("sync")
-        question = ("When interactively selecting hunks with git restore, how can I "
-                    "show the context between nearby hunks, and what is the default?")
-        full = self.example("ask", question)
-        limited = self.example("ask", "--context-tokens", "544", question)
-        context = limited["context"]
-        encoding = tiktoken.get_encoding("o200k_base")
-        self.assertEqual(context["tokens"], len(encoding.encode(context["text"])))
-        self.assertLessEqual(context["tokens"], 544)
-        self.assertGreater(len(encoding.encode(
-            docs.render_prompt(question, full["response"]["evidence"]))), 544)
-        self.assertEqual(context["selected_segment_ids"],
-                         [hit["segment_id"] for hit in full["response"]["evidence"][:2]])
-        self.assertEqual(context["omitted_segment_ids"],
-                         [hit["segment_id"] for hit in full["response"]["evidence"][2:]])
-        self.assertIn("Defaults to `diff.interHunkContext` or 0", context["text"])
-        self.assertEqual(context["sha256"], hashlib.sha256(context["text"].encode()).hexdigest())
-        self.assertEqual(limited["response"]["packet_id"], full["response"]["packet_id"])
-        self.assertEqual(context["text"], self.example("ask", "--context-tokens", "544", question)["context"]["text"])
-        smaller = self.example("ask", "--context-tokens", "512", question)
-        self.assertEqual(smaller["context"]["selected_segment_ids"],
-                         [hit["segment_id"] for hit in full["response"]["evidence"][:2]])
-        self.assertEqual(smaller["context"]["omitted_segment_ids"],
-                         [hit["segment_id"] for hit in full["response"]["evidence"][2:]])
-        self.assertLessEqual(smaller["context"]["tokens"], 512)
-        self.assertEqual(smaller["response"]["packet_id"], full["response"]["packet_id"])
-        self.assertIn("include::diff-context-options.adoc[]", smaller["context"]["text"])
-        for index, hit in enumerate(full["response"]["evidence"][:2], 1):
-            location = hit["location"]
-            self.assertIn(f'[{index}] {location["url"]} lines '
-                          f'{location["line_start"]}-{location["line_end"]}\n{hit["text"]}',
-                          smaller["context"]["text"])
-        self.assertNotIn("Documentation/git-switch.adoc", smaller["context"]["text"])
-        base_tokens = len(encoding.encode(docs.render_prompt(question, [])))
-        empty = self.example("ask", "--context-tokens", str(base_tokens), question)["context"]
-        self.assertEqual(empty["selected_segment_ids"], [])
-        self.assertEqual(empty["omitted_segment_ids"],
-                         [hit["segment_id"] for hit in full["response"]["evidence"]])
-        self.example("ask", "--context-tokens", "1", question, expected=1)
-        self.cli("access", str(self.directory), "deny")
-        denied = self.example("ask", "--context-tokens", "544", question)
-        self.assertEqual(denied["context"]["selected_segment_ids"], [])
-        self.assertFalse(denied["response"]["evidence"])
 
     def test_current_evidence_lifecycle_and_snapshot(self):
         original = "\ufeffCedar repair starts Tuesday.\r\nCafé 東京.\r"

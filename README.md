@@ -57,7 +57,7 @@ From the repository root, build Mousa and index a directory of Markdown or text 
 ```sh
 CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 ./mousa -store local.sqlite sync --preview ./documents
-./mousa -store local.sqlite sync ./documents
+./mousa -store local.sqlite sync --allow ./documents
 ./mousa -store local.sqlite query --budget-bytes 4096 ./documents 'harbor inspection'
 ```
 
@@ -70,7 +70,10 @@ Commands return JSON. A query reports selected evidence, a context packet ID and
 
 Replace `TRAIL_ID` with the query's returned identifier. The 4,096-byte budget covers
 released passage text, not JSON overhead or model tokens. Preview shows what would
-be imported without opening the store.
+be imported without opening the store. A source with no access event is denied to
+every caller; `--allow` records allow after the sync. Without it, the query above
+would return `decision_outcome: deny` and no evidence. See
+[access](docs/USAGE.md#access).
 
 **Next:** [directory selection and resync](docs/USAGE.md#local-usage-cmdmousa),
 [JSONL input and administration](docs/USAGE.md#local-usage-cmdmousa), or
@@ -90,37 +93,29 @@ true; default lexical tools and inspection stay unchanged.
 
 ## What works today?
 
-Local directory and JSONL ingestion, lexical retrieval, source lifecycle and access
-checks, byte-budget packing, exact-content deduplication and
+Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, byte-budget packing, exact-content deduplication and
 Source Trail inspection are implemented. The same executable serves local stdio MCP.
 
 Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
-records branch contributions in v6.
+records branch contributions in v6. Access is an append-only per-source event
+log; a source with no access event is denied to every caller.
 Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Historical record-by-ID reads remain native-only.
 Automatic embedding generation and secret filtering remain pending.
 
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
-The [research record](docs/RESEARCH.md) separates regression coverage from measured
-retrieval quality and performance.
 
-Source builds of the BEIR evaluator accept `-segment-policy fixed-v1|passage-v1`
-(default `fixed-v1`) and record canonical segmentation provenance. Traced runs
-serialize aggregate pack coverage. Coverage curves hold segmentation constant;
-`-report compare -axis segmentation` explicitly compares the two choices.
-Input identities, protocols and ordered populations must agree. Legacy reports
-remain readable but cannot certify a comparison. See the
-[evaluation commands](docs/RESEARCH.md#reproduction).
+The source-built BEIR evaluator (`cmd/beir`) accepts
+`-segment-policy fixed-v1|passage-v1`, default `fixed-v1`.
 
 ## Explore
 
 | Start here | For |
 |---|---|
 | [Usage guide](docs/USAGE.md) | CLI commands, input limits, administration and consumer examples. |
-| [MCP and host integration](docs/USAGE.md#local-mcp-usage) | Local tool setup, project-history consumer, ChatGPT desktop and Codex CLI. |
+| [MCP integration](docs/USAGE.md#local-mcp-usage) | Local stdio tool setup and the project-history consumer example. |
 | [How Mousa works](docs/OVERVIEW.md) | The nine-stage pipeline, Source Trails and design principles. |
 | [Capability matrix](docs/CAPABILITIES.md) | Supported interfaces, exact contracts and limitations. |
-| [Research and public benchmarks](docs/RESEARCH.md) | Reproducible observations, pinned revisions and their evidence boundaries. |
 
 ## Contributing
 
