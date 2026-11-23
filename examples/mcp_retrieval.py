@@ -39,15 +39,16 @@ def main():
                     client.initialize()
                     client.call("mousa_sync", dict(source=source,
                         items=[dict(id=k, text=v) for k, v in FIXTURE.items()]))
+                    command("access", "--source", source, "allow")
                     exported, _ = client.call("mousa_vector_inputs", dict(source=source))
                 else:
                     if form == "directory":
                         directory.mkdir()
                         for item, text in FIXTURE.items():
                             (directory / (item + suffix)).write_text(text, encoding="utf-8")
-                        command("sync", *selector)
+                        command("sync", "--allow", *selector)
                     else:
-                        command("sync", *selector, value="".join(json.dumps(dict(id=k, text=v)) + "\n"
+                        command("sync", "--allow", *selector, value="".join(json.dumps(dict(id=k, text=v)) + "\n"
                             for k, v in FIXTURE.items()))
                     exported = command("vector", "inputs", *selector)
                 pins = {p["item"]: p for p in exported["passages"]}

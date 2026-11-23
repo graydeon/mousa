@@ -146,7 +146,7 @@ class DocumentationConsumerTest(unittest.TestCase):
         peer = self.root / "peer"
         peer.mkdir()
         (peer / "peer.txt").write_text("Cedar unrelated procedure.\n")
-        self.cli("sync", str(peer))
+        self.cli("sync", "--allow", str(peer))
         manifest = json.loads((self.directory / "corpus.json").read_text())
         manifest["documents"] = []
         manifest["files"] = {}

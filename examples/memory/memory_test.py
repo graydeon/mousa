@@ -334,6 +334,8 @@ class ExecutableTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 return json.loads(result.stdout)
             invoke("ingest", ["ingest"])
+            subprocess.run([self.binary, "-store", root / "memory.sqlite", "access", "--source", "memory", "allow"],
+                           capture_output=True, check=True)
             response = invoke("ask", ["ask", "on-disk outbox"])
             target = [p for p in response["rendered"]["passages"] if p["attribution"]["id"] == "entry-01"]
             self.assertEqual([p["evidence"]["text"] for p in target],

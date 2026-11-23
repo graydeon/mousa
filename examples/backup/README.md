@@ -1,9 +1,5 @@
 # Caller-reviewed SQLite backup checklist
 
-> This example has not been updated for default-deny access: `sync` records no
-> access event, so `retrieve` returns no evidence until
-> `mousa -store STORE access <directory> allow` is run.
-
 Prepare a Python 3.13.7 SQLite backup checklist from two pinned documentation
 excerpts. The required facts cover concurrent access, pages per backup step,
 progress callback arguments, and explicit connection closure. Missing a page-limit

@@ -1,9 +1,5 @@
 # Ask about versioned Git documentation
 
-> This example has not been updated for default-deny access: `sync` records no
-> access event, so `ask` returns `decision_outcome: deny` with no evidence until
-> `mousa -store STORE access <directory> allow` is run.
-
 This example is for a developer or local application looking up Git working-tree
 operations. It returns a JSON packet of source passages, not a generated answer.
 The bundled corpus contains the Git 2.51.0 `git-restore` and `git-switch` AsciiDoc

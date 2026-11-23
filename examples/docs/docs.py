@@ -94,7 +94,7 @@ def sync(binary, store, directory, timeout):
         raise ValueError("directory selection differs from corpus documents: "
                          + json.dumps({"extra": sorted(selected - documents.keys()),
                                        "missing": sorted(documents.keys() - selected)}))
-    response = invoke(binary, store, [*arguments, str(directory)], timeout)
+    response = invoke(binary, store, [*arguments, "--allow", str(directory)], timeout)
     return {"outcome": "synced", "version": manifest["version"],
             "manifest_sha256": digest, "response": response}
 

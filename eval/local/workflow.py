@@ -170,7 +170,7 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
         {"id": "schedule@draft", "text": original.decode("utf-8")},
         {"id": "inventory", "text": "Orchid inventory is separate."},
     ])
-    call("peer", "sync", "--source", "peer", records=[{"id": "peer", "text": "Cedar peer-only material."}])
+    call("peer", "sync", "--allow", "--source", "peer", records=[{"id": "peer", "text": "Cedar peer-only material."}])
     first = call("query", "query", "--budget-bytes", "64", "--source", "bulletins", "cedar")
     require([hit["item"] for hit in first["evidence"]] == ["schedule@draft"], "source isolation failed")
     verify_evidence(first["evidence"][0], original)
@@ -237,7 +237,7 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     raw = ("\ufeff" + "Amber café 東京.\r\n\r\n" * 300 + "Amber end\r").encode("utf-8")
     path = root / "locations.md"
     path.write_bytes(raw)
-    call("directory_sync", "sync", root)
+    call("directory_sync", "sync", "--allow", root)
     located = call("directory_query", "query", "--budget-bytes", "16384", root, "amber")
     require(len(located["evidence"]) > 1, "fixture did not return multiple passages")
     for hit in located["evidence"]:
@@ -276,7 +276,7 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     originals = {record["id"]: record["text"].encode() for record in copies}
     call("packing_peer_sync", "sync", "--source", "peer",
          records=[{"id": "private-copy", "text": "amber amber"}])
-    call("packing_sync", "sync", "--source", "copies", records=copies)
+    call("packing_sync", "sync", "--allow", "--source", "copies", records=copies)
     plain = call("packing_default", "query", "--source", "copies", "--budget-bytes", "33", "amber")
     exact_args = ("query", "--packing-policy", "exact-v1", "--source", "copies",
                   "--budget-bytes", "33", "amber")
@@ -353,7 +353,7 @@ def comparison(runner, args, work):
             qmd = [str(args.node or "node"), str(args.qmd), "--index", "comparison"]
             def sync(stage, initial=False):
                 if engine == "mousa":
-                    command = [args.mousa, "-store", store, "sync", root]
+                    command = [args.mousa, "-store", store, "sync", *(["--allow"] if initial else []), root]
                 elif engine == "sqlite":
                     command = [sys.executable, Path(__file__).resolve(), "sqlite", store, "sync", root]
                 else:

@@ -5,8 +5,7 @@ see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
 
-Full CLI and MCP usage. Consumer examples are linked where they exist; several
-predate the default-deny access model and are marked as such. Run commands from
+Full CLI and MCP usage. Consumer examples are linked where they exist. Run commands from
 the repository root; build the executable from source before using the examples.
 
 ## Local usage (cmd/mousa)
@@ -260,9 +259,7 @@ byte-equal passages with different identities separately from the identity union
 
 ### CLI client example
 
-Two Python consumers show the CLI contract. Neither has been updated for the
-default-deny access model, so their syncs record no access event and their
-queries return `decision_outcome: deny` with no evidence:
+Two Python consumers show the CLI contract:
 
 - The [versioned Git documentation example](../examples/docs/README.md) imports
   pinned public manuals and returns passages with verified byte ranges.
@@ -270,11 +267,8 @@ queries return `decision_outcome: deny` with no evidence:
   passages and accepts caller-authored fact judgments.
 
 The maintained client workflow [`eval/local/workflow.py`](../eval/local/workflow.py)
-(`--example-only`) and its acceptance suite
-[`eval/local/workflow_test.py`](../eval/local/workflow_test.py) also predate
-default deny: both currently fail at the cross-source trail stage, because the
-peer source is synced without an access event and its trail inspection now
-answers deny instead of `not_found`.
+(`--example-only`) is checked by its acceptance suite
+[`eval/local/workflow_test.py`](../eval/local/workflow_test.py).
 
 ## Access
 
@@ -433,9 +427,9 @@ rejects that damaged store as `integrity`. Neither path repairs history.
 ### MCP vector and hybrid example
 
 [`examples/mcp_retrieval.py`](../examples/mcp_retrieval.py) is a synthetic
-standard-library example that drives native and MCP vector/hybrid calls. It has
-not been updated for the default-deny access model: its syncs record no access
-event, so the export returns no passages and the script fails.
+standard-library example that drives native and MCP vector/hybrid calls. MCP has
+no allow option, so after its MCP sync it records `access --source ID allow`
+natively.
 
 For real use:
 
@@ -496,10 +490,9 @@ space/dimension/current-coverage errors apply, without lexical fallback.
 [`examples/memory/memory.py`](../examples/memory/memory.py) uses native stdio MCP
 with an explicit history source and a bundled 28-document synthetic fixture. It
 releases attributed passages, not answers, and captures request/response
-receipts per invocation. It has not been updated for the default-deny access
-model: `ingest` writes items through `mousa_sync`, but MCP has no allow option,
-so `ask` returns `decision_outcome: deny` with no evidence until the operator
-records `access --source memory allow` natively.
+receipts per invocation. `ingest` writes items through `mousa_sync`, but MCP has
+no allow option, so `ask` returns `decision_outcome: deny` with no evidence until
+the operator records `access --source memory allow` natively.
 
 The [frozen protocol, measured source and exact receipts](https://github.com/graydeon/mousa-benchmarks/tree/b1be28ac9f12134a7513c1e28fe884e7f657c988/results/2026-09-30-agent-memory)
 are pinned in the benchmarks repository. That run predates default deny.
