@@ -25,7 +25,7 @@ func main() {
 	out := flag.String("out", "", "output JSON path (required)")
 	reuse := flag.Bool("reuse", false, "reuse an existing indexed store instead of reindexing")
 	queryTimeout := flag.Duration("query-timeout", 2*time.Minute, "per-query wall timeout (e.g. 30s, 2m); 0 disables")
-	mode := flag.String("mode", string(beir.ModeVerified), "retrieval mode: verified, enforced, or traced")
+	mode := flag.String("mode", string(beir.ModeVerified), "retrieval mode: verified or traced")
 	limit := flag.Int("limit", 100, "candidate limit per query (1-100)")
 	budget := flag.Uint64("budget", 1<<20, "traced-mode pack budget in bytes (e.g. 512, 2048, 8192)")
 	policy := flag.String("policy", string(beir.PolicyOriginal), "expression term policy: original (keep repeats), dedup (fold repeats; changes rankings), or drop-floor (drop terms at the BM25 evidence floor; measured floor-weight evaluation)")

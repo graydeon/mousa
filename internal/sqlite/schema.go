@@ -20,7 +20,7 @@ const (
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 3
+	schemaVersion = 4
 )
 
 // errResyncRequired is the refusal for a Mousa store this binary cannot read. There is no
@@ -32,17 +32,15 @@ var requiredObjects = []string{
 	"index:artifacts_observation_id_idx",
 	"index:ingest_receipts_source_id_idx",
 	"index:local_items_active_representation_idx",
-	"index:local_items_vector_current_idx",
 	"index:log_source_kind_seq_idx",
+	"index:log_source_seq_idx",
 	"index:observations_source_id_idx",
 	"index:representation_inputs_artifact_id_idx",
 	"index:representation_inputs_representation_id_idx",
 	"index:segments_representation_id_idx",
-	"index:segments_vector_order_idx",
 	"index:source_withdrawals_source_id_idx",
 	"table:access_events",
 	"table:artifacts",
-	"table:embeddings",
 	"table:ingest_gaps",
 	"table:ingest_receipts",
 	"table:local_items",
@@ -50,7 +48,6 @@ var requiredObjects = []string{
 	"table:note_citations",
 	"table:notes",
 	"table:observations",
-	"table:policy_decisions",
 	"table:representation_inputs",
 	"table:representations",
 	"table:segment_lexical_fts",
@@ -62,12 +59,12 @@ var requiredObjects = []string{
 	"table:segment_lexical_rows",
 	"table:segments",
 	"table:source_ingest_state",
-	"table:source_trail_candidates",
-	"table:source_trails",
 	"table:source_withdrawals",
 	"table:sources",
 	"table:store_identity",
-	"table:vector_spaces",
+	"table:trail_segments",
+	"table:trail_sources",
+	"table:trails",
 }
 
 // checkStoreIdentity reads only the SQLite header and the object count, so every store this
@@ -183,16 +180,10 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 			return err
 		}
 	}
-	if err := verifyPolicyDecisionRecords(ctx, db); err != nil {
+	if err := verifyQueryTrails(ctx, db); err != nil {
 		return err
 	}
-	if err := verifySourceTrailRecords(ctx, db); err != nil {
-		return err
-	}
-	if err := verifyLocalItemRecords(ctx, db); err != nil {
-		return err
-	}
-	return verifyVectorRecords(ctx, db)
+	return verifyLocalItemRecords(ctx, db)
 }
 
 func schemaObjects(ctx context.Context, db *sql.DB) ([]string, error) {

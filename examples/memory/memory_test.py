@@ -18,11 +18,22 @@ from unittest.mock import patch
 import memory
 
 
-def evidence(item, text):
+def evidence(item, text, source="memory"):
     digest = hashlib.sha256(text.encode()).hexdigest()
     return {"item": item, "representation_sha256": digest, "representation_id": "a" * 64,
             "segment_id": "b" * 64, "content_sha256": digest, "segment_policy": "passage-v1",
-            "byte_start": 0, "byte_end": len(text.encode()), "byte_length": len(text.encode()), "text": text}
+            "source_id": memory.local_source_id(source), "rank": 1, "extract": False,
+            "range": {"start": 0, "end": len(text.encode())}, "text": text}
+
+
+def query_result(source, passages, trail_id="c" * 64):
+    expected = memory.local_source_id(source)
+    return {"trail": {"id": trail_id, "schema": "mousa.trail.v1",
+                      "request": {"texts": ["cedar"], "mode": "lexical",
+                                  "budget": {"unit": "bytes", "limit": 2048},
+                                  "scope": {"kind": "source", "sources": [expected]}},
+                      "sources": [{"source_id": expected, "outcome": "allow"}]},
+            "passages": passages}
 
 
 class HistoryTests(unittest.TestCase):
@@ -234,8 +245,8 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(result, {"current": True})
 
     def test_nested_identity_and_empty_tool_results_fail_closed(self):
-        for payload, error in ((None, False), ({}, False), ({"source": "other"}, False),
-                               ({"source": "memory"}, True)):
+        for payload, error in ((None, False), ({}, False), ({"trail": {"request": {"texts": []}}}, False),
+                               ({"trail": {"request": {"texts": ["cedar"]}}}, True)):
             content = {"schema": "mousa.mcp_result.v1", "operation": "mousa_query",
                        "source": "memory", "result": payload}
             if error:
@@ -245,15 +256,24 @@ class TransportTests(unittest.TestCase):
             client = self.peer('import sys,json\nr=json.loads(sys.stdin.readline())\n'
                 'print(json.dumps({"jsonrpc":"2.0","id":r["id"],"result":'+repr(envelope)+'}),flush=True)\n')
             with self.assertRaises(ValueError):
-                client.call("mousa_query", {})
+                client.call("mousa_query", {"source": "memory", "query": "cedar", "budget_bytes": 2048})
 
     def test_query_result_cannot_change_requested_identity(self):
-        arguments = {"source": "memory", "query": "cedar", "policy": "original", "budget_bytes": 2048}
-        for field, value in (("query", "different"), ("query_policy", "dedup"), ("budget_bytes", 1),
-                             ("packing_policy", "exact-v1")):
-            result = {"source": "memory", "query": "cedar", "query_policy": "original",
-                      "budget_bytes": 2048, "evidence": [], "used_bytes": 0}
-            result[field] = value
+        arguments = {"source": "memory", "query": "cedar", "budget_bytes": 2048}
+        mutations = (
+            lambda r: r["trail"].update(schema="mousa.trail.v2"),
+            lambda r: r["trail"]["request"].update(texts=["different"]),
+            lambda r: r["trail"]["request"].update(mode="vector"),
+            lambda r: r["trail"]["request"]["budget"].update(limit="2048"),
+            lambda r: r["trail"]["request"]["budget"].update(limit=1024),
+            lambda r: r["trail"]["request"]["budget"].update(unit="items"),
+            lambda r: r["trail"]["request"]["scope"].update(sources=["0" * 64]),
+            lambda r: r.update(passages=None),
+            lambda r: r.update(passages={}),
+        )
+        for mutate in mutations:
+            result = query_result("memory", [])
+            mutate(result)
             content = {"schema": "mousa.mcp_result.v1", "operation": "mousa_query",
                        "source": "memory", "result": result}
             envelope = {"structuredContent": content, "content": [{"type": "text", "text": json.dumps(content)}]}
@@ -261,6 +281,24 @@ class TransportTests(unittest.TestCase):
                 'print(json.dumps({"jsonrpc":"2.0","id":r["id"],"result":'+repr(envelope)+'}),flush=True)\n')
             with self.assertRaisesRegex(ValueError, "query result identity mismatch"):
                 client.call("mousa_query", arguments)
+
+    def test_query_result_accepts_the_recorded_request(self):
+        arguments = {"source": "memory", "query": "cedar", "budget_bytes": 2048}
+        content = {"schema": "mousa.mcp_result.v1", "operation": "mousa_query",
+                   "source": "memory", "result": query_result("memory", [])}
+        envelope = {"structuredContent": content, "content": [{"type": "text", "text": json.dumps(content)}]}
+        client = self.peer('import sys,json\nr=json.loads(sys.stdin.readline())\n'
+            'print(json.dumps({"jsonrpc":"2.0","id":r["id"],"result":'+repr(envelope)+'}),flush=True)\n')
+        result, _ = client.call("mousa_query", arguments)
+        self.assertEqual(result["passages"], [])
+        trail_envelope = {"structuredContent": {**content, "operation": "mousa_trail", "source": "",
+                                                "result": query_result("memory", [])["trail"]},
+                          "content": []}
+        trail_envelope["content"] = [{"type": "text", "text": json.dumps(trail_envelope["structuredContent"])}]
+        client = self.peer('import sys,json\nr=json.loads(sys.stdin.readline())\n'
+            'print(json.dumps({"jsonrpc":"2.0","id":r["id"],"result":'+repr(trail_envelope)+'}),flush=True)\n')
+        trail, _ = client.call("mousa_trail", {"trail_id": "c" * 64})
+        self.assertEqual(trail["id"], "c" * 64)
 
 
 class RenderingTests(unittest.TestCase):
@@ -270,8 +308,8 @@ class RenderingTests(unittest.TestCase):
     def test_revision_digest_selects_correction_attribution(self):
         original = self.history["documents"][18]
         correction = self.history["changes"][0]
-        old = memory.render({"source": "memory", "evidence": [evidence(original["id"], original["text"])]}, self.history, "schedule")
-        new = memory.render({"source": "memory", "evidence": [evidence(correction["id"], correction["text"])]}, self.history, "schedule")
+        old = memory.render(query_result("memory", [evidence(original["id"], original["text"])]), self.history, "schedule")
+        new = memory.render(query_result("memory", [evidence(correction["id"], correction["text"])]), self.history, "schedule")
         self.assertEqual(old["passages"][0]["attribution"]["uri"], original["uri"])
         self.assertEqual(new["passages"][0]["attribution"]["uri"], correction["uri"])
         self.assertEqual(new["passages"][0]["attribution"]["date"], correction["date"])
@@ -289,13 +327,13 @@ class RenderingTests(unittest.TestCase):
                     row["text"] = "\ufeff" + normalized.replace("\n", ending)
                     row["sha256"] = hashlib.sha256(row["text"].encode()).hexdigest()
                     hit = evidence(row["id"], normalized)
-                    rendered = memory.render({"source": "memory", "evidence": [hit]}, history, "schedule")
+                    rendered = memory.render(query_result("memory", [hit]), history, "schedule")
                     self.assertEqual(rendered["passages"][0]["attribution"]["uri"], row["uri"])
                     self.assertEqual(rendered["passages"][0]["evidence"]["text"], normalized)
                     tampered = copy.deepcopy(hit)
-                    tampered["byte_end"] -= 1
+                    tampered["range"]["end"] -= 1
                     with self.assertRaises(RuntimeError):
-                        memory.render({"source": "memory", "evidence": [tampered]}, history, "schedule")
+                        memory.render(query_result("memory", [tampered]), history, "schedule")
 
     def test_normalization_collision_does_not_choose_an_author(self):
         history = copy.deepcopy(self.history)
@@ -304,20 +342,22 @@ class RenderingTests(unittest.TestCase):
         correction["text"] = "\ufeff" + original["text"].replace("\n", "\r\n")
         correction["sha256"] = hashlib.sha256(correction["text"].encode()).hexdigest()
         with self.assertRaises(ValueError):
-            memory.render({"source": "memory", "evidence": [evidence(original["id"], original["text"])]}, history, "schedule")
+            memory.render(query_result("memory", [evidence(original["id"], original["text"])]), history, "schedule")
 
     def test_tampered_bytes_coordinates_and_item_are_rejected(self):
         document = self.history["documents"][0]
         valid = evidence(document["id"], document["text"])
         mutations = ({"text": document["text"].replace("Save", "Erase")},
-                     {"byte_start": 1}, {"item": self.history["documents"][1]["id"]},
+                     {"range": {"start": 1, "end": valid["range"]["end"]}},
+                     {"source_id": "0" * 64},
+                     {"item": self.history["documents"][1]["id"]},
                      {"content_sha256": "0" * 64})
         for mutation in mutations:
             with self.subTest(mutation=mutation):
                 hit = copy.deepcopy(valid)
                 hit.update(mutation)
                 with self.assertRaises((ValueError, RuntimeError)):
-                    memory.render({"source": "memory", "evidence": [hit]}, self.history, "saving")
+                    memory.render(query_result("memory", [hit]), self.history, "saving")
 
 
 class ExecutableTests(unittest.TestCase):

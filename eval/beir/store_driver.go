@@ -220,9 +220,7 @@ type SearchMode string
 const (
 	// ModeVerified runs SearchVerifiedLexical (raw BM25 + ancestry + lifecycle verification).
 	ModeVerified SearchMode = "verified"
-	// ModeEnforced runs SearchEnforcedLexical (verified + one stored allow decision per query).
-	ModeEnforced SearchMode = "enforced"
-	// ModeTraced runs TraceEnforcedLexical (enforced + trail and packet records).
+	// ModeTraced runs the production query, including its durable trail.
 	ModeTraced SearchMode = "traced"
 )
 
@@ -273,10 +271,14 @@ func (config RunConfig) Namespace() string {
 	if err != nil {
 		return ""
 	}
-	digest := sha256.Sum256([]byte(fmt.Sprintf("mousa-beir-run\x00%v\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s", identity,
+	input := fmt.Sprintf("mousa-beir-run\x00%v\x00%s\x00%s\x00%d\x00%d\x00%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s", identity,
 		config.Dataset, string(config.Mode), config.Limit, config.Budget, string(config.Policy),
 		config.Corpus, config.Judged, config.QueryLimit,
-		config.Content.CorpusSHA256, config.Content.QueriesSHA256, config.Content.QrelsSHA256)))
+		config.Content.CorpusSHA256, config.Content.QueriesSHA256, config.Content.QrelsSHA256)
+	if config.Mode == ModeTraced {
+		input += "\x00" + mousa.TrailSchema
+	}
+	digest := sha256.Sum256([]byte(input))
 	return fmt.Sprintf("run-%x", digest[:6])
 }
 
@@ -335,10 +337,6 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 	}
 	if config.QueryLimit < 0 {
 		return nil, fmt.Errorf("run query limit %d is negative", config.QueryLimit)
-	}
-	requests, err := evaluateRequests(ctx, ingested, dataset, config)
-	if err != nil {
-		return nil, err
 	}
 	judged := judgedQueriesFor(config, dataset)
 	var probe *IndexProbe
@@ -419,20 +417,46 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		}
 		preprocessMicros := time.Since(requestStarted).Microseconds()
 		searchStarted := time.Now()
-		var candidates []mousa.VerifiedLexicalCandidate
-		var trail mousa.SourceTrail
+		var ranked, selected []mousa.SegmentID
+		var considered int
+		var used uint64
 		switch config.Mode {
 		case ModeVerified:
+			var candidates []mousa.VerifiedLexicalCandidate
 			candidates, err = ingested.Store.SearchVerifiedLexical(queryCtx, expression, config.Limit)
-		case ModeEnforced:
-			var enforced mousa.EnforcedLexicalResult
-			enforced, err = ingested.Store.SearchEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit)
-			candidates = enforced.Candidates
+			considered = len(candidates)
+			for _, candidate := range candidates {
+				if candidate.Disposition == mousa.CandidateAccepted {
+					ranked = append(ranked, candidate.Segment.ID)
+				}
+			}
 		case ModeTraced:
-			var traced sqlite.TracedLexicalResult
-			traced, err = ingested.Store.TraceEnforcedLexical(queryCtx, requests[queryID], expression, config.Limit, config.Budget, "original")
-			candidates = traced.Candidates
-			trail = traced.Trail
+			text := dataset.Queries[queryID]
+			if config.Policy != PolicyOriginal {
+				// The expression is an OR-list of literal terms produced by the
+				// same splitter used by Query, never raw FTS syntax from input.
+				text = strings.ReplaceAll(strings.Trim(expression, `"`), `" OR "`, " ")
+			}
+			var result mousa.QueryResult
+			result, err = ingested.Store.Query(queryCtx, mousa.QueryRequest{
+				Scope: mousa.Scope{Source: ingested.Source.ID}, Texts: []string{text}, Limit: config.Limit,
+				Budget: mousa.Budget{Limit: config.Budget, Unit: mousa.BudgetBytes}, Caller: "beir-eval",
+			})
+			considered = len(result.Trail.Candidates)
+			if err == nil && result.Trail.Packing == nil {
+				err = errors.New("fixture source did not allow retrieval")
+			}
+			if err == nil {
+				used = result.Trail.Packing.Used
+				for _, candidate := range result.Trail.Candidates {
+					if candidate.Rank > 0 {
+						ranked = append(ranked, candidate.SegmentID)
+					}
+					if candidate.Packed != "none" {
+						selected = append(selected, candidate.SegmentID)
+					}
+				}
+			}
 		default:
 			cancel()
 			return nil, fmt.Errorf("unknown mode %q", config.Mode)
@@ -458,13 +482,10 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		result.DroppedTerms = droppedTerms
 		result.ExpressionBytes = expressionBytes
 		seen := map[string]struct{}{}
-		for _, candidate := range candidates {
-			if candidate.Disposition != mousa.CandidateAccepted {
-				continue
-			}
-			docID, ok := ingested.SegmentToDoc[candidate.Segment.ID]
+		for _, segment := range ranked {
+			docID, ok := ingested.SegmentToDoc[segment]
 			if !ok {
-				return nil, fmt.Errorf("segment %x has no document mapping", candidate.Segment.ID)
+				return nil, fmt.Errorf("segment %x has no document mapping", segment)
 			}
 			if _, duplicate := seen[docID]; duplicate {
 				continue
@@ -475,13 +496,10 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 		// The trail's ordered candidate rows are the engine's own selection; the
 		// harness reads it instead of re-deriving packing from byte counts.
 		selectedSeen := map[string]struct{}{}
-		for _, candidate := range trail.Candidates {
-			if !candidate.Selected {
-				continue
-			}
-			docID, ok := ingested.SegmentToDoc[candidate.SegmentID]
+		for _, segment := range selected {
+			docID, ok := ingested.SegmentToDoc[segment]
 			if !ok {
-				return nil, fmt.Errorf("segment %x has no document mapping", candidate.SegmentID)
+				return nil, fmt.Errorf("segment %x has no document mapping", segment)
 			}
 			if _, duplicate := selectedSeen[docID]; duplicate {
 				continue
@@ -489,11 +507,11 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 			selectedSeen[docID] = struct{}{}
 			result.SelectedDocIDs = append(result.SelectedDocIDs, docID)
 		}
-		result.UsedBytes = trail.UsedBytes
+		result.UsedBytes = used
 		// Accounting is assigned before the journal callback so a resumed run's
 		// journaled rows match an uninterrupted run's rows exactly.
 		result.AcceptedSegments = len(result.RankedDocIDs)
-		result.ConsideredSegments = len(candidates)
+		result.ConsideredSegments = considered
 		if journal != nil {
 			journal(result)
 		}
@@ -514,57 +532,14 @@ func SearchAll(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, 
 	return results, nil
 }
 
-func evaluateRequests(ctx context.Context, ingested *IngestedCorpus, dataset *Dataset, config RunConfig) (map[string]mousa.PolicyEvaluationRequest, error) {
-	requests := map[string]mousa.PolicyEvaluationRequest{}
-	if config.Mode == ModeVerified {
-		return requests, nil
-	}
-	namespace := config.Namespace()
-	for index, queryID := range judgedQueriesFor(config, dataset) {
-		request, err := newEvaluationRequest(ingested.Source.ID, fmt.Sprintf("%s-query-%s-%d", namespace, queryID, index))
-		if err != nil {
-			return nil, err
-		}
-		if _, err := ingested.Store.EvaluateSourceRetrieval(ctx, request); err != nil {
-			return nil, fmt.Errorf("evaluate request for %s: %w", queryID, err)
-		}
-		requests[queryID] = request
-	}
-	return requests, nil
-}
-
 // judgedQueriesFor returns the judged query IDs a run covers: every judged
-// query, or the first config.QueryLimit in file order. SearchAll and request
-// evaluation must agree on the slice, or a resumed run would evaluate
-// requests for queries it never searches.
+// query, or the first config.QueryLimit in file order.
 func judgedQueriesFor(config RunConfig, dataset *Dataset) []string {
 	judged := dataset.JudgedQueries()
 	if config.QueryLimit > 0 && config.QueryLimit < len(judged) {
 		return judged[:config.QueryLimit]
 	}
 	return judged
-}
-
-func newEvaluationRequest(sourceID mousa.SourceID, externalRequestID string) (mousa.PolicyEvaluationRequest, error) {
-	request := mousa.PolicyEvaluationRequest{
-		Schema:            mousa.PolicyEvaluationRequestSchema,
-		Action:            mousa.SourceRetrievalAction,
-		CallerNamespace:   "beir-eval.caller",
-		ExternalCallerID:  "harness",
-		ExternalRequestID: externalRequestID,
-		PurposeNamespace:  "beir-eval.purpose",
-		ExternalPurposeID: "ranking",
-		SourceID:          sourceID,
-		// Harness requests are synthetic and repeatable, including their time.
-		// Wall time would conflict with the same external identity on resume.
-		RequestedAtUsec: 1,
-	}
-	id, err := mousa.NewPolicyEvaluationRequestID(request)
-	if err != nil {
-		return mousa.PolicyEvaluationRequest{}, err
-	}
-	request.ID = id
-	return request, nil
 }
 
 // ExpressionPolicy controls term folding in BuildExpressionWithPolicy.

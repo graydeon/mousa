@@ -143,11 +143,11 @@ def verify_evidence(hit, original):
     normalized = original.removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     if hashlib.sha256(normalized).hexdigest() != hit["representation_sha256"]:
         raise ValueError("source bytes do not match the evidence representation")
-    start, end = hit["byte_start"], hit["byte_end"]
+    start, end = hit["range"]["start"], hit["range"]["end"]
     require(type(start) is int and type(end) is int and 0 <= start < end <= len(normalized),
             "invalid normalized UTF-8 byte range")
     selected = normalized[start:end]
-    require(selected == hit["text"].encode("utf-8") and len(selected) == hit["byte_length"],
+    require(selected == hit["text"].encode("utf-8"),
             "evidence text disagrees with normalized source range")
     require(hashlib.sha256(selected).hexdigest() == hit["content_sha256"],
             "evidence content digest mismatch")
@@ -172,65 +172,71 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     ])
     call("peer", "sync", "--allow", "--source", "peer", records=[{"id": "peer", "text": "Cedar peer-only material."}])
     first = call("query", "query", "--budget-bytes", "64", "--source", "bulletins", "cedar")
-    require([hit["item"] for hit in first["evidence"]] == ["schedule@draft"], "source isolation failed")
-    verify_evidence(first["evidence"][0], original)
-    require(first["evidence"][0]["segment_policy"] == policy, "sync policy was not retained")
-    inspected = call("trail", "trail", "--source", "bulletins", first["trail_id"])
-    require(inspected["historical"]["packet_id"] == first["packet_id"], "packet trail did not round-trip")
-    call("cross_source_trail", "trail", "--source", "peer", first["trail_id"], expected_code=1)
+    require([hit["item"] for hit in first["passages"]] == ["schedule@draft"], "source isolation failed")
+    verify_evidence(first["passages"][0], original)
+    require(first["passages"][0]["segment_policy"] == policy, "sync policy was not retained")
+    inspected = call("trail", "trail", first["trail"]["id"])
+    require(inspected == first["trail"], "trail read differs from the recorded query trail")
     other = "passage-v1" if policy == "fixed-v1" else "fixed-v1"
     call("jsonl_policy_resync", "sync", "--segment-policy", other, "--source", "bulletins",
          records=[{"id": "schedule@draft", "text": original.decode("utf-8")}])
     changed_policy = call("jsonl_policy_query", "query", "--source", "bulletins", "cedar")
-    verify_evidence(changed_policy["evidence"][0], original)
-    require(changed_policy["evidence"][0]["representation_id"] != first["evidence"][0]["representation_id"]
-            and changed_policy["evidence"][0]["segment_policy"] == other,
+    verify_evidence(changed_policy["passages"][0], original)
+    require(changed_policy["passages"][0]["representation_id"] != first["passages"][0]["representation_id"]
+            and changed_policy["passages"][0]["segment_policy"] == other,
             "JSONL policy change did not replace the representation")
     call("jsonl_policy_restore", "sync", "--source", "bulletins",
          records=[{"id": "schedule@draft", "text": original.decode("utf-8")}])
     policy_restored = call("jsonl_policy_restored_query", "query", "--source", "bulletins", "cedar")
-    require(policy_restored["evidence"][0]["segment_id"] == first["evidence"][0]["segment_id"],
+    require(policy_restored["passages"][0]["segment_id"] == first["passages"][0]["segment_id"],
             "JSONL policy restoration changed canonical identity")
     call("update", "sync", "--source", "bulletins", records=[{"id": "schedule@draft", "text": "Cedar launch moved to Friday."}])
     current = call("updated_query", "query", "--source", "bulletins", "cedar")
-    require(current["evidence"][0]["text"] == "Cedar launch moved to Friday.", "stale revision released")
+    require(current["passages"][0]["text"] == "Cedar launch moved to Friday.", "stale revision released")
     revised = b"Cedar launch moved to Friday."
-    verify_evidence(current["evidence"][0], revised)
+    verify_evidence(current["passages"][0], revised)
     try:
-        verify_evidence(first["evidence"][0], revised)
+        verify_evidence(first["passages"][0], revised)
     except ValueError:
         pass
     else:
         raise RuntimeError("old response accepted a different source revision")
-    verify_evidence(first["evidence"][0], original)
-    retired = call("retired_trail", "trail", "--source", "bulletins", first["trail_id"])
-    require(retired["historical"]["candidates"][0]["indexed_now"] is False, "retired revision reported indexed")
+    verify_evidence(first["passages"][0], original)
+    retired = call("retired_trail", "trail", first["trail"]["id"])
+    require(retired == first["trail"], "revision retirement changed the recorded trail")
     retained = call("omission_retains_item", "query", "--source", "bulletins", "orchid")
-    require([hit["item"] for hit in retained["evidence"]] == ["inventory"], "JSONL omission deleted an item")
+    require([hit["item"] for hit in retained["passages"]] == ["inventory"], "JSONL omission deleted an item")
     call("delete", "sync", "--source", "bulletins", records=[{"id": "schedule@draft", "deleted": True}])
     deleted = call("deleted_query", "query", "--source", "bulletins", "cedar")
-    require(deleted["outcome"] == "no_matches" and not deleted["evidence"], "tombstone left current text indexed")
+    require(not deleted["passages"] and deleted["trail"].get("candidates") == [], "tombstone left current text indexed")
     call("restore", "sync", "--source", "bulletins", records=[{"id": "schedule@draft", "text": "Cedar launch moved to Friday."}])
     restored = call("restored_query", "query", "--source", "bulletins", "cedar")
-    require(restored["evidence"][0]["segment_id"] == current["evidence"][0]["segment_id"], "identical restore changed canonical segment identity")
+    require(restored["passages"][0]["segment_id"] == current["passages"][0]["segment_id"], "identical restore changed canonical segment identity")
     omitted = call("budget_omitted", "query", "--budget-bytes", "1", "--source", "bulletins", "cedar")
-    require(omitted["outcome"] == "budget_omitted" and not omitted["evidence"], "budget omission not distinguished")
+    candidates = omitted["trail"].get("candidates", [])
+    require(not omitted["passages"] and all(row.get("omitted") == "budget" for row in candidates),
+            "budget omission not distinguished")
     call("deny", "access", "--source", "bulletins", "deny")
     denied = call("denied_query", "query", "--source", "bulletins", "cedar")
-    denied_trail = call("denied_trail", "trail", "--source", "bulletins", first["trail_id"])
-    require(denied["outcome"] == "policy_excluded" and not denied["evidence"], "denied text released")
-    require("historical" not in denied_trail, "denied historical metadata released")
-    for value in (first["evidence"][0]["segment_id"], first["evidence"][0]["content_sha256"],
-                  first["evidence"][0]["representation_id"], first["evidence"][0]["representation_sha256"],
-                  first["evidence"][0]["text"]):
-        require(value not in json.dumps(denied) and value not in json.dumps(denied_trail), "denied candidate metadata leaked")
+    denied_trail = call("denied_trail", "trail", first["trail"]["id"])
+    require(not denied["passages"] and denied["trail"]["sources"][0]["outcome"] == "deny", "denied text released")
+    require(all(key not in denied["trail"] for key in ("candidates", "retrieval", "packing")),
+            "denied query disclosed retrieval internals")
+    require(denied_trail == first["trail"], "owner trail read changed under denial")
+    require(first["passages"][0]["text"] not in json.dumps(denied_trail), "denied trail released passage text")
+    for value in (first["passages"][0]["segment_id"], first["passages"][0]["content_sha256"],
+                  first["passages"][0]["representation_id"], first["passages"][0]["representation_sha256"],
+                  first["passages"][0]["text"]):
+        require(value not in json.dumps(denied), "denied candidate metadata leaked")
     call("allow", "access", "--source", "bulletins", "allow")
     call("withdraw", "withdraw", "--source", "bulletins")
     call("allow_after_withdrawal", "access", "--source", "bulletins", "allow")
     withdrawn = call("withdrawn_query", "query", "--source", "bulletins", "cedar")
-    require(withdrawn["outcome"] == "lifecycle_excluded" and not withdrawn["evidence"], "allow overrode withdrawal")
+    require(not withdrawn["passages"] and withdrawn["trail"]["sources"][0]["outcome"] == "deny"
+            and "source_withdrawn" in withdrawn["trail"]["sources"][0]["reasons"],
+            "allow overrode withdrawal")
     peer = call("unaffected_peer", "query", "--source", "peer", "cedar")
-    require([hit["item"] for hit in peer["evidence"]] == ["peer"], "withdrawal affected peer source")
+    require([hit["item"] for hit in peer["passages"]] == ["peer"], "withdrawal affected peer source")
 
     root = work / (policy + "-directory")
     root.mkdir()
@@ -239,35 +245,34 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     path.write_bytes(raw)
     call("directory_sync", "sync", "--allow", root)
     located = call("directory_query", "query", "--budget-bytes", "16384", root, "amber")
-    require(len(located["evidence"]) > 1, "fixture did not return multiple passages")
-    for hit in located["evidence"]:
+    require(len(located["passages"]) > 1, "fixture did not return multiple passages")
+    for hit in located["passages"]:
         verify_evidence(hit, raw)
         require(hit["segment_policy"] == policy, "directory policy mismatch")
-    require(len({hit["representation_id"] for hit in located["evidence"]}) == 1,
+    require(len({hit["representation_id"] for hit in located["passages"]}) == 1,
             "one revision has inconsistent representation identities")
     other = "passage-v1" if policy == "fixed-v1" else "fixed-v1"
     call("policy_resync", "sync", "--segment-policy", other, root)
     changed = call("policy_query", "query", "--budget-bytes", "16384", root, "amber")
-    require(changed["evidence"][0]["representation_id"] != located["evidence"][0]["representation_id"],
+    require(changed["passages"][0]["representation_id"] != located["passages"][0]["representation_id"],
             "policy change reused the old representation")
-    for hit in changed["evidence"]:
+    for hit in changed["passages"]:
         verify_evidence(hit, raw)
         require(hit["segment_policy"] == other, "policy resync did not replace the active segments")
-    retired = call("policy_trail", "trail", root, located["trail_id"])
-    require(all(not row["indexed_now"] for row in retired["historical"]["candidates"]),
-            "policy-retired segments remain indexed")
+    retired = call("policy_trail", "trail", located["trail"]["id"])
+    require(retired == located["trail"], "policy retirement changed the recorded trail")
     call("policy_restore", "sync", root)
     restored = call("policy_restored_query", "query", "--budget-bytes", "16384", root, "amber")
-    require([h["segment_id"] for h in restored["evidence"]] == [h["segment_id"] for h in located["evidence"]],
+    require([h["segment_id"] for h in restored["passages"]] == [h["segment_id"] for h in located["passages"]],
             "policy restoration changed canonical identities")
     path.unlink()
     call("directory_delete", "sync", root)
     deleted = call("directory_deleted_query", "query", root, "amber")
-    require(not deleted["evidence"] and deleted["outcome"] == "no_matches", "directory deletion released text")
+    require(not deleted["passages"] and deleted["trail"].get("candidates") == [], "directory deletion released text")
     path.write_bytes(raw)
     call("directory_restore", "sync", root)
     restored = call("directory_restored_query", "query", "--budget-bytes", "16384", root, "amber")
-    require([h["segment_id"] for h in restored["evidence"]] == [h["segment_id"] for h in located["evidence"]],
+    require([h["segment_id"] for h in restored["passages"]] == [h["segment_id"] for h in located["passages"]],
             "directory restoration changed canonical identities")
 
     copies = [{"id": "copy-a", "text": "amber amber"},
@@ -277,58 +282,52 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     call("packing_peer_sync", "sync", "--source", "peer",
          records=[{"id": "private-copy", "text": "amber amber"}])
     call("packing_sync", "sync", "--allow", "--source", "copies", records=copies)
-    plain = call("packing_default", "query", "--source", "copies", "--budget-bytes", "33", "amber")
-    exact_args = ("query", "--packing-policy", "exact-v1", "--source", "copies",
-                  "--budget-bytes", "33", "amber")
+    exact_args = ("query", "--source", "copies", "--budget-bytes", "33", "amber")
     exact = call("packing_exact", *exact_args)
-    require(plain["used_bytes"] == 22 and plain["budget_omitted"] == 1, "default packing changed")
-    require(exact["used_bytes"] == 33 and exact["duplicate_omitted"] == 1
-            and exact["budget_omitted"] == 0, "duplicate displaced the repair passage")
-    require(exact["evidence"][0] == plain["evidence"][0]
-            and exact["evidence"][1]["item"] == "repair", "retention changed rank or provenance")
-    for hit in exact["evidence"]:
+    require(exact["trail"]["packing"] == {"policy": "first-fit-v1", "used": 33},
+            "first-fit packing displaced the repair passage")
+    require(exact["passages"][0]["text"] == "amber amber"
+            and exact["passages"][1]["item"] == "repair", "retention changed rank or provenance")
+    for hit in exact["passages"]:
         verify_evidence(hit, originals[hit["item"]])
-    history = call("packing_trail", "trail", "--source", "copies", exact["trail_id"])["historical"]
-    require(history["schema"] == "mousa.source_trail.v2"
-            and history["packing_policy"] == "exact-v1", "packing explanation lacks version")
-    selected = {row["segment_id"]: row for row in history["candidates"] if row["selected"]}
-    duplicate = [row for row in history["candidates"] if row.get("omission") == "duplicate"]
-    require(len(duplicate) == exact["duplicate_omitted"] and len(selected) == len(exact["evidence"]),
+    history = call("packing_trail", "trail", exact["trail"]["id"])
+    require(history == exact["trail"], "owner trail read differs from the query trail")
+    selected = {row["segment_id"]: row for row in history["candidates"] if row["packed"] == "full"}
+    duplicate = [row for row in history["candidates"] if row.get("omitted") == "duplicate"]
+    require(len(duplicate) == 1 and len(selected) == len(exact["passages"]),
             "query and trail counts disagree")
     require(duplicate[0]["duplicate_of"] in selected
             and duplicate[0]["segment_id"] not in selected, "invalid retained relationship")
-    require(exact["matched_candidates"] == len(selected) + len(duplicate)
-            + exact["budget_omitted"] + exact["lifecycle_excluded"], "candidate accounting lost rows")
-    peer = call("packing_peer_query", "query", "--packing-policy", "exact-v1",
-                "--source", "peer", "amber")
-    require([hit["item"] for hit in peer["evidence"]] == ["private-copy"]
-            and peer["duplicate_omitted"] == 0, "equal text merged source identities")
-    call("packing_cross_source", "trail", "--source", "peer", exact["trail_id"], expected_code=1)
+    peer = call("packing_peer_query", "query", "--source", "peer", "amber")
+    require([hit["item"] for hit in peer["passages"]] == ["private-copy"]
+            and not [row for row in peer["trail"]["candidates"] if row.get("omitted") == "duplicate"],
+            "equal text merged source identities")
     call("packing_update", "sync", "--source", "copies",
          records=[{"id": "copy-a", "text": "amber revised unique"}])
     changed = call("packing_updated_query", *exact_args)
-    require(changed["duplicate_omitted"] == 0, "updated text was deduplicated as stale content")
+    require(not [row for row in changed["trail"]["candidates"] if row.get("omitted") == "duplicate"],
+            "updated text was deduplicated as stale content")
     call("packing_restore", "sync", "--source", "copies", records=copies)
     restored = call("packing_restored_query", *exact_args)
-    require(restored["packet_id"] == exact["packet_id"], "restoration changed packet identity")
+    require([p["segment_id"] for p in restored["passages"]] == [p["segment_id"] for p in exact["passages"]],
+            "restoration changed passage identities")
     call("packing_policy_resync", "sync", "--segment-policy", other, "--source", "copies", records=copies)
     changed_policy = call("packing_policy_query", *exact_args)
-    require(changed_policy["duplicate_omitted"] == 1 and changed_policy["used_bytes"] == 33,
+    require(len([row for row in changed_policy["trail"]["candidates"] if row.get("omitted") == "duplicate"]) == 1
+            and changed_policy["trail"]["packing"]["used"] == 33,
             "deduplication failed after policy resync")
-    retired = call("packing_retired_trail", "trail", "--source", "copies", exact["trail_id"])
-    require(all(not row["indexed_now"] for row in retired["historical"]["candidates"]),
-            "retired packing history changed activation")
+    retired = call("packing_retired_trail", "trail", exact["trail"]["id"])
+    require(retired == exact["trail"], "retired packing trail changed")
     call("packing_deny", "access", "--source", "copies", "deny")
     denied = call("packing_denied_query", *exact_args)
-    denied_history = call("packing_denied_trail", "trail", "--source", "copies", exact["trail_id"])
-    require(not denied["evidence"] and denied["matched_candidates"] == 0
-            and "historical" not in denied_history, "duplicate relationship bypassed authorization")
-    for row in history["candidates"]:
-        require(row["segment_id"] not in json.dumps(denied_history), "denied duplicate metadata leaked")
+    denied_history = call("packing_denied_trail", "trail", exact["trail"]["id"])
+    require(not denied["passages"] and not denied["trail"].get("candidates")
+            and denied_history == exact["trail"], "duplicate relationship bypassed authorization")
     call("packing_allow", "access", "--source", "copies", "allow")
     call("packing_withdraw", "withdraw", "--source", "copies")
     withdrawn = call("packing_withdrawn_query", *exact_args)
-    require(not withdrawn["evidence"] and withdrawn["outcome"] == "lifecycle_excluded",
+    require(not withdrawn["passages"] and withdrawn["trail"]["sources"][0]["outcome"] == "deny"
+            and "source_withdrawn" in withdrawn["trail"]["sources"][0]["reasons"],
             "withdrawn duplicate evidence released")
 
 
@@ -373,8 +372,8 @@ def comparison(runner, args, work):
                 response, row = runner.run(engine, stage, repeat, command, environment=environment)
                 packing_started = time.monotonic()
                 if engine == "mousa":
-                    selected, used = response["evidence"], response["used_bytes"]
-                    considered = response["matched_candidates"]
+                    selected, used = response["passages"], response["trail"]["packing"]["used"]
+                    considered = len(response["trail"]["candidates"])
                 else:
                     candidates = response if engine == "sqlite" else [{"item": urlsplit(hit["file"]).path.lstrip("/"), "text": hit["body"]} for hit in response]
                     considered = len(candidates)
@@ -424,7 +423,7 @@ def comparison(runner, args, work):
                 response, row = runner.run(engine, "warm_probe", repeat, [args.warm, "-store", store, "-root", root, "-query", "cedar", "-budget", str(args.budgets[0]), "-iterations", str(args.warm_iterations)])
                 count = sum("cedar" in text.split() for text in expected.values())
                 require(all(stage["candidates"] == count for stage in response["stages"] if stage["stage"] != "preparation"), "warm probe did not exercise the same fixture")
-                require(all(stage["used_bytes"] == reference["used_bytes"] for stage in response["stages"] if stage["stage"] in ("new_historical_trace", "fresh_current_query")), "warm packing differs from the cold CLI fixture")
+                require(all(stage["used_bytes"] == reference["trail"]["packing"]["used"] for stage in response["stages"] if stage["stage"] == "fresh_current_query"), "warm packing differs from the cold CLI fixture")
                 warm.append(response)
             files = [path for path in (home.rglob("*") if engine == "qmd" else work.glob(store.name + "*")) if path.is_file()]
             stores.append({"engine": engine, "repeat": repeat, "post_exit_bytes": sum(path.stat().st_size for path in files), "files": {str(path.relative_to(work)): path.stat().st_size for path in files}})

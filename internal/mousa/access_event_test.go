@@ -1,6 +1,7 @@
 package mousa
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
@@ -56,4 +57,17 @@ func TestAccessEventContract(t *testing.T) {
 	if got := LogLeafHash(nil); hex.EncodeToString(got[:]) != "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d" {
 		t.Fatalf("empty leaf hash = %x", got)
 	}
+}
+
+func testTupleSHA256(fields ...[]byte) [sha256.Size]byte {
+	digest := sha256.New()
+	var length [8]byte
+	for _, field := range fields {
+		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+		digest.Write(length[:])
+		digest.Write(field)
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], digest.Sum(nil))
+	return sum
 }

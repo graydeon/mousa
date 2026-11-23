@@ -27,18 +27,12 @@ targets until the scale probe passes at 100k documents and 1M retrieval units.
 
 Long-lived knowledge does not only grow. It becomes stale, duplicated, contradictory, and detached from its sources. Search can return matching text without showing why it was selected or whether it remains current. Agent systems also pay a direct cost when retrieval sends more context than the task requires.
 
-Mousa offers source-linked lexical/vector/hybrid retrieval, source-lifecycle checks,
+Mousa offers source-linked lexical retrieval, source-lifecycle checks,
 inspectable ranking, and whole-passage byte packing.
 
 ## Current development boundary
 
-Native callers can export authorized current normalized passages, import embeddings
-from an external producer and query one declared vector space by exact CPU cosine
-similarity or combine lexical and vector branches with equal-weight RRF(k=60).
-The native [vector](USAGE.md#caller-supplied-vector-workflow) and
-[hybrid](USAGE.md#hybrid-lexical-and-vector-query) workflows work for directory and
-JSONL sources. Generation stays external; synthetic examples do not establish
-embedding-model quality, semantic equivalence or factual truth.
+This schema supports lexical retrieval. Vector and hybrid modes are not supported.
 
 Raw historical record-by-ID reads remain native-only.
 Actor, time and reason labels do not authenticate authorship or establish factual truth.
@@ -52,51 +46,24 @@ Mousa's retrieval backbone deliberately echoes the nine Muses. Stages 1–5 are 
 | **1. Ingest** | Register source material with its origin and identity. | Implemented. |
 | **2. Normalize** | Convert input into a stable representation while preserving the original source. | Implemented for UTF-8 text. |
 | **3. Segment** | Produce deterministic, addressable chunks. | Implemented for byte-range text segments. |
-| **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 and canonical caller-supplied vectors implemented; no ANN index or embedding inference. |
-| **5. Match** | Retrieve candidate evidence for a request. | Lexical, explicit vector, and combined hybrid queries over one current source snapshot. |
-| **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25, exact cosine, or equal-weight RRF(k=60) with separate branch facts. |
+| **4. Index** | Build portable lexical and optional vector search structures. | SQLite FTS5 for lexical candidates. |
+| **5. Match** | Retrieve candidate evidence for a request. | Lexical candidates in an authorized source snapshot. |
+| **6. Rank** | Order candidates using inspectable relevance and policy signals. | BM25 with recorded branch scores and ranks. |
 | **7. Verify** | Check source state and, later, freshness and conflicts. | Partially implemented: source lifecycle checks and append-only per-source access events with default deny ([Access](USAGE.md#access)). Factual freshness, authenticated authorship and semantic conflict checks are not implemented. |
-| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | Lexical, vector and hybrid selection through CLI/MCP; versioned producing facts below. |
+| **8. Trace** | Record how evidence moved through retrieval in a durable Source Trail. | One canonical query trail as a log leaf. |
 | **9. Pack** | Assemble selected evidence within an explicit context budget. | Released-text byte packing. Provider/model prompt framing remains outside the count. |
 
 Each stage has one responsibility and a visible boundary. The pipeline can be tested stage by stage, and no single model, provider, or harness owns the result.
 
 ## Source Trails
 
-A Source Trail records how a context packet was produced. Default packing writes
-`mousa.source_trail.v1`, binding the policy request and decision, outcome,
-search expression, byte budget, packet identity, and ordered candidate
-dispositions. Opt-in exact-content packing writes v2, which also binds
-duplicate omissions and retained-segment relationships. Older trail bytes and identities remain unchanged.
-
-Native vector queries write `mousa.source_trail.v5` instead. Its closed `vector`
-member records the declared space, exact query vector and identity, current eligible
-and indexed counts, and ordered embedding/source/content pins and cosine scores.
-It has no lexical expression. Original
-and exact-v1 byte packing use the same packet v1 identity domain for the released
-selection. Native history reauthorizes and checks recorded producing embeddings,
-not today's vectors or current item pointers. Lexical defaults and earlier bytes
-remain unchanged. MCP history exposes recorded vector facts only with
-`retrieval_details: true` after fresh authorization.
-
-Hybrid queries write `mousa.source_trail.v6`: prepared lexical request/policy,
-space/query-vector facts, canonical pins, separate branch ranks/BM25/cosine and
-the fixed `rrf-equal-k60-v1` order. Both byte packers consume the fused identity
-union. History checks producing records without searching today's index; past
-coverage completeness and lexical BM25 cannot be reconstructed from later state.
-The [hybrid contract](CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval)
-states those limits. Earlier canonical versions remain unchanged; MCP query and
-opted-in history have their own declared hybrid schemas.
-
-An unknown requested identity remains `not_found`, and legacy readers retain their behavior.
-Source-scoped inspection is narrower: if a missing decision parent prevents ownership
-verification in an already-open inspector, it returns `not_found` for own and foreign
-orphans alike. Fresh-open verification rejects the store instead. Successful denied
-inspection commits only fresh authorization evidence and never looks up history.
-Retired indexed text is not archived: historical byte comparisons can use only text
-still retained. The documentation example's output is not a canonical packet.
-
-The goal is not to present a score as an explanation. The goal is to retain enough evidence to inspect what was selected, what was rejected, and why.
+Each query stores one `mousa.trail.v1` record as a log leaf before returning
+passages. The trail binds the request, decisions, snapshot, candidates and byte
+packing. The `result_sha256` omits per-call metadata and denied-source details so
+the same request and state can be compared. Trail reads are read-only; the file
+owner can inspect the record, while MCP rechecks access and projects a caller
+view. Retired text is not archived, so historical reads can verify immutable
+digests and coordinates but not reconstruct removed bytes.
 
 ## Intended callers
 
@@ -149,13 +116,11 @@ Implemented and planned capabilities, marked per item:
 
 - SQLite-first local storage (implemented);
 - lexical retrieval through SQLite FTS5 or an equally portable built-in mechanism (FTS5 implemented);
-- bounded exact vector retrieval with external embeddings (implemented through CLI/MCP); automatic embedding generation and provider integration (planned);
-- inspectable native hybrid ranking with caller-supplied vectors (implemented);
 - deterministic ingestion, chunk identity and source hashing (implemented); full-store interchange (not implemented);
 - source status and lifecycle (implemented); per-source access events with default deny (implemented); factual freshness, authenticated authorship and semantic conflicts (not implemented);
 - secret filtering (planned);
-- byte-budget selection and opt-in exact-content deduplication; truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
-- source-linked context packets with durable Source Trail identifiers (implemented in the core and exposed by `cmd/mousa`);
-- documented JSON/JSONL inputs and authorized normalized passage/vector interchange (implemented); portable full-store interchange (not implemented).
+- byte-budget selection and exact-content deduplication; truncation, approximate redundancy removal and authenticated provider/model framing (not implemented);
+- source-linked passages with durable query trail identifiers (implemented in the core and exposed by `cmd/mousa`);
+- documented JSON/JSONL inputs and durable-note export/import (implemented); portable full-store interchange (not implemented).
 
 Items marked planned are design targets, not released functionality or a release checklist. The capability matrix distinguishes supported interfaces from internal APIs.

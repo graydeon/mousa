@@ -107,11 +107,11 @@ func TestMemoryCLI(t *testing.T) {
 	writeFile(t, root, "doc.md", "The harbor inspection is on Friday.\n")
 	run.run(false, "sync", "--allow", root)
 	_, query := run.run(false, "query", root, "harbor inspection")
-	if lenOf(query, "evidence") != 1 {
+	if lenOf(query, "passages") != 1 {
 		t.Fatalf("document query returned no evidence: %v", query)
 	}
-	trailID := query["trail_id"].(string)
-	segmentID := query["evidence"].([]any)[0].(map[string]any)["segment_id"].(string)
+	trailID := trailIDOf(query)
+	segmentID := query["passages"].([]any)[0].(map[string]any)["segment_id"].(string)
 	noteSource, err := streamSource("memory")
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestMemoryCLI(t *testing.T) {
 	// Explicit selection can repeat one segment across distinct trails; each
 	// citation is a (trail, segment) pair and both trails must survive.
 	_, secondQuery := run.run(false, "query", root, "harbor inspection")
-	trail2ID := secondQuery["trail_id"].(string)
+	trail2ID := trailIDOf(secondQuery)
 	if trail2ID == trailID {
 		t.Fatalf("second query did not produce a distinct trail: %v", secondQuery)
 	}
@@ -264,7 +264,7 @@ func TestMemoryCLI(t *testing.T) {
 
 	// A budget below one note omits the whole note; a note is never split.
 	_, tiny := run.run(false, "query", "--source", "memory", "--budget-bytes", "4", "harbor")
-	if lenOf(tiny, "evidence") != 0 {
+	if lenOf(tiny, "passages") != 0 {
 		t.Fatalf("tiny budget released a partial note: %v", tiny)
 	}
 
@@ -316,7 +316,7 @@ func TestMemoryRememberRejects(t *testing.T) {
 	writeFile(t, root, "second.md", "Harbor budgets shrink annually.\n")
 	run.run(false, "sync", "--allow", root)
 	_, query := run.run(false, "query", root, "harbor")
-	trailID := query["trail_id"].(string)
+	trailID := trailIDOf(query)
 	run.run(false, "access", "--source", "memory", "--create", "allow")
 	before := memoryCounts(t, run.store)
 	reject := func(label string, args ...string) {
@@ -342,7 +342,7 @@ func TestMemoryRememberRejects(t *testing.T) {
 	// Denied historical trail: issue a query while denied, then restore access.
 	run.run(false, "access", root, "deny")
 	_, deniedQuery := run.run(false, "query", root, "harbor")
-	deniedTrail := deniedQuery["trail_id"].(string)
+	deniedTrail := trailIDOf(deniedQuery)
 	run.run(false, "access", root, "allow")
 	reject("denied historical trail", "--source", "memory", "--from", deniedTrail, "Denied history.")
 
@@ -355,18 +355,18 @@ func TestMemoryRememberRejects(t *testing.T) {
 	const streamDoc = "pipeline/docs2"
 	jsonlSync(t, run, streamDoc, record("d2", "Harbor ledgers reconcile cleanly."))
 	streamQuery := querySource(t, run, streamDoc, "harbor ledgers")
-	streamTrail := streamQuery["trail_id"].(string)
+	streamTrail := trailIDOf(streamQuery)
 	run.run(false, "withdraw", "--source", streamDoc)
 	reject("withdrawn cited source", "--source", "memory", "--from", streamTrail, "Withdrawn lineage.")
 
 	// A candidate the trail omitted (budget) cannot be cited.
 	_, omittedQuery := run.run(false, "query", "--budget-bytes", "1", root, "harbor")
-	omittedTrail := omittedQuery["trail_id"].(string)
-	_, inspection := run.run(false, "trail", root, omittedTrail)
+	omittedTrail := trailIDOf(omittedQuery)
+	_, inspection := run.run(false, "trail", omittedTrail)
 	var omittedSegment string
-	for _, candidate := range inspection["historical"].(map[string]any)["candidates"].([]any) {
+	for _, candidate := range inspection["candidates"].([]any) {
 		row := candidate.(map[string]any)
-		if row["selected"] == false {
+		if row["packed"] == "none" {
 			omittedSegment = row["segment_id"].(string)
 		}
 	}
@@ -376,10 +376,10 @@ func TestMemoryRememberRejects(t *testing.T) {
 	reject("unselected segment", "--source", "memory", "--from", omittedTrail+":"+omittedSegment, "Unselected evidence.")
 
 	// A second source's trail cannot cite the first source's segments.
-	selected := query["evidence"].([]any)[0].(map[string]any)["segment_id"].(string)
+	selected := query["passages"].([]any)[0].(map[string]any)["segment_id"].(string)
 	jsonlSync(t, run, "pipeline/docs3", record("d3", "Harbor cranes idle."))
 	other := querySource(t, run, "pipeline/docs3", "harbor cranes")
-	reject("cross-source segment", "--source", "memory", "--from", other["trail_id"].(string)+":"+selected, "Cross-source segment.")
+	reject("cross-source segment", "--source", "memory", "--from", trailIDOf(other)+":"+selected, "Cross-source segment.")
 
 	// Malformed citations.
 	reject("empty segment list", "--source", "memory", "--from", trailID+":", "Empty segment list.")
@@ -454,7 +454,7 @@ func TestMemoryMCP(t *testing.T) {
 	client := startMCPClient(t, run, "agent-1", true)
 	run.run(false, "access", "--source", "beta", "--create", "allow")
 	query := client.call("mousa_query", mcpQuery("alpha", "harbor", 4096), "")
-	trailID := query["trail_id"].(string)
+	trailID := trailIDOf(query)
 	note := client.call("mousa_remember", map[string]any{
 		"source":       "beta",
 		"text":         "The harbor plan is approved.",
@@ -563,7 +563,7 @@ func TestMemoryIntegrityTamper(t *testing.T) {
 			run.run(false, "sync", "--allow", root)
 			_, query := run.run(false, "query", root, "harbor seals")
 			run.run(false, "access", "--source", "memory", "--create", "allow")
-			run.run(false, "remember", "--source", "memory", "--from", query["trail_id"].(string), "Seals at noon.")
+			run.run(false, "remember", "--source", "memory", "--from", trailIDOf(query), "Seals at noon.")
 
 			// The store stays open while a second connection tampers; the
 			// very next read must fail, not serve the altered bytes.
@@ -579,5 +579,76 @@ func TestMemoryIntegrityTamper(t *testing.T) {
 			run.run(true, "notes", "export", "--source", "memory")
 			run.run(true, "status", "--source", "memory")
 		})
+	}
+}
+
+func TestCLINotesImportRoundTrip(t *testing.T) {
+	run, root := setup(t)
+	writeFile(t, root, "doc.md", "The harbor audit is Thursday.\n")
+	run.run(false, "sync", "--allow", root)
+	_, query := run.run(false, "query", root, "harbor audit")
+	trailID := trailIDOf(query)
+	run.run(false, "access", "--source", "memory", "--create", "allow")
+	_, note := run.run(false, "remember", "--source", "memory", "--from", trailID, "Harbor audit scheduled.")
+	code, exported, stderr := run.runExitInput("", "notes", "export", "--source", "memory")
+	if code != 0 || exported == "" {
+		t.Fatalf("notes export failed: %s", stderr)
+	}
+
+	other, _ := setup(t)
+	other.run(false, "access", "--source", "memory", "--create", "allow")
+	code, imported, stderr := other.runExitInput(exported, "notes", "import", "--source", "memory")
+	if code != 0 {
+		t.Fatalf("notes import failed: %s", stderr)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(imported), &report); err != nil || report["imported"] != float64(1) {
+		t.Fatalf("first import report: %q %v", imported, err)
+	}
+	code, repeated, stderr := other.runExitInput(exported, "notes", "import", "--source", "memory")
+	if code != 0 {
+		t.Fatalf("repeated import failed: %s", stderr)
+	}
+	report = nil
+	if err := json.Unmarshal([]byte(repeated), &report); err != nil || report["imported"] != float64(0) {
+		t.Fatalf("repeated import report: %q %v", repeated, err)
+	}
+	code, reexported, stderr := other.runExitInput("", "notes", "export", "--source", "memory")
+	if code != 0 || reexported != exported {
+		t.Fatalf("re-export differs: %q vs %q (%s)", reexported, exported, stderr)
+	}
+
+	// The imported note cites trails the second store never recorded.
+	recall := querySource(t, other, "memory", "harbor audit")
+	meta := noteHitMeta(t, noteHitByID(t, recall, note["id"].(string)))
+	if meta["author"] != "mousa-local.cli" || meta["created_at_usec"] != note["created_at_usec"] {
+		t.Fatalf("imported note identity differs: %v vs %v", meta, note)
+	}
+	staleEntry(t, meta, "citation_unverifiable", trailID)
+
+	// A tampered digest and a foreign source both fail without writing rows.
+	bad := strings.Replace(exported, "Harbor audit scheduled.", "Tampered harbor audit.", 1)
+	if code, _, _ := other.runExitInput(bad, "notes", "import", "--source", "memory"); code == 0 {
+		t.Fatal("tampered digest imported")
+	}
+	foreign, err := streamSource("foreign-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := strings.TrimSpace(exported)
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(record), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	decoded["source_id"] = foreign.ID.String()
+	encoded, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := other.runExitInput(string(encoded)+"\n", "notes", "import", "--source", "memory"); code == 0 {
+		t.Fatal("foreign source record imported")
+	}
+	if counts := memoryCounts(t, other.store); counts["notes"] != 1 {
+		t.Fatalf("rejected imports wrote notes: %v", counts)
 	}
 }

@@ -54,7 +54,7 @@ class DocumentationConsumerTest(unittest.TestCase):
         self.corpus(original, "one")
         self.example("sync")
         first = self.example("ask", "--budget-bytes", "256", "cedar")
-        hit = first["response"]["evidence"][0]
+        hit = first["response"]["passages"][0]
         self.assertEqual(hit["text"], "Cedar repair starts Tuesday.\nCafé 東京.\n")
         self.assertEqual(hit["location"], {"path": "manual.txt", "line_start": 1, "line_end": 2, "url": None})
         self.assertIsNone(first["answer"])
@@ -66,19 +66,23 @@ class DocumentationConsumerTest(unittest.TestCase):
         self.example("ask", "cedar", expected=1)
         self.example("sync")
         current = self.example("ask", "cedar")
-        self.assertEqual(current["response"]["evidence"][0]["text"], "Cedar repair moved to Friday.\n")
+        self.assertEqual(current["response"]["passages"][0]["text"], "Cedar repair moved to Friday.\n")
         removed = self.example("ask", "zephyr")
         self.assertEqual(removed["outcome"], "insufficient_evidence")
-        self.assertEqual(removed["response"]["outcome"], "no_matches")
-        self.assertFalse(removed["response"]["evidence"])
+        self.assertEqual(removed["response"]["trail"]["sources"][0]["outcome"], "allow")
+        self.assertFalse(removed["response"]["trail"].get("candidates"))
+        self.assertFalse(removed["response"]["passages"])
         limited = self.example("ask", "--budget-bytes", "1", "cedar")
         self.assertEqual(limited["outcome"], "insufficient_evidence")
-        self.assertEqual(limited["response"]["outcome"], "budget_omitted")
+        self.assertEqual(limited["response"]["trail"]["sources"][0]["outcome"], "allow")
+        self.assertTrue(any(candidate.get("omitted") == "budget"
+                            for candidate in limited["response"]["trail"].get("candidates", [])))
         self.cli("access", str(self.directory), "deny")
         denied = self.example("ask", "cedar")
-        self.assertEqual(denied["response"]["outcome"], "policy_excluded")
-        self.assertFalse(denied["response"]["evidence"])
-        trail = self.cli("trail", str(self.directory), first["response"]["trail_id"])
+        self.assertEqual(denied["response"]["trail"]["sources"][0]["outcome"], "deny")
+        self.assertFalse(denied["response"]["passages"])
+        trail = self.cli("trail", first["response"]["trail"]["id"])
+        self.assertEqual(trail, first["response"]["trail"])
         self.assertNotIn("historical", trail)
         self.assertEqual(json.loads(saved.read_text()), first)
         docs.verify_evidence(hit, original.encode("utf-8"))
@@ -86,8 +90,9 @@ class DocumentationConsumerTest(unittest.TestCase):
         self.cli("withdraw", str(self.directory))
         self.cli("access", str(self.directory), "allow")
         withdrawn = self.example("ask", "cedar")
-        self.assertEqual(withdrawn["response"]["outcome"], "lifecycle_excluded")
-        self.assertFalse(withdrawn["response"]["evidence"])
+        self.assertEqual(withdrawn["response"]["trail"]["sources"][0]["outcome"], "deny")
+        self.assertIn("source_withdrawn", withdrawn["response"]["trail"]["sources"][0]["reasons"])
+        self.assertFalse(withdrawn["response"]["passages"])
 
     def test_source_isolation_and_changed_corpus(self):
         self.corpus("Cedar local procedure.\n", "one")
@@ -97,7 +102,7 @@ class DocumentationConsumerTest(unittest.TestCase):
         (peer / "peer.txt").write_text("Cedar peer-exclusive procedure.\n")
         self.cli("sync", str(peer))
         response = self.example("ask", "cedar")
-        self.assertEqual([h["item"] for h in response["response"]["evidence"]], ["manual.txt"])
+        self.assertEqual([h["item"] for h in response["response"]["passages"]], ["manual.txt"])
         self.assertNotIn("peer-exclusive", json.dumps(response))
         (self.directory / "manual.txt").write_text("Changed without a manifest update.\n")
         self.example("ask", "cedar", expected=1)
@@ -116,12 +121,12 @@ class DocumentationConsumerTest(unittest.TestCase):
         (nested / "manual.txt").write_text("Undeclared quasarneedle.\n")
         self.example("sync", expected=1)
         self.assertEqual(self.store.read_bytes(), before)
-        self.assertFalse(self.cli("query", str(self.directory), "quasarneedle")["evidence"])
-        hits = self.cli("query", str(self.directory), "cedar")["evidence"]
+        self.assertFalse(self.cli("query", str(self.directory), "quasarneedle")["passages"])
+        hits = self.cli("query", str(self.directory), "cedar")["passages"]
         self.assertEqual([h["text"] for h in hits], ["Cedar previously valid procedure.\n"])
         (nested / "manual.txt").unlink()
         self.example("sync")
-        self.assertEqual(self.example("ask", "cedar")["response"]["evidence"][0]["text"],
+        self.assertEqual(self.example("ask", "cedar")["response"]["passages"][0]["text"],
                          "Cedar replacement procedure.\n")
 
     def test_excluded_declared_document_preserves_store(self):
@@ -153,14 +158,15 @@ class DocumentationConsumerTest(unittest.TestCase):
         (self.directory / "corpus.json").write_text(json.dumps(manifest))
         self.example("sync")
         self.example("sync")
-        self.assertFalse(self.example("ask", "cedar")["response"]["evidence"])
+        self.assertFalse(self.example("ask", "cedar")["response"]["passages"])
         self.assertEqual(self.cli("status", str(self.directory))["active_items"], 0)
-        self.assertTrue(self.cli("query", str(peer), "cedar")["evidence"])
-        self.assertEqual(saved["response"]["evidence"][0]["text"], "Cedar final procedure.\n")
-        self.assertTrue(self.cli("trail", str(self.directory), saved["response"]["trail_id"])["historical"])
+        self.assertTrue(self.cli("query", str(peer), "cedar")["passages"])
+        self.assertEqual(saved["response"]["passages"][0]["text"], "Cedar final procedure.\n")
+        saved_trail = self.cli("trail", saved["response"]["trail"]["id"])
+        self.assertEqual(saved_trail, saved["response"]["trail"])
         self.corpus("Cedar restored procedure.\n", "two", second=False)
         self.example("sync")
-        self.assertEqual(self.example("ask", "cedar")["response"]["evidence"][0]["text"],
+        self.assertEqual(self.example("ask", "cedar")["response"]["passages"][0]["text"],
                          "Cedar restored procedure.\n")
 
     def test_referenced_passages_keep_separate_attribution(self):
@@ -171,7 +177,7 @@ class DocumentationConsumerTest(unittest.TestCase):
             "ask", "When interactively selecting hunks with git restore, how can I show "
             "the context between nearby hunks, and what is the default?")
         by_item = {}
-        for hit in packet["response"]["evidence"]:
+        for hit in packet["response"]["passages"]:
             by_item.setdefault(hit["item"], []).append(hit["text"])
             self.assertEqual(hit["location"]["path"], hit["item"])
             self.assertTrue(hit["location"]["url"].endswith("/" + hit["item"]))
@@ -189,16 +195,16 @@ class DocumentationConsumerTest(unittest.TestCase):
         start, end = edges[0]["directive"]["byte_start"], edges[0]["directive"]["byte_end"]
         self.assertEqual(parent.read_bytes()[start:end].decode(), edges[0]["directive"]["text"])
         unrelated = self.example("ask", "Does git switch include diff-context-options.adoc for --inter-hunk-context?")
-        self.assertTrue(any(h["item"] == "Documentation/git-switch.adoc" for h in unrelated["response"]["evidence"]))
-        self.assertTrue(any(h["item"] == "Documentation/diff-context-options.adoc" for h in unrelated["response"]["evidence"]))
+        self.assertTrue(any(h["item"] == "Documentation/git-switch.adoc" for h in unrelated["response"]["passages"]))
+        self.assertTrue(any(h["item"] == "Documentation/diff-context-options.adoc" for h in unrelated["response"]["passages"]))
         self.assertFalse(any(edge["from_item"] == "Documentation/git-switch.adoc" and
                              edge["to_item"] == "Documentation/diff-context-options.adoc"
                              for edge in unrelated["include_relationships"]))
-        self.assertEqual(unrelated["response"]["decision_outcome"], "allow")
+        self.assertEqual(unrelated["response"]["trail"]["sources"][0]["outcome"], "allow")
         workers = self.example(
             "ask", "How many parallel workers does checkout use by default, and what "
             "happens if the worker count is less than one?")
-        text = "\n".join(hit["text"] for hit in workers["response"]["evidence"]
+        text = "\n".join(hit["text"] for hit in workers["response"]["passages"]
                          if hit["item"] == "Documentation/config/checkout.adoc")
         self.assertIn("The default is one", text)
         self.assertIn("number of logical cores", text)
@@ -218,7 +224,7 @@ class DocumentationConsumerTest(unittest.TestCase):
                          [("manual.txt", "removed.txt")])
         self.cli("access", str(self.directory), "deny")
         denied = self.example("ask", "cedar")
-        self.assertEqual(denied["response"]["decision_outcome"], "deny")
+        self.assertEqual(denied["response"]["trail"]["sources"][0]["outcome"], "deny")
         self.assertEqual(denied["include_relationships"], [])
         self.cli("access", str(self.directory), "allow")
         manifest["includes"] = {}
@@ -241,11 +247,11 @@ class DocumentationConsumerTest(unittest.TestCase):
         missing = self.example("ask", "frobnicatequantum")
         self.assertEqual(missing["outcome"], "insufficient_evidence")
         self.assertIsNone(missing["answer"])
-        self.assertFalse(missing["response"]["evidence"])
+        self.assertFalse(missing["response"]["passages"])
         packet = self.example("ask", "--budget-bytes", "4096", "overlay")
         self.assertEqual(packet["outcome"], "evidence_available")
-        self.assertLessEqual(packet["response"]["used_bytes"], 4096)
-        for hit in packet["response"]["evidence"]:
+        self.assertLessEqual(packet["response"]["trail"]["packing"]["used"], 4096)
+        for hit in packet["response"]["passages"]:
             self.assertIn("/c44beea485f0f2feaf460e2ac87fdd5608d63cf0/", hit["location"]["url"])
 
 

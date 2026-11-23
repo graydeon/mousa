@@ -2,189 +2,49 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
-	"strings"
-	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
 )
 
-// queryItems uses the canonical evaluation, retrieval, packing, and tracing
-// transaction. Only selected, accepted text is released from that snapshot.
-func queryItems(ctx context.Context, store *sqlite.Store, source mousa.Source, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
-	request, err := newRetrievalRequest(source.ID)
+// queryCommand names its source with a directory argument or --source, and
+// always takes the query text as the remaining argument.
+func queryCommand(ctx context.Context, storePath string, args []string) error {
+	flags := newCommandFlags("query")
+	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
+	mode := flags.String("mode", string(mousa.QueryLexical), "query mode: lexical")
+	if err := flags.Parse(args); err != nil {
+		return usageError{err.Error()}
+	}
+	if *mode != string(mousa.QueryLexical) {
+		return usageError{"query mode must be lexical"}
+	}
+	if *budget == 0 {
+		return usageError{"query byte budget must be positive"}
+	}
+	positional := flags.Args()
+	if len(positional) == 0 {
+		return usageError{"query requires a source and query text"}
+	}
+	source, _, err := selectSource(*sourceID, positional[:len(positional)-1], "query")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return queryItemsForRequest(ctx, store, source, request, query, policy, budgetBytes, packingPolicy)
-}
-
-func queryItemsForRequest(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, query, policy string, budgetBytes uint64, packingPolicy string) (*evidenceResult, error) {
-	terms, err := mousa.PrepareLexicalTerms(query, policy == "dedup")
+	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	expression := strings.Join(terms, " OR ")
-	traced, err := store.EvaluateAndTraceLexical(ctx, request, expression, queryCandidateLimit, budgetBytes, packingPolicy)
+	defer store.Close()
+	result, err := store.Query(ctx, mousa.QueryRequest{
+		Scope:  mousa.Scope{Source: source.ID},
+		Texts:  []string{positional[len(positional)-1]},
+		Mode:   mousa.QueryMode(*mode),
+		Budget: mousa.Budget{Unit: mousa.BudgetBytes, Limit: *budget},
+		Caller: accessActor,
+	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return lexicalEvidenceProjection(ctx, store, source, request, expression, policy, packingPolicy, traced)
-}
-
-func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source mousa.Source, request mousa.PolicyEvaluationRequest, expression, policy, packingPolicy string, traced sqlite.TracedLexicalResult) (*evidenceResult, error) {
-	result := &evidenceResult{
-		RequestID: request.ID.String(), DecisionID: traced.Decision.ID.String(),
-		DecisionOutcome: string(traced.Decision.Outcome), DecisionReasons: traced.Decision.ReasonCodes,
-		EvaluatedAtUsec: traced.Decision.EvaluatedAtUsec,
-		TrailID:         traced.Trail.ID.String(), PacketID: traced.Trail.PacketID,
-		Expression: expression, QueryPolicy: policy,
-		PackingPolicy: traced.Trail.PackingPolicy,
-		UsedBytes:     traced.Trail.UsedBytes, BudgetBytes: traced.Trail.BudgetBytes,
-		MatchedCandidates: len(traced.Candidates), CandidateLimit: queryCandidateLimit,
-		AccessEvent: "default",
-		Evidence:    []evidenceHit{},
-	}
-	if traced.Decision.AccessEventID != nil {
-		result.AccessEvent = traced.Decision.AccessEventID.String()
-	}
-	if packingPolicy == mousa.PackingExactV1 {
-		result.DuplicateOmitted = new(int)
-	}
-	type representationLocation struct {
-		record mousa.Representation
-		item   string
-		policy string
-	}
-	locations := make(map[mousa.RepresentationID]representationLocation)
-	for index, candidate := range traced.Candidates {
-		if candidate.Disposition != mousa.CandidateAccepted {
-			result.LifecycleExcluded++
-			continue
-		}
-		if !traced.Trail.Candidates[index].Selected {
-			if traced.Trail.Candidates[index].Omission == "duplicate" && result.DuplicateOmitted != nil {
-				*result.DuplicateOmitted++
-			} else {
-				result.BudgetOmitted++
-			}
-			continue
-		}
-		segment := candidate.Segment
-		location, exists := locations[segment.RepresentationID]
-		if !exists {
-			representation, err := store.GetRepresentation(ctx, segment.RepresentationID)
-			if err != nil {
-				return nil, err
-			}
-			if representation.ProcessorID != mousa.UTF8TextProcessorID {
-				return nil, fmt.Errorf("selected evidence is not normalized UTF-8 text")
-			}
-			policy, err := mousa.TextSegmentationPolicy(representation)
-			if err != nil {
-				return nil, err
-			}
-			item, err := itemPathForSegment(ctx, store, source, segment.ID)
-			if err != nil {
-				return nil, err
-			}
-			location = representationLocation{record: representation, item: item, policy: policy}
-			locations[segment.RepresentationID] = location
-		}
-		if err := segment.ValidateAgainst(location.record); err != nil {
-			return nil, err
-		}
-		byteRange, ok := segment.Selector.TextByteRange()
-		if !ok || byteRange.End-byteRange.Start != uint64(len(candidate.Text)) {
-			return nil, fmt.Errorf("selected evidence range disagrees with released text")
-		}
-		hit := evidenceHit{
-			Item: location.item, SegmentID: segment.ID.String(),
-			RepresentationID:     segment.RepresentationID.String(),
-			RepresentationSHA256: location.record.ContentSHA256.String(),
-			ByteStart:            byteRange.Start, ByteEnd: byteRange.End, SegmentPolicy: location.policy,
-			ContentSHA256: candidate.Segment.ContentSHA256.String(),
-			Rank:          candidate.FinalRank, Score: candidate.BM25,
-			ByteLength: len(candidate.Text), Text: candidate.Text,
-			Origin: "lexical",
-		}
-		if location.policy == mousa.TextSegmentNoteV1 {
-			note, exists := traced.Notes[segment.ID]
-			if !exists {
-				return nil, fmt.Errorf("note segment %s was selected without note metadata", segment.ID)
-			}
-			hit.Note = &note
-		}
-		result.Evidence = append(result.Evidence, hit)
-	}
-	switch {
-	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:
-		result.Outcome = "policy_excluded"
-		if !traced.Decision.StatePresent || traced.Decision.CollectionState == nil || *traced.Decision.CollectionState != mousa.CollectionActive {
-			result.Outcome = "lifecycle_excluded"
-		}
-	case len(result.Evidence) > 0:
-		result.Outcome = "evidence"
-	case result.BudgetOmitted > 0:
-		result.Outcome = "budget_omitted"
-	case result.LifecycleExcluded > 0:
-		result.Outcome = "lifecycle_excluded"
-	default:
-		result.Outcome = "no_matches"
-	}
-	return result, nil
-}
-
-const queryCandidateLimit = 100
-
-func newRetrievalRequest(sourceID mousa.SourceID) (mousa.PolicyEvaluationRequest, error) {
-	return callerRetrievalRequest(sourceID, "cli")
-}
-
-func callerRetrievalRequest(sourceID mousa.SourceID, caller string) (mousa.PolicyEvaluationRequest, error) {
-	request := mousa.PolicyEvaluationRequest{
-		Schema: mousa.PolicyEvaluationRequestSchema, Action: mousa.SourceRetrievalAction,
-		CallerNamespace: localNamespace + ".caller", ExternalCallerID: caller,
-		ExternalRequestID: caller + "-" + rand.Text(),
-		PurposeNamespace:  localNamespace + ".purpose", ExternalPurposeID: "retrieval",
-		SourceID: sourceID, RequestedAtUsec: time.Now().UnixMicro(),
-	}
-	id, err := mousa.NewPolicyEvaluationRequestID(request)
-	if err != nil {
-		return mousa.PolicyEvaluationRequest{}, err
-	}
-	request.ID = id
-	return request, nil
-}
-
-// itemPathForSegment derives an item identifier from verified immutable
-// ancestry. It also works for retired revisions; it does not infer activation.
-func itemPathForSegment(ctx context.Context, store *sqlite.Store, source mousa.Source, segmentID mousa.SegmentID) (string, error) {
-	segment, err := store.GetSegment(ctx, segmentID)
-	if err != nil {
-		return "", err
-	}
-	artifact, err := store.RepresentationSourceArtifact(ctx, segment.RepresentationID)
-	if err != nil {
-		return "", err
-	}
-	observation, err := store.GetObservation(ctx, artifact.ObservationID)
-	if err != nil {
-		return "", err
-	}
-	if observation.SourceID != source.ID {
-		return "", fmt.Errorf("segment does not belong to the queried source")
-	}
-	external, ok := strings.CutPrefix(observation.ExternalObservationID, itemPrefix)
-	if !ok {
-		return "", fmt.Errorf("observation is not a local item")
-	}
-	suffix := fmt.Sprintf("@%x", artifact.ContentSHA256)
-	relative := strings.TrimSuffix(external, suffix)
-	if relative == external || relative == "" {
-		return "", fmt.Errorf("item revision identity disagrees with artifact digest")
-	}
-	return relative, nil
+	return emit(result)
 }

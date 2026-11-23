@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -128,7 +129,7 @@ func startMCPClient(t *testing.T, run testRun, caller string, writable bool, sta
 		}
 		c.schemas[tool.Name] = resolved
 	}
-	if len(c.schemas) != 9 || c.schemas["mousa_sync"] == nil || c.schemas["mousa_status"] == nil || c.schemas["mousa_query"] == nil || c.schemas["mousa_trail"] == nil || c.schemas["mousa_vector_query"] == nil || c.schemas["mousa_hybrid_query"] == nil || c.schemas["mousa_vector_inputs"] == nil || c.schemas["mousa_vector_import"] == nil || c.schemas["mousa_remember"] == nil {
+	if len(c.schemas) != 5 || c.schemas["mousa_sync"] == nil || c.schemas["mousa_status"] == nil || c.schemas["mousa_query"] == nil || c.schemas["mousa_trail"] == nil || c.schemas["mousa_remember"] == nil {
 		t.Fatalf("unexpected discoverable tools: %+v", tools)
 	}
 	logMCPReceipt(t, map[string]any{"initialize": initialized, "tools": tools})
@@ -188,7 +189,7 @@ func (c *mcpTestClient) call(name string, arguments any, code string) map[string
 }
 
 func mcpQuery(source, text string, budget int) map[string]any {
-	return map[string]any{"source": source, "query": text, "policy": "dedup", "budget_bytes": budget}
+	return map[string]any{"source": source, "query": text, "mode": "lexical", "budget_bytes": budget}
 }
 
 func mcpItems(source string, records ...any) map[string]any {
@@ -218,28 +219,31 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 		t.Fatalf("wrong current/historical counts: %v", status)
 	}
 	query := client.call("mousa_query", mcpQuery("alpha", "cedar", 256), "")
-	if query["outcome"] != "evidence" || len(hits(query)) != 1 || query["used_bytes"] != float64(len(normalized)) {
+	if sourceDecision(t, query)["outcome"] != "allow" || len(hits(query)) != 1 || packingOf(query)["used"] != float64(len(normalized)) {
 		t.Fatalf("wrong source/budget selection: %v", query)
 	}
 	hit := hits(query)[0].(map[string]any)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(normalized)))
-	if hit["item"] != "notes@α" || hit["text"] != normalized || hit["byte_start"] != float64(0) || hit["byte_end"] != float64(len(normalized)) || hit["byte_length"] != float64(len(normalized)) || hit["content_sha256"] != digest || hit["representation_sha256"] != digest || hit["segment_policy"] != "fixed-v1" {
+	byteRange, _ := hit["range"].(map[string]any)
+	if hit["item"] != "notes@α" || hit["text"] != normalized || byteRange["start"] != float64(0) || byteRange["end"] != float64(len(normalized)) || int(byteRange["end"].(float64)-byteRange["start"].(float64)) != len(normalized) || hit["content_sha256"] != digest || hit["representation_sha256"] != digest || hit["segment_policy"] != "fixed-v1" {
 		t.Fatalf("evidence bytes/location/digests disagree: %v", hit)
 	}
-	for _, key := range []string{"request_id", "decision_id", "trail_id", "packet_id"} {
-		id, ok := query[key].(string)
-		decoded, err := hex.DecodeString(id)
-		if !ok || err != nil || len(decoded) != sha256.Size {
-			t.Fatalf("invalid %s: %v", key, query[key])
+	for _, id := range []any{trailOf(query)["id"], trailOf(query)["result_sha256"]} {
+		decoded, err := hex.DecodeString(id.(string))
+		if err != nil || len(decoded) != sha256.Size {
+			t.Fatalf("invalid hex ID: %v", id)
 		}
 	}
-	trail := map[string]any{"source": "alpha", "trail_id": query["trail_id"]}
-	inspection := client.call("mousa_trail", trail, "")
-	if inspection["authorization_outcome"] != "allow" || inspection["historical"].(map[string]any)["packet_id"] != query["packet_id"] {
-		t.Fatalf("trail disagrees with delivered packet: %v", inspection)
+	if trailOf(query)["request"].(map[string]any)["request_id"] == "" {
+		t.Fatalf("missing request ID: %v", trailOf(query))
 	}
-	client.call("mousa_trail", map[string]any{"source": "beta", "trail_id": query["trail_id"]}, "not_found")
-	if omitted := client.call("mousa_query", mcpQuery("alpha", "cedar", len(normalized)-1), ""); omitted["outcome"] != "budget_omitted" || len(hits(omitted)) != 0 {
+	trail := map[string]any{"trail_id": trailIDOf(query)}
+	inspection := client.call("mousa_trail", trail, "")
+	if !reflect.DeepEqual(inspection, trailOf(query)) {
+		t.Fatalf("trail read differs from the query's caller view: %v vs %v", inspection, query)
+	}
+	client.call("mousa_trail", map[string]any{"trail_id": strings.Repeat("1", 64)}, "not_found")
+	if omitted := client.call("mousa_query", mcpQuery("alpha", "cedar", len(normalized)-1), ""); len(hits(omitted)) != 0 || packingOf(omitted)["used"] != float64(0) {
 		t.Fatalf("byte budget boundary: %v", omitted)
 	}
 	client.close()
@@ -255,7 +259,7 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 		client.call("mousa_status", map[string]any{"source": source}, "source_not_permitted")
 		client.call("mousa_sync", mcpItems(source, item), "source_not_permitted")
 		client.call("mousa_query", mcpQuery(source, "cedar", 256), "source_not_permitted")
-		client.call("mousa_trail", map[string]any{"source": source, "trail_id": query["trail_id"]}, "source_not_permitted")
+		client.call("mousa_trail", map[string]any{"source": source, "trail_id": trailIDOf(query)}, "invalid_arguments")
 	}
 	for _, key := range []string{"store", "root", "caller", "caller_namespace", "external_caller_id"} {
 		args := mcpQuery("alpha", "cedar", 256)
@@ -273,10 +277,10 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 		client.call(tool, json.RawMessage(raw), "invalid_arguments")
 	}
 	for _, args := range []map[string]any{
-		{"source": "alpha", "query": "cedar", "budget_bytes": 256},
-		{"source": "alpha", "query": "cedar", "policy": "original", "budget_bytes": 0},
-		{"source": "alpha", "query": "cedar", "policy": "original", "budget_bytes": mcpMaxBudgetBytes + 1},
-		{"source": "alpha", "query": strings.Repeat("x", mcpMaxQueryBytes+1), "policy": "original", "budget_bytes": 256},
+		{"source": "alpha", "query": "cedar", "budget_bytes": 0},
+		{"source": "alpha", "query": "cedar", "mode": "vector", "budget_bytes": 256},
+		{"source": "alpha", "query": "cedar", "budget_bytes": mcpMaxBudgetBytes + 1},
+		{"source": "alpha", "query": strings.Repeat("x", mcpMaxQueryBytes+1), "budget_bytes": 256},
 	} {
 		client.call("mousa_query", args, "invalid_arguments")
 	}
@@ -315,7 +319,7 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 	if lenOf(updated, "updated") != 1 {
 		t.Fatalf("replacement: %v", updated)
 	}
-	if old := client.call("mousa_query", mcpQuery("alpha", "friday", 256), ""); old["outcome"] != "no_matches" {
+	if old := client.call("mousa_query", mcpQuery("alpha", "friday", 256), ""); len(hits(old)) != 0 {
 		t.Fatalf("old revision still indexed: %v", old)
 	}
 	deleted := map[string]any{"id": "notes@α", "deleted": true}
@@ -325,7 +329,7 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 	if report := client.call("mousa_sync", mcpItems("alpha", deleted), ""); lenOf(report, "absent") != 1 {
 		t.Fatalf("tombstone retry: %v", report)
 	}
-	if empty := client.call("mousa_query", mcpQuery("alpha", "cedar", 256), ""); empty["outcome"] != "no_matches" {
+	if empty := client.call("mousa_query", mcpQuery("alpha", "cedar", 256), ""); len(hits(empty)) != 0 {
 		t.Fatalf("deletion did not deactivate: %v", empty)
 	}
 	if other := client.call("mousa_query", mcpQuery("beta", "cedar", 256), ""); firstItem(t, other) != "beta-item" {
@@ -334,20 +338,16 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 	// Inspect the original retained trail after replacement and deletion.
 	client.call("mousa_trail", trail, "")
 	run.run(false, "access", "--source", "alpha", "deny")
-	if denied := client.call("mousa_query", mcpQuery("alpha", "committed", 256), ""); denied["outcome"] != "policy_excluded" || len(hits(denied)) != 0 {
+	if denied := client.call("mousa_query", mcpQuery("alpha", "committed", 256), ""); sourceDecision(t, denied)["outcome"] != "deny" || len(hits(denied)) != 0 {
 		t.Fatalf("denied text released: %v", denied)
 	}
-	if denied := client.call("mousa_trail", trail, ""); denied["historical"] != nil || denied["authorization_outcome"] != "deny" {
-		t.Fatalf("denied history released: %v", denied)
-	}
+	client.call("mousa_trail", trail, "not_found")
 	run.run(false, "access", "--source", "alpha", "allow")
 	run.run(false, "withdraw", "--source", "alpha")
-	if withdrawn := client.call("mousa_query", mcpQuery("alpha", "committed", 256), ""); withdrawn["outcome"] != "lifecycle_excluded" || len(hits(withdrawn)) != 0 {
+	if withdrawn := client.call("mousa_query", mcpQuery("alpha", "committed", 256), ""); sourceDecision(t, withdrawn)["outcome"] != "deny" || len(hits(withdrawn)) != 0 {
 		t.Fatalf("withdrawn text released: %v", withdrawn)
 	}
-	if withdrawn := client.call("mousa_trail", trail, ""); withdrawn["historical"] != nil {
-		t.Fatalf("withdrawn history released: %v", withdrawn)
-	}
+	client.call("mousa_trail", trail, "not_found")
 	client.call("mousa_sync", mcpItems("alpha", map[string]any{"id": "new", "text": "Cannot resume"}), "conflict")
 	_, err := client.session.CallTool(t.Context(), &mcp.CallToolParams{Name: "withdraw", Arguments: map[string]any{}})
 	var protocolError *jsonrpc.Error
@@ -358,7 +358,7 @@ func TestMCPDurableEvidenceAndBoundaries(t *testing.T) {
 	// Access is per source: a deny applies to every startup identity.
 	run.run(false, "access", "--source", "beta", "deny")
 	client = startMCPClient(t, run, "other-caller", false)
-	if denied := client.call("mousa_query", mcpQuery("beta", "cedar", 256), ""); len(hits(denied)) != 0 || denied["decision_outcome"] == "allow" {
+	if denied := client.call("mousa_query", mcpQuery("beta", "cedar", 256), ""); len(hits(denied)) != 0 || sourceDecision(t, denied)["outcome"] == "allow" {
 		t.Fatalf("source deny did not apply to another caller: %v", denied)
 	}
 	client.close()
@@ -400,9 +400,9 @@ func TestMCPCancellationAndDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.call("mousa_status", map[string]any{"source": "alpha"}, "")
-	var decisions int
-	if err := db.QueryRow("SELECT count(*) FROM policy_decisions").Scan(&decisions); err != nil || decisions != 0 {
-		t.Fatalf("cancelled query committed a decision: %d %v", decisions, err)
+	var trails int
+	if err := db.QueryRow("SELECT count(*) FROM trails").Scan(&trails); err != nil || trails != 0 {
+		t.Fatalf("cancelled query committed a trail: %d %v", trails, err)
 	}
 	if _, err := connection.ExecContext(t.Context(), "BEGIN IMMEDIATE"); err != nil {
 		t.Fatal(err)
@@ -565,18 +565,23 @@ func TestMCPConcurrentIngestionAndPacking(t *testing.T) {
 	run.run(false, "access", "--source", "alpha", "allow")
 	query := mcpQuery("alpha", "cedar birch maple willow", 256)
 	original := client.call("mousa_query", query, "")
-	evidence := hits(original)
-	if len(evidence) != 2 || evidence[0].(map[string]any)["text"] != evidence[1].(map[string]any)["text"] || evidence[0].(map[string]any)["segment_policy"] != "passage-v1" {
+	passages := hits(original)
+	if len(passages) != 1 || passages[0].(map[string]any)["text"] == "" || passages[0].(map[string]any)["segment_policy"] != "passage-v1" {
 		t.Fatalf("concurrent item batches interleaved: %v", original)
 	}
-	query["packing_policy"] = "exact-v1"
-	exact := client.call("mousa_query", query, "")
-	if len(hits(exact)) != 1 || exact["duplicate_omitted"] != float64(1) || hits(exact)[0].(map[string]any)["text"] != evidence[0].(map[string]any)["text"] {
-		t.Fatalf("explicit exact packing lost the distinct passage: %v", exact)
+	var duplicate map[string]any
+	for _, raw := range candidatesOf(original) {
+		candidate := raw.(map[string]any)
+		if candidate["omitted"] == "duplicate" {
+			duplicate = candidate
+		}
 	}
-	trail := client.call("mousa_trail", map[string]any{"source": "alpha", "trail_id": exact["trail_id"]}, "")
-	if trail["historical"].(map[string]any)["schema"] != "mousa.source_trail.v2" {
-		t.Fatalf("wrong versioned explanation: %v", trail)
+	if duplicate == nil || duplicate["duplicate_of"] != passages[0].(map[string]any)["segment_id"] {
+		t.Fatalf("first-fit packing did not suppress the duplicate: %v", original)
+	}
+	trail := client.call("mousa_trail", map[string]any{"trail_id": trailIDOf(original)}, "")
+	if trail["schema"] != "mousa.trail.v1" || !reflect.DeepEqual(trail, trailOf(original)) {
+		t.Fatalf("trail read differs from the query's caller view: %v", trail)
 	}
 	client.close()
 }

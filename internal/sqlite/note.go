@@ -13,24 +13,8 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
-// NoteStale explains why one citation no longer matches current source or
-// segment state. Reasons are emitted without releasing any cited text.
-type NoteStale struct {
-	TrailID   mousa.SourceTrailID `json:"trail_id"`
-	SegmentID *mousa.SegmentID    `json:"segment_id,omitempty"`
-	Reason    string              `json:"reason"`
-}
-
-// NoteEvidence is the note metadata attached to a selected note segment. An
-// internal note-policy segment must never be emitted without it.
-type NoteEvidence struct {
-	ID            mousa.SHA256         `json:"id"`
-	Author        string               `json:"author"`
-	CreatedAtUsec int64                `json:"created_at_usec"`
-	DerivedFrom   []mousa.NoteCitation `json:"derived_from"`
-	Origin        string               `json:"origin"`
-	Stale         []NoteStale          `json:"stale"`
-}
+type NoteStale = mousa.NoteStale
+type NoteEvidence = mousa.NoteEvidence
 
 // ExportedNote is the exact canonical note record plus its exact stored text.
 type ExportedNote struct {
@@ -42,6 +26,7 @@ const (
 	noteStaleSourceWithdrawn = "source_withdrawn"
 	noteStaleSourceDenied    = "source_denied"
 	noteStaleSegmentRetired  = "segment_retired"
+	noteCitationUnverifiable = "citation_unverifiable"
 )
 
 // RequireDocumentSource refuses document writes on a source that holds notes.
@@ -223,49 +208,20 @@ func resolveNoteCitations(ctx context.Context, conn *sql.Conn, citations []mousa
 			return nil, wrap(CodeInvalidRecord, "remember note", errors.New("citation repeats a trail"))
 		}
 		trails[citation.TrailID] = true
-		trail, err := getSourceTrail(ctx, conn, citation.TrailID)
-		if err != nil {
-			if IsCode(err, CodeNotFound) {
-				return nil, wrap(CodeNotFound, "remember note", fmt.Errorf("cited trail %s does not exist", citation.TrailID))
-			}
-			return nil, err
-		}
-		decisionID, err := mousa.ParsePolicyDecisionID(trail.DecisionID)
-		if err != nil {
-			return nil, wrap(CodeIntegrity, "remember note", err)
-		}
-		decision, err := getPolicyDecision(ctx, conn, decisionID)
+		trail, _, err := readTrailRecord(ctx, conn, citation.TrailID)
 		if err != nil {
 			return nil, err
 		}
-		if decision.Outcome != mousa.PolicyOutcomeAllow {
-			return nil, wrap(CodeConflict, "remember note", errors.New("cited trail did not allow retrieval"))
-		}
-		cited := decision.Request.SourceID
-		if permittedSources != nil && !permittedSources[cited] {
-			return nil, wrap(CodeConflict, "remember note", errors.New("cited source is not a configured source"))
-		}
-		access, _, err := snapshotAccess(ctx, conn, cited)
-		if err != nil {
+		if err := checkTrailAccess(ctx, conn, trail, permittedSources); err != nil {
 			return nil, err
 		}
-		if access != mousa.SourceAccessAllow {
-			return nil, wrap(CodeConflict, "remember note", errors.New("cited source access is denied"))
-		}
-		state, err := getIngestState(ctx, conn, cited)
-		if err != nil {
-			if IsCode(err, CodeNotFound) {
-				return nil, wrap(CodeConflict, "remember note", errors.New("cited source has no ingest state"))
-			}
+		if err := checkTrailReferences(ctx, conn, trail); err != nil {
 			return nil, err
-		}
-		if state.CollectionState == mousa.CollectionWithdrawn {
-			return nil, wrap(CodeConflict, "remember note", errors.New("cited source is withdrawn"))
 		}
 		var selected []mousa.SegmentID
 		selectedSet := make(map[mousa.SegmentID]bool)
 		for _, candidate := range trail.Candidates {
-			if candidate.Selected {
+			if candidate.Packed != "none" {
 				selected = append(selected, candidate.SegmentID)
 				selectedSet[candidate.SegmentID] = true
 			}
@@ -308,36 +264,8 @@ func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, autho
 	}
 	var result mousa.Note
 	err := store.writeImmediate(ctx, "remember note", func(conn *sql.Conn) error {
-		if _, err := getSource(ctx, conn, sourceID); err != nil {
+		if err := requireNoteDestination(ctx, conn, sourceID); err != nil {
 			return err
-		}
-		access, _, err := snapshotAccess(ctx, conn, sourceID)
-		if err != nil {
-			return err
-		}
-		if access != mousa.SourceAccessAllow {
-			return wrap(CodeConflict, "remember note", errors.New("source access is denied"))
-		}
-		state, err := getIngestState(ctx, conn, sourceID)
-		switch {
-		case err == nil:
-			if state.CollectionState == mousa.CollectionWithdrawn {
-				return wrap(CodeConflict, "remember note", errors.New("source is withdrawn"))
-			}
-		case IsCode(err, CodeNotFound):
-		default:
-			return err
-		}
-		var documents bool
-		if err := conn.QueryRowContext(ctx, `SELECT EXISTS(
-			SELECT 1 FROM local_items AS li
-			WHERE li.source_id = ? AND NOT EXISTS (
-				SELECT 1 FROM notes AS n WHERE n.source_id = li.source_id AND n.item_id = li.item_id
-			))`, sourceID[:]).Scan(&documents); err != nil {
-			return classify("remember note", err)
-		}
-		if documents {
-			return wrap(CodeConflict, "remember note", errors.New("source holds document items, not notes"))
 		}
 		resolved, err := resolveNoteCitations(ctx, conn, citations, permittedSources)
 		if err != nil {
@@ -358,41 +286,10 @@ func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, autho
 		if err != nil {
 			return wrap(CodeInvalidRecord, "remember note", err)
 		}
-		scoped := *store
-		scoped.noteConn = conn
-		if err := apply(&scoped, note.ItemID, note.CreatedAtUsec); err != nil {
+		if err := store.writeNote(ctx, conn, note, func(scoped *Store) error {
+			return apply(scoped, note.ItemID, note.CreatedAtUsec)
+		}); err != nil {
 			return err
-		}
-		data, err := mousa.EncodeNote(note)
-		if err != nil {
-			return wrap(CodeInvalidRecord, "remember note", err)
-		}
-		if err := checkRecordSize(data); err != nil {
-			return err
-		}
-		if _, err := conn.ExecContext(ctx, `INSERT INTO notes(id, source_id, item_id, record_json) VALUES (?, ?, ?, ?)`, note.ID[:], sourceID[:], note.ItemID, data); err != nil {
-			if sqliteConstraint(err) {
-				return wrap(CodeConflict, "remember note", err)
-			}
-			return classify("remember note", err)
-		}
-		for citationOrdinal, citation := range note.DerivedFrom {
-			for segmentOrdinal, segment := range citation.SegmentIDs {
-				if _, err := conn.ExecContext(ctx, `INSERT INTO note_citations(note_id, citation_ordinal, segment_ordinal, trail_id, segment_id) VALUES (?, ?, ?, ?, ?)`,
-					note.ID[:], citationOrdinal, segmentOrdinal, citation.TrailID[:], segment[:]); err != nil {
-					return classify("remember note citation", err)
-				}
-			}
-		}
-		if err := appendLog(ctx, conn, mousa.LogKindNote, note.ID[:], sourceID[:], data); err != nil {
-			return err
-		}
-		written, _, err := getNote(ctx, conn, sourceID, note.ItemID)
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(written, note) {
-			return integrity("remember note", "exact read-back disagrees with write")
 		}
 		result = note
 		return nil
@@ -403,121 +300,200 @@ func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, autho
 	return result, nil
 }
 
+func requireNoteDestination(ctx context.Context, q queryer, sourceID mousa.SourceID) error {
+	decision, err := currentSourceDecision(ctx, q, sourceID)
+	if err != nil {
+		return err
+	}
+	if decision.Access != mousa.SourceAccessAllow || decision.WithdrawalID != nil {
+		return wrap(CodeConflict, "write note", errors.New("destination source must allow access and not be withdrawn"))
+	}
+	var documents bool
+	err = q.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM local_items li WHERE li.source_id = ? AND NOT EXISTS (
+			SELECT 1 FROM notes n WHERE n.source_id = li.source_id AND n.item_id = li.item_id
+		))`, sourceID[:]).Scan(&documents)
+	if err != nil {
+		return classify("check note destination", err)
+	}
+	if documents {
+		return wrap(CodeConflict, "write note", errors.New("source holds document items, not notes"))
+	}
+	return nil
+}
+
+func (store *Store) writeNote(ctx context.Context, conn *sql.Conn, note mousa.Note, apply func(*Store) error) error {
+	data, err := mousa.EncodeNote(note)
+	if err != nil {
+		return wrap(CodeInvalidRecord, "write note", err)
+	}
+	if err := checkRecordSize(data); err != nil {
+		return err
+	}
+	scoped := *store
+	scoped.noteConn = conn
+	if err := apply(&scoped); err != nil {
+		return err
+	}
+	sourceID := note.SourceID
+	if _, err := conn.ExecContext(ctx, `INSERT INTO notes(id, source_id, item_id, record_json) VALUES (?, ?, ?, ?)`,
+		note.ID[:], sourceID[:], note.ItemID, data); err != nil {
+		if sqliteConstraint(err) {
+			return wrap(CodeConflict, "write note", err)
+		}
+		return classify("write note", err)
+	}
+	for ci, citation := range note.DerivedFrom {
+		for si, segment := range citation.SegmentIDs {
+			if _, err := conn.ExecContext(ctx, `INSERT INTO note_citations(note_id, citation_ordinal, segment_ordinal, trail_id, segment_id) VALUES (?, ?, ?, ?, ?)`,
+				note.ID[:], ci, si, citation.TrailID[:], segment[:]); err != nil {
+				return classify("write note citation", err)
+			}
+		}
+	}
+	if err := appendLog(ctx, conn, mousa.LogKindNote, note.ID[:], sourceID[:], data); err != nil {
+		return err
+	}
+	written, _, err := getNote(ctx, conn, sourceID, note.ItemID)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(written, note) {
+		return integrity("write note", "exact read-back disagrees with write")
+	}
+	return nil
+}
+
+// ImportNotes preserves note records verbatim and treats an identical existing
+// note as a retry. A conflicting item or invalid record rolls the batch back.
+func (store *Store) ImportNotes(ctx context.Context, sourceID mousa.SourceID, notes []ExportedNote, apply func(*Store, ExportedNote) error) (int, error) {
+	created := 0
+	err := store.writeImmediate(ctx, "import notes", func(conn *sql.Conn) error {
+		if err := requireNoteDestination(ctx, conn, sourceID); err != nil {
+			return err
+		}
+		for _, exported := range notes {
+			note := exported.Note
+			if note.SourceID != sourceID {
+				return wrap(CodeInvalidRecord, "import notes", errors.New("record belongs to a different source"))
+			}
+			if _, err := mousa.EncodeNote(note); err != nil {
+				return wrap(CodeInvalidRecord, "import notes", err)
+			}
+			if digest := mousa.SHA256(sha256.Sum256([]byte(exported.Text))); digest != note.ContentSHA256 {
+				return wrap(CodeInvalidRecord, "import notes", errors.New("text digest disagrees with note"))
+			}
+			existing, text, err := getNote(ctx, conn, sourceID, note.ItemID)
+			switch {
+			case err == nil:
+				if !reflect.DeepEqual(existing, note) || text != exported.Text {
+					return wrap(CodeConflict, "import notes", errors.New("note item already has a different record"))
+				}
+				continue
+			case !IsCode(err, CodeNotFound):
+				return err
+			}
+			if err := store.writeNote(ctx, conn, note, func(scoped *Store) error {
+				return apply(scoped, exported)
+			}); err != nil {
+				return err
+			}
+			created++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return created, nil
+}
+
 // noteStaleness evaluates every citation's current source and segment state.
 // The note stays immutable; the reasons describe what changed underneath it.
-func noteStaleness(ctx context.Context, conn *sql.Conn, note mousa.Note) ([]NoteStale, error) {
+func noteStaleness(ctx context.Context, q queryer, note mousa.Note) ([]NoteStale, error) {
 	stale := []NoteStale{}
 	for _, citation := range note.DerivedFrom {
-		trail, err := getSourceTrail(ctx, conn, citation.TrailID)
+		trail, _, err := readTrailRecord(ctx, q, citation.TrailID)
+		if IsCode(err, CodeNotFound) {
+			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteCitationUnverifiable})
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		decisionID, err := mousa.ParsePolicyDecisionID(trail.DecisionID)
-		if err != nil {
-			return nil, wrap(CodeIntegrity, "note staleness", err)
-		}
-		decision, err := getPolicyDecision(ctx, conn, decisionID)
-		if err != nil {
+		if err := checkTrailReferences(ctx, q, trail); err != nil {
 			return nil, err
 		}
-		cited := decision.Request.SourceID
-		state, err := getIngestState(ctx, conn, cited)
-		switch {
-		case err == nil:
-			if state.CollectionState == mousa.CollectionWithdrawn {
-				stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceWithdrawn})
+		packed := make(map[mousa.SegmentID][]mousa.SourceID)
+		for _, candidate := range trail.Candidates {
+			if candidate.Packed != "none" {
+				packed[candidate.SegmentID] = candidate.SourceIDs
 			}
-		case IsCode(err, CodeNotFound):
-			return nil, integrity("note staleness", "cited source has no ingest state")
-		default:
-			return nil, err
 		}
-		access, _, err := snapshotAccess(ctx, conn, cited)
-		if err != nil {
-			return nil, err
-		}
-		if access != mousa.SourceAccessAllow {
-			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceDenied})
-		}
+		unverifiable := false
 		for _, segment := range citation.SegmentIDs {
-			var active bool
-			if err := conn.QueryRowContext(ctx, `SELECT EXISTS(
-				SELECT 1 FROM segments AS s
-				JOIN local_items AS li ON li.representation_id = s.representation_id AND li.active = 1
-				WHERE s.id = ? AND li.source_id = ?)`, segment[:], cited[:]).Scan(&active); err != nil {
-				return nil, classify("note staleness", err)
+			if len(packed[segment]) == 0 {
+				unverifiable = true
+				break
 			}
-			if !active {
+		}
+		if unverifiable {
+			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteCitationUnverifiable})
+			continue
+		}
+		seen := make(map[mousa.SourceID]bool)
+		withdrawn, denied := false, false
+		for _, segment := range citation.SegmentIDs {
+			for _, cited := range packed[segment] {
+				if seen[cited] {
+					continue
+				}
+				seen[cited] = true
+				decision, err := currentSourceDecision(ctx, q, cited)
+				if err != nil {
+					return nil, err
+				}
+				withdrawn = withdrawn || decision.WithdrawalID != nil
+				denied = denied || decision.Access != mousa.SourceAccessAllow
+			}
+			var indexed bool
+			if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`,
+				segment[:]).Scan(&indexed); err != nil {
+				return nil, classify("recheck cited segment", err)
+			}
+			if !indexed {
 				stale = append(stale, NoteStale{TrailID: citation.TrailID, SegmentID: &segment, Reason: noteStaleSegmentRetired})
 			}
+		}
+		if withdrawn {
+			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceWithdrawn})
+		}
+		if denied {
+			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceDenied})
 		}
 	}
 	return stale, nil
 }
 
-// traceNoteEvidence resolves each selected candidate that belongs to a note.
-// It runs after the trail is recorded, inside the same transaction, so the
-// evidence snapshot matches the recorded selection.
-func traceNoteEvidence(ctx context.Context, conn *sql.Conn, sourceID mousa.SourceID, trail mousa.SourceTrail, candidates []mousa.VerifiedLexicalCandidate) (map[mousa.SegmentID]NoteEvidence, error) {
-	var notes map[mousa.SegmentID]NoteEvidence
-	selected := false
-	for _, candidate := range trail.Candidates {
-		if candidate.Selected {
-			selected = true
-			break
-		}
+func queryNoteEvidence(ctx context.Context, q queryer, source mousa.SourceID, item string) (*mousa.NoteEvidence, error) {
+	note, _, err := getNote(ctx, q, source, item)
+	if err != nil {
+		return nil, lexicalStructuralError("read note passage", err)
 	}
-	if !selected {
-		return nil, nil
-	}
-	hasNotes, err := sourceHasNotes(ctx, conn, sourceID)
+	stale, err := noteStaleness(ctx, q, note)
 	if err != nil {
 		return nil, err
 	}
-	if !hasNotes {
-		return nil, nil
+	origin := "unsourced"
+	if len(note.DerivedFrom) > 0 {
+		origin = "derived"
 	}
-	for index, candidate := range trail.Candidates {
-		if !candidate.Selected || index >= len(candidates) || candidates[index].Disposition != mousa.CandidateAccepted {
-			continue
-		}
-		var itemID string
-		err := conn.QueryRowContext(ctx, `SELECT n.item_id FROM notes AS n
-			JOIN local_items AS li ON li.source_id = n.source_id AND li.item_id = n.item_id
-			WHERE li.source_id = ? AND li.representation_id = ? AND li.active = 1`,
-			sourceID[:], candidates[index].Segment.RepresentationID[:]).Scan(&itemID)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, classify("trace note evidence", err)
-		}
-		note, _, err := getNote(ctx, conn, sourceID, itemID)
-		if err != nil {
-			return nil, err
-		}
-		stale, err := noteStaleness(ctx, conn, note)
-		if err != nil {
-			return nil, err
-		}
-		evidence := NoteEvidence{
-			ID: note.ID, Author: note.Author, CreatedAtUsec: note.CreatedAtUsec,
-			DerivedFrom: note.DerivedFrom, Origin: "unsourced", Stale: stale,
-		}
-		if len(note.DerivedFrom) > 0 {
-			evidence.Origin = "derived"
-		}
-		if notes == nil {
-			notes = make(map[mousa.SegmentID]NoteEvidence)
-		}
-		notes[candidate.SegmentID] = evidence
-	}
-	return notes, nil
+	return &mousa.NoteEvidence{
+		ID: note.ID, Author: note.Author, CreatedAtUsec: note.CreatedAtUsec,
+		DerivedFrom: note.DerivedFrom, Origin: origin, Stale: stale,
+	}, nil
 }
 
-// ExportNotes releases every note of one source in stable item order, with
-// the exact canonical record and exact stored text, only while the source
-// allows access and is not withdrawn.
 func (store *Store) ExportNotes(ctx context.Context, sourceID mousa.SourceID) ([]ExportedNote, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

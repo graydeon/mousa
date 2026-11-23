@@ -55,13 +55,14 @@ Preview followed by synchronization is not an atomic filesystem snapshot.
   mean the passages answer the question. `support: not_assessed` and `answer: null`
   are explicit: the caller must assess relevance and completeness.
 - `outcome: insufficient_evidence` contains no passages or invented citations.
-  Inspect `response.outcome` to distinguish `no_matches`, `budget_omitted`,
-  `policy_excluded` and `lifecycle_excluded`. A semantically unrelated lexical
+  Inspect `response.trail.sources[0].outcome` to distinguish `allow` from `deny`,
+  `sources[0].reasons` for lifecycle causes such as `source_withdrawn`, and
+  `trail.candidates[].omitted` for `budget`. A semantically unrelated lexical
   match can still produce `evidence_available`; there is no answerability model.
-- `response.evidence` contains the exact retrieved text, item, segment and
+- `response.passages` contains the exact retrieved text, item, segment and
   representation identities, normalized representation SHA-256 and zero-based,
-  end-exclusive UTF-8 byte coordinates. `location` adds the pinned source URL
-  and one-based normalized line range. Line ranges locate the selected bytes;
+  end-exclusive UTF-8 byte coordinates in `range.start`/`range.end`. `location`
+  adds the pinned source URL and one-based normalized line range. Line ranges locate the selected bytes;
   they do not promise a complete section, command or AsciiDoc include.
 - `include_relationships` lists direct manifest include edges only when both
   documents contributed selected evidence. Each edge locates the literal

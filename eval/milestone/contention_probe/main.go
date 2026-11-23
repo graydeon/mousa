@@ -1,25 +1,11 @@
-// Command contention_probe measures query latency with concurrent queriers while a real
-// `mousa sync` writes to the same store, for two trail placements:
-//
-//	A  one writer transaction per query: Store.EvaluateAndTraceLexical, today's
-//	   CLI query path (decision, retrieval, packing, trail insert and read-back
-//	   under BEGIN IMMEDIATE).
-//	B  a short writer transaction plus a read transaction:
-//	   Store.EvaluateSourceRetrieval (re-reads access, inserts the decision,
-//	   reads it back) then Store.SearchEnforcedLexical (read-only retrieval).
-//
-// B stands in for "query in a read transaction, write the trail in a short
-// write transaction afterwards". Its write is the decision record, not a trail
-// with candidate rows, and it runs before the read rather than after; the lock
-// pattern (one short write per query, retrieval outside the write lock) is the
-// part being measured. Each querier owns one Store, so one SQLite connection.
-// Stores open one after another: open takes the write lock for its checks.
+// Command contention_probe measures the production query and audit write with
+// concurrent queriers while a real `mousa sync` writes to the same store.
+// Each querier owns one Store and one SQLite connection.
 package main
 
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -57,9 +43,8 @@ type phase struct {
 
 func main() {
 	bin := flag.String("bin", "", "mousa binary used for the concurrent sync")
-	storePath := flag.String("store", "", "store holding the queried source; it gains decisions and trails")
+	storePath := flag.String("store", "", "store holding the queried source; it gains trails")
 	source := flag.String("source", "", "external ID of the queried JSONL source")
-	layout := flag.String("layout", "A", "A or B")
 	queriers := flag.Int("queriers", 16, "concurrent queriers, one Store each")
 	queriesFile := flag.String("queries", "", "query texts, one per line")
 	syncSource := flag.String("sync-source", "", "external ID synced during the run (empty: no sync)")
@@ -68,8 +53,8 @@ func main() {
 	tail := flag.Duration("tail", 10*time.Second, "window after the sync ends")
 	out := flag.String("out", "", "JSON report path")
 	flag.Parse()
-	if *storePath == "" || *source == "" || *queriesFile == "" || (*layout != "A" && *layout != "B") || *queriers < 1 {
-		fail(fmt.Errorf("need -store, -source, -queries, -layout A|B and -queriers >= 1"))
+	if *storePath == "" || *source == "" || *queriesFile == "" || *queriers < 1 {
+		fail(fmt.Errorf("need -store, -source, -queries and -queriers >= 1"))
 	}
 	ctx := context.Background()
 	queries, err := readLines(*queriesFile)
@@ -91,23 +76,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	run := func(store *sqlite.Store, text string) error {
-		terms, err := mousa.PrepareLexicalTerms(text, false)
-		if err != nil {
-			return err
-		}
-		expression := strings.Join(terms, " OR ")
-		request, err := newRequest(sourceID)
-		if err != nil {
-			return err
-		}
-		if *layout == "A" {
-			_, err = store.EvaluateAndTraceLexical(ctx, request, expression, candidateLimit, budgetBytes, mousa.PackingOriginal)
-			return err
-		}
-		if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
-			return err
-		}
-		_, err = store.SearchEnforcedLexical(ctx, request, expression, candidateLimit)
+		_, err := store.Query(ctx, mousa.QueryRequest{
+			Scope: mousa.Scope{Source: sourceID}, Texts: []string{text}, Limit: candidateLimit,
+			Budget: mousa.Budget{Limit: budgetBytes, Unit: mousa.BudgetBytes}, Caller: "contention-probe",
+		})
 		return err
 	}
 
@@ -176,7 +148,7 @@ func main() {
 		return summarize(in, to-from)
 	}
 	report := map[string]any{
-		"protocol": "mousa-contention-v1", "layout": *layout, "queriers": *queriers,
+		"protocol": "mousa-contention-v2", "layout": "B", "queriers": *queriers,
 		"store": *storePath, "candidate_limit": candidateLimit, "budget_bytes": budgetBytes,
 		"open_all_ms": ms(openTime), "sync": syncReport,
 		"idle":   window(0, syncStart),
@@ -191,19 +163,6 @@ func main() {
 			fail(err)
 		}
 	}
-}
-
-func newRequest(sourceID mousa.SourceID) (mousa.PolicyEvaluationRequest, error) {
-	request := mousa.PolicyEvaluationRequest{
-		Schema: mousa.PolicyEvaluationRequestSchema, Action: mousa.SourceRetrievalAction,
-		CallerNamespace: "mousa-local.caller", ExternalCallerID: "probe",
-		ExternalRequestID: "probe-" + rand.Text(),
-		PurposeNamespace:  "mousa-local.purpose", ExternalPurposeID: "retrieval",
-		SourceID: sourceID, RequestedAtUsec: time.Now().UnixMicro(),
-	}
-	id, err := mousa.NewPolicyEvaluationRequestID(request)
-	request.ID = id
-	return request, err
 }
 
 func summarize(in []sample, span time.Duration) phase {

@@ -99,16 +99,34 @@ def sync(binary, store, directory, timeout):
             "manifest_sha256": digest, "response": response}
 
 
+
+def directory_source_id(root):
+    """Mirror of the CLI's mousa-local source identity for a directory root."""
+    external = os.path.abspath(str(root)).encode()
+    parts = (b"mousa.source.v1", b"mousa-local", external)
+    return hashlib.sha256(b"".join(
+        len(part).to_bytes(8, "big") + part for part in parts)).hexdigest()
+
+
 def ask(binary, store, directory, question, budget, timeout, arguments=()):
     manifest, documents, digest = load_corpus(directory)
     response = invoke(binary, store, ["query", "--budget-bytes", str(budget), *arguments,
                       str(directory), question], timeout)
-    if response["source"] != str(directory) or response["query"] != question:
-        raise ValueError("query source or question mismatch")
-    if response["budget_bytes"] != budget:
+    trail = response["trail"]
+    request = trail["request"]
+    expected_source = directory_source_id(directory)
+    if request["scope"] != {"kind": "source", "sources": [expected_source]}:
+        raise ValueError("query source mismatch")
+    if request["texts"] != [question]:
+        raise ValueError("query question mismatch")
+    if request["budget"] != {"limit": budget, "unit": "bytes"}:
         raise ValueError("query budget mismatch")
-    evidence = response["evidence"] or []
-    if evidence and (response["decision_outcome"] != "allow" or response["outcome"] != "evidence"):
+    decisions = trail["sources"]
+    if len(decisions) != 1 or decisions[0]["source_id"] != expected_source:
+        raise ValueError("query source decision mismatch")
+    decision = decisions[0]
+    evidence = response["passages"] or []
+    if evidence and decision["outcome"] != "allow":
         raise ValueError("evidence without an allowed decision")
     used = 0
     for hit in evidence:
@@ -118,13 +136,14 @@ def ask(binary, store, directory, question, budget, timeout, arguments=()):
         selected = verify_evidence(hit, documents[name])
         used += len(selected)
         normalized = documents[name].removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-        first = normalized[:hit["byte_start"]].count(b"\n") + 1
-        last = normalized[:hit["byte_end"] - 1].count(b"\n") + 1
+        first = normalized[:hit["range"]["start"]].count(b"\n") + 1
+        last = normalized[:hit["range"]["end"] - 1].count(b"\n") + 1
         hit["location"] = {"path": name, "line_start": first, "line_end": last,
                            "url": manifest["files"][name]["url"]}
-    if used != response["used_bytes"] or used > budget:
+    declared = (trail.get("packing") or {}).get("used", 0)
+    if used != declared or used > budget:
         raise ValueError("released evidence exceeds declared accounting")
-    if not evidence and response["outcome"] == "evidence":
+    if not evidence and declared:
         raise ValueError("empty evidence result")
     selected_items = {hit["item"] for hit in evidence}
     include_relationships = []

@@ -16,6 +16,7 @@ type Store struct {
 	db       *sql.DB
 	readOnly bool
 	path     string
+	propose  proposer
 	// noteConn is non-nil only on the scoped copy Remember passes to its item
 	// writer, so the note's ingest work joins the caller's transaction.
 	noteConn *sql.Conn

@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 )
 
 // TestSourceAccessAllowDenyAndWithdrawal drives the per-source access decision
-// through the enforced search path of a real store.
+// through the audited query path of a real store.
 func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "access.sqlite")
@@ -27,28 +28,23 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	}
 	document := addEnforcedDocument(t, store, batch.Observation, "access-body", "harbor access evidence")
 	sourceID := batch.Source.ID
-	search := func(externalRequestID string) (mousa.PolicyDecision, []mousa.VerifiedLexicalCandidate) {
+	search := func() (mousa.SourceDecision, []mousa.Passage) {
 		t.Helper()
-		request := testEvaluationRequest(t, sourceID, externalRequestID)
-		decision, err := store.EvaluateSourceRetrieval(ctx, request)
+		result, err := store.Query(ctx, auditRequest(sourceID))
 		if err != nil {
-			t.Fatalf("EvaluateSourceRetrieval(%s): %v", externalRequestID, err)
+			t.Fatal(err)
 		}
-		result, err := store.SearchEnforcedLexical(ctx, request, "harbor", 10)
-		if err != nil {
-			t.Fatalf("SearchEnforcedLexical(%s): %v", externalRequestID, err)
-		}
-		return decision, result.Candidates
+		return result.Trail.Sources[0], result.Passages
 	}
-	requireReasons := func(decision mousa.PolicyDecision, outcome mousa.PolicyDecisionOutcome, access mousa.SourceAccess, reasons ...mousa.PolicyDecisionReason) {
+	requireReasons := func(decision mousa.SourceDecision, outcome string, access mousa.SourceAccess, reasons ...string) {
 		t.Helper()
-		if decision.Outcome != outcome || decision.Access != access || !reflect.DeepEqual(decision.ReasonCodes, reasons) {
-			t.Fatalf("decision = %s %s %v, want %s %s %v", decision.Outcome, decision.Access, decision.ReasonCodes, outcome, access, reasons)
+		if decision.Outcome != outcome || decision.Access != access || !reflect.DeepEqual(decision.Reasons, reasons) {
+			t.Fatalf("decision = %s %s %v, want %s %s %v", decision.Outcome, decision.Access, decision.Reasons, outcome, access, reasons)
 		}
 	}
 
-	decision, candidates := search("default")
-	requireReasons(decision, mousa.PolicyOutcomeDeny, mousa.SourceAccessDeny, mousa.PolicyReasonAccessDefault)
+	decision, candidates := search()
+	requireReasons(decision, "deny", "default", "access_default")
 	if decision.AccessEventID != nil {
 		t.Fatalf("default decision cited an event: %v", decision.AccessEventID)
 	}
@@ -60,12 +56,12 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	if err != nil || !changed || allowEvent.Access != mousa.SourceAccessAllow {
 		t.Fatalf("SetSourceAccess(allow) = %#v, %v, %v", allowEvent, changed, err)
 	}
-	decision, candidates = search("allowed")
-	requireReasons(decision, mousa.PolicyOutcomeAllow, mousa.SourceAccessAllow, mousa.PolicyReasonAllow)
+	decision, candidates = search()
+	requireReasons(decision, "allow", mousa.SourceAccessAllow, "allow")
 	if decision.AccessEventID == nil || *decision.AccessEventID != allowEvent.ID {
 		t.Fatalf("allow decision cited %v, want %v", decision.AccessEventID, allowEvent.ID)
 	}
-	if len(candidates) != 1 || candidates[0].Segment.ID != document.segments[0].ID {
+	if len(candidates) != 1 || candidates[0].SegmentID != document.segments[0].ID {
 		t.Fatalf("allowed candidates = %#v", candidates)
 	}
 
@@ -85,8 +81,8 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM access_events WHERE source_id = ?`, sourceID[:]).Scan(&eventRows); err != nil || eventRows != 2 {
 		t.Fatalf("access_events rows = %d, %v, want 2", eventRows, err)
 	}
-	decision, candidates = search("denied")
-	requireReasons(decision, mousa.PolicyOutcomeDeny, mousa.SourceAccessDeny, mousa.PolicyReasonAccessDenied)
+	decision, candidates = search()
+	requireReasons(decision, "deny", mousa.SourceAccessDeny, "access_denied")
 	if decision.AccessEventID == nil || *decision.AccessEventID != denyEvent.ID {
 		t.Fatalf("deny decision cited %v, want %v", decision.AccessEventID, denyEvent.ID)
 	}
@@ -97,8 +93,8 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	if _, changed, err := store.SetSourceAccess(ctx, sourceID, mousa.SourceAccessAllow, "test"); err != nil || !changed {
 		t.Fatalf("SetSourceAccess(allow) = %v, %v", changed, err)
 	}
-	decision, candidates = search("re-allowed")
-	requireReasons(decision, mousa.PolicyOutcomeAllow, mousa.SourceAccessAllow, mousa.PolicyReasonAllow)
+	decision, candidates = search()
+	requireReasons(decision, "allow", mousa.SourceAccessAllow, "allow")
 	if len(candidates) != 1 {
 		t.Fatalf("re-allowed source candidates = %#v", candidates)
 	}
@@ -111,8 +107,8 @@ func TestSourceAccessAllowDenyAndWithdrawal(t *testing.T) {
 	if err := store.WithdrawSource(ctx, withdrawal); err != nil {
 		t.Fatalf("WithdrawSource: %v", err)
 	}
-	decision, candidates = search("withdrawn")
-	requireReasons(decision, mousa.PolicyOutcomeDeny, mousa.SourceAccessAllow, mousa.PolicyReasonSourceWithdrawn)
+	decision, candidates = search()
+	requireReasons(decision, "deny", mousa.SourceAccessAllow, "source_withdrawn")
 	if len(candidates) != 0 {
 		t.Fatalf("withdrawn source released candidates: %#v", candidates)
 	}
@@ -146,7 +142,6 @@ type accessOrderFixture struct {
 	source      mousa.SourceID
 	other       mousa.SourceID
 	allow, deny mousa.AccessEvent
-	requests    int
 }
 
 func newAccessOrderFixture(t *testing.T) *accessOrderFixture {
@@ -188,11 +183,9 @@ func (f *accessOrderFixture) set(t *testing.T, sourceID mousa.SourceID, access m
 	return event
 }
 
-func (f *accessOrderFixture) query(t *testing.T, sourceID mousa.SourceID) (TracedLexicalResult, error) {
+func (f *accessOrderFixture) query(t *testing.T, sourceID mousa.SourceID) (mousa.QueryResult, error) {
 	t.Helper()
-	f.requests++
-	request := testEvaluationRequest(t, sourceID, fmt.Sprintf("order-%d", f.requests))
-	return f.store.EvaluateAndTraceLexical(t.Context(), request, "harbor", 10, 8192, mousa.PackingOriginal)
+	return f.store.Query(t.Context(), auditRequest(sourceID))
 }
 
 func (f *accessOrderFixture) seq(t *testing.T, id mousa.AccessEventID) int64 {
@@ -210,12 +203,12 @@ func (f *accessOrderFixture) requireRefused(t *testing.T) {
 	if !IsCode(err, CodeIntegrity) {
 		t.Fatalf("query = %v, want integrity", err)
 	}
-	if !reflect.DeepEqual(result, TracedLexicalResult{}) {
+	if !reflect.DeepEqual(result, mousa.QueryResult{}) {
 		t.Fatalf("refused query released %#v", result)
 	}
 	other, err := f.query(t, f.other)
-	if err != nil || other.Decision.Access != mousa.SourceAccessAllow {
-		t.Fatalf("other source query = %v, %v, want allow", other.Decision.Access, err)
+	if err != nil || other.Trail.Sources[0].Access != mousa.SourceAccessAllow {
+		t.Fatalf("other source query = %v, %v, want the allow access setting", other, err)
 	}
 }
 
@@ -276,9 +269,9 @@ func TestAccessEventTimesIncreaseWithSeq(t *testing.T) {
 		if err != nil || !changed || event.OccurredAtUsec != step.want {
 			t.Fatalf("step %d: event at %d, changed %v, err %v; want at %d", i, event.OccurredAtUsec, changed, err, step.want)
 		}
-		decision, err := store.EvaluateSourceRetrieval(ctx, testEvaluationRequest(t, sourceID, fmt.Sprintf("clock-%d", i)))
-		if err != nil || decision.Access != step.access || *decision.AccessEventID != event.ID {
-			t.Fatalf("step %d: decision %v %v, err %v", i, decision.Access, decision.AccessEventID, err)
+		latest, err := currentAccessEvent(ctx, store.db, sourceID)
+		if err != nil || latest == nil || *latest != event {
+			t.Fatalf("step %d: latest %v, err %v, want %v", i, latest, err, event)
 		}
 	}
 }
@@ -340,5 +333,12 @@ func BenchmarkCurrentAccessEvent(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func seedEvaluationFixture(t testing.TB, store *Store) {
+	t.Helper()
+	if err := store.PutSource(context.Background(), testSource(t)); err != nil {
+		t.Fatalf("PutSource: %v", err)
 	}
 }

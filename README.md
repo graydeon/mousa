@@ -19,14 +19,8 @@ Sources move through nine explicit stages before they become usable context.
 
 ![Mousa's nine stages, read left to right and top to bottom: ingest, normalize, segment; index, match, rank; verify, trace, pack.](assets/mousa-nine-stages.svg)
 
-Mousa prepares your material, finds matching evidence, and assembles a context packet
-with a Source Trail. Each stage has one responsibility; the diagram shows the
-logical backbone rather than the exact order of database operations.
+Mousa prepares your material, finds matching evidence, and assembles passages with one durable query trail. Each stage has one responsibility; the diagram shows the logical backbone rather than the exact order of database operations.
 
-Search defaults to lexical retrieval. Native callers can also export authorized
-passages, import externally produced vectors and query one declared space by exact
-cosine similarity or fuse lexical and vector matches with reciprocal rank fusion.
-Automatic embeddings, factual freshness and semantic conflict checks remain planned.
 [Explore each stage and its implementation boundary →](docs/OVERVIEW.md#the-nine-stage-retrieval-backbone)
 
 > **Pre-alpha.** CLI and local stdio MCP are available. Build from source with
@@ -41,8 +35,8 @@ Mousa makes that context smaller and easier to inspect:
 
 | Your need | What Mousa gives you |
 |---|---|
-| Find useful passages | Source-scoped lexical, exact cosine, or hybrid RRF retrieval with caller-supplied vectors. |
-| Control context size | A released-text byte budget, optional exact-content deduplication. |
+| Find useful passages | Source-scoped lexical retrieval. |
+| Control context size | A released-text byte budget, with exact-content deduplication. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
 | Use your own tools | One Go executable, SQLite storage, JSON output and local stdio MCP. |
@@ -61,47 +55,28 @@ CGO_ENABLED=0 go build -o mousa ./cmd/mousa
 ./mousa -store local.sqlite query --budget-bytes 4096 ./documents 'harbor inspection'
 ```
 
-Commands return JSON. A query reports selected evidence, a context packet ID and a
-`trail_id`. Inspect that trail with:
+Commands return JSON. Query returns `passages` and their `trail`. Read the saved trail with:
 
 ```sh
-./mousa -store local.sqlite trail ./documents TRAIL_ID
+./mousa -store local.sqlite trail TRAIL_ID
 ```
 
-Replace `TRAIL_ID` with the query's returned identifier. The 4,096-byte budget covers
+Replace `TRAIL_ID` with `trail.id`. The 4,096-byte budget covers
 released passage text, not JSON overhead or model tokens. Preview shows what would
 be imported without opening the store. A source with no access event is denied to
 every caller; `--allow` records allow after the sync. Without it, the query above
-would return `decision_outcome: deny` and no evidence. See
+would return `trail.sources[0].outcome: deny` and no passages. See
 [access](docs/USAGE.md#access).
 
 **Next:** [directory selection and resync](docs/USAGE.md#local-usage-cmdmousa),
 [JSONL input and administration](docs/USAGE.md#local-usage-cmdmousa), or
 [MCP setup](docs/USAGE.md#local-mcp-usage).
 
-For externally generated embeddings, see the [native vector workflow](docs/USAGE.md#caller-supplied-vector-workflow).
-Mousa performs no model inference or network calls for this path.
-Use [native hybrid retrieval](docs/USAGE.md#hybrid-lexical-and-vector-query) to combine
-query text and an explicitly supplied vector in one ranked, packed result.
-
-MCP clients can [export authorized passage inputs, import external embeddings and
-query them](docs/USAGE.md#mcp-vector-and-hybrid-example) without native vector
-preparation. Export requires retrieval authorization; import separately requires
-`--ingest-source` and, over HTTP, `mousa:write`. Embedding generation stays external.
-`mousa_trail` adds recorded vector/hybrid facts only when `retrieval_details` is
-true; default lexical tools and inspection stay unchanged.
-
 ## What works today?
 
-Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, byte-budget packing, exact-content deduplication and
-Source Trail inspection are implemented. Agents can save durable notes and recall them through lexical query with authorship, lineage, and stale-citation flags. The same executable serves local stdio MCP.
+Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, and byte-budget packing are implemented. One query writes one canonical `mousa.trail.v1` record as a log leaf; its `result_sha256` is stable for the same request and store state. Agents can save, export, import, and recall durable notes with authorship and citation status. The same executable serves local stdio MCP.
 
-Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
-records branch contributions in v6. Access is an append-only per-source event
-log; a source with no access event is denied to every caller.
-Inspection reauthorizes access, including a committed decision on denial without
-historical disclosure. Historical record-by-ID reads remain native-only.
-Automatic embedding generation and secret filtering remain pending.
+Access defaults to deny. The owner reads full trails through the store file; MCP checks current access and omits denied-source details. Vector and hybrid retrieval are not supported by this schema.
 
 Scale at 100k documents and 1M retrieval units is a development target, not a
 property of today's binary. It remains a target until the scale probe passes at

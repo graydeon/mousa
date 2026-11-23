@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 import memory
-from memory_test import evidence
+from memory_test import evidence, query_result
 
 
 def revision(label, text, author="Ada"):
@@ -40,17 +40,17 @@ class ChronologyTests(unittest.TestCase):
     def test_each_selected_revision_keeps_its_own_attribution(self):
         h = fixture()
         for row in h["revisions"]:
-            rendered = memory.render({"source": h["source"], "evidence": [evidence("shared", row["text"])]}, h, "beacon")
+            rendered = memory.render(query_result(h["source"], [evidence("shared", row["text"], h["source"])]), h, "beacon")
             self.assertEqual(rendered["passages"][0]["attribution"]["author"], row["author"])
             self.assertEqual(rendered["passages"][0]["revision_labels"], [row["revision"]])
         with self.assertRaisesRegex(ValueError, "source identity"):
-            memory.render({"source": "named-beta", "evidence": []}, h, "beacon")
+            memory.render(query_result("named-beta", []), h, "beacon")
 
     def test_equivalent_normalized_content_requires_equal_attribution(self):
         h = fixture()
         h["revisions"].append(revision("equivalent", "\ufeffbeacon initial\r\n"))
         memory.validate_chronology(h)
-        rendered = memory.render({"source": h["source"], "evidence": [evidence("shared", "beacon initial\n")]}, h, "beacon")
+        rendered = memory.render(query_result(h["source"], [evidence("shared", "beacon initial\n", h["source"])]), h, "beacon")
         self.assertEqual(rendered["passages"][0]["revision_labels"], ["first", "equivalent"])
         h["revisions"][-1]["author"] = "Conflicting"
         with self.assertRaisesRegex(ValueError, "ambiguous normalized"):
@@ -76,8 +76,8 @@ class ChronologyTests(unittest.TestCase):
         h = fixture()
         h["revisions"][0] = revision("first", "\ufeff\ufeffbeacon café\r\n")
         normalized = "\ufeffbeacon café\n"
-        hit = evidence("shared", normalized)
-        rendered = memory.render({"source": h["source"], "evidence": [hit]}, h, "beacon")
+        hit = evidence("shared", normalized, h["source"])
+        rendered = memory.render(query_result(h["source"], [hit]), h, "beacon")
         self.assertEqual(rendered["passages"][0]["evidence"]["text"], normalized)
 
 

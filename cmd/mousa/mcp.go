@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
@@ -75,8 +77,8 @@ func mcpCommand(parent context.Context, storePath string, args []string) error {
 		sources[label] = source
 	}
 	// Validate the trusted identity before opening or creating a store.
-	if _, err := callerRetrievalRequest(sources[allowed[0]].source.ID, *caller); err != nil {
-		return usageError{err.Error()}
+	if !utf8.ValidString(*caller) || strings.ContainsAny(*caller, "\u2028\u2029") {
+		return usageError{"mcp --caller must be valid UTF-8 text"}
 	}
 	var httpConfig *mcpHTTPConfig
 	if *httpConfigPath != "" {
@@ -171,14 +173,6 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Inspect Mousa source status"
 		case "mousa_query":
 			definition.Title = "Retrieve Mousa evidence"
-		case "mousa_vector_query":
-			definition.Title = "Retrieve Mousa vector evidence"
-		case "mousa_hybrid_query":
-			definition.Title = "Retrieve Mousa hybrid evidence"
-		case "mousa_vector_inputs":
-			definition.Title = "Export Mousa embedding inputs"
-		case "mousa_vector_import":
-			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
 		case "mousa_remember":
@@ -186,7 +180,8 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 		}
 		closed := false
 		destructive := mcpIngestionTool(definition.Name)
-		definition.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: definition.Name == "mousa_status", IdempotentHint: definition.Name == "mousa_status" || definition.Name == "mousa_vector_import", DestructiveHint: &destructive, OpenWorldHint: &closed}
+		readOnly := definition.Name == "mousa_status" || definition.Name == "mousa_trail"
+		definition.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: readOnly, IdempotentHint: readOnly, DestructiveHint: &destructive, OpenWorldHint: &closed}
 		if a.http {
 			scopes := []string{"mousa:read"}
 			if destructive {
@@ -219,12 +214,16 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	if err != nil {
 		return mcpFailure(operation, "", "invalid_arguments", err, 0, 0)
 	}
-	configured, ok := a.sources[args.Source]
-	if !ok {
-		return mcpFailure(operation, args.Source, "source_not_permitted", errors.New("source is not configured"), 0, 0)
-	}
-	if mcpIngestionTool(operation) && !configured.write {
-		return mcpFailure(operation, args.Source, "ingestion_not_permitted", errors.New("ingestion is disabled for this source"), 0, 0)
+	var configured mcpSource
+	if operation != "mousa_trail" {
+		var ok bool
+		configured, ok = a.sources[args.Source]
+		if !ok {
+			return mcpFailure(operation, args.Source, "source_not_permitted", errors.New("source is not configured"), 0, 0)
+		}
+		if mcpIngestionTool(operation) && !configured.write {
+			return mcpFailure(operation, args.Source, "ingestion_not_permitted", errors.New("ingestion is disabled for this source"), 0, 0)
+		}
 	}
 	// Serialize complete application calls, not just individual SQLite writes.
 	select {
@@ -282,55 +281,27 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		result = report
 	case "mousa_status":
 		result, err = sourceStatus(ctx, a.store, source, args.Source)
-	case "mousa_vector_inputs":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
-		if err == nil {
-			var inputs sqlite.EmbeddingInputs
-			inputs, err = a.store.ExportEmbeddingInputs(ctx, request)
-			if err == nil {
-				result = mcpVectorInputsResult{inputs.Schema, inputs.Decision.ID, inputs.Decision.Outcome, inputs.Decision.ReasonCodes, inputs.Passages}
-			}
-		}
-	case "mousa_vector_import":
-		var id mousa.SHA256
-		id, err = a.store.ImportEmbeddings(ctx, source.ID, args.VectorImport)
-		if err == nil {
-			result = mcpVectorImportResult{"mousa.vector_import_result.v1", id, len(args.VectorImport.Embeddings)}
-		}
 	case "mousa_query":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
+		var queried mousa.QueryResult
+		queried, err = a.store.Query(ctx, mousa.QueryRequest{
+			Scope:  mousa.Scope{Source: source.ID},
+			Texts:  []string{args.Query},
+			Mode:   args.Mode,
+			Budget: mousa.Budget{Unit: mousa.BudgetBytes, Limit: args.BudgetBytes},
+			Caller: a.caller,
+		})
 		if err == nil {
-			var evidence *evidenceResult
-			evidence, err = queryItemsForRequest(ctx, a.store, source, request, args.Query, args.Policy, args.BudgetBytes, args.PackingPolicy)
-			result = evidence
-			if err == nil {
-				evidence.Query, evidence.Source = args.Query, args.Source
-				evidence.LatencyMicros = time.Since(started).Microseconds()
-			}
-		}
-	case "mousa_vector_query", "mousa_hybrid_query":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
-		if err == nil {
-			var traced sqlite.TracedVectorResult
-			if operation == "mousa_vector_query" {
-				traced, err = a.store.EvaluateAndTraceVector(ctx, request, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
-			} else {
-				traced, err = a.store.EvaluateAndTraceHybrid(ctx, request, args.Query, args.Policy, args.SpaceID, args.Values, args.BudgetBytes, args.PackingPolicy)
-			}
-			if err == nil {
-				result = mcpRetrievalProjection(args.Source, traced)
-			}
+			result = mcpQueryResult{queried.Trail.CallerView(), queried.Passages}
 		}
 	case "mousa_trail":
-		var request mousa.PolicyEvaluationRequest
-		request, err = callerRetrievalRequest(source.ID, a.caller)
+		grants := make(map[mousa.SourceID]bool, len(a.sources))
+		for _, configured := range a.sources {
+			grants[configured.source.ID] = true
+		}
+		var trail mousa.Trail
+		trail, err = a.store.GetTrail(ctx, args.TrailID, grants)
 		if err == nil {
-			var inspection sqlite.TrailInspection
-			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
-			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails)
+			result = trail.CallerView()
 		}
 	case "mousa_remember":
 		permitted := make(map[mousa.SourceID]bool, len(a.sources))

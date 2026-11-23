@@ -157,38 +157,25 @@ CREATE VIRTUAL TABLE segment_lexical_fts USING fts5(
   tokenize='unicode61 remove_diacritics 2'
 );
 
-CREATE TABLE policy_decisions (
-    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32)),
-    request_id BLOB NOT NULL UNIQUE CHECK (typeof(request_id) = 'blob' AND length(request_id) = 32 AND request_id != zeroblob(32)),
-    caller_namespace TEXT NOT NULL COLLATE BINARY CHECK (typeof(caller_namespace) = 'text' AND length(caller_namespace) > 0),
-    external_caller_id TEXT NOT NULL COLLATE BINARY CHECK (typeof(external_caller_id) = 'text' AND length(external_caller_id) > 0),
-    external_request_id TEXT NOT NULL COLLATE BINARY CHECK (typeof(external_request_id) = 'text' AND length(external_request_id) > 0),
-    source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
-    outcome TEXT NOT NULL COLLATE BINARY CHECK (outcome IN ('allow', 'deny')),
-    evaluated_at_usec INTEGER NOT NULL CHECK (typeof(evaluated_at_usec) = 'integer' AND evaluated_at_usec > 0),
-    current_withdrawal_id BLOB CHECK (current_withdrawal_id IS NULL OR (typeof(current_withdrawal_id) = 'blob' AND length(current_withdrawal_id) = 32 AND current_withdrawal_id != zeroblob(32))) REFERENCES source_withdrawals(id) ON DELETE RESTRICT,
-    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0),
-    UNIQUE (caller_namespace, external_caller_id, external_request_id)
+CREATE TABLE trails (
+    id BLOB PRIMARY KEY NOT NULL CHECK (length(id) = 32 AND id != zeroblob(32)),
+    requested_at_usec INTEGER NOT NULL CHECK (requested_at_usec > 0),
+    record_json BLOB NOT NULL CHECK (length(record_json) > 0)
 ) STRICT;
 
-CREATE TABLE source_trails (
-    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32)),
-    decision_id BLOB NOT NULL CHECK (typeof(decision_id) = 'blob' AND length(decision_id) = 32 AND decision_id != zeroblob(32)) REFERENCES policy_decisions(id) ON DELETE RESTRICT,
-    outcome TEXT NOT NULL COLLATE BINARY CHECK (outcome IN ('allow', 'deny')),
-    packet_id BLOB NOT NULL CHECK (typeof(packet_id) = 'blob' AND length(packet_id) = 32 AND packet_id != zeroblob(32)),
-    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0)
+-- A query can address a source that does not exist, so source_id has no FK here.
+CREATE TABLE trail_sources (
+    trail_id BLOB NOT NULL REFERENCES trails(id) ON DELETE RESTRICT,
+    source_id BLOB NOT NULL CHECK (length(source_id) = 32 AND source_id != zeroblob(32)),
+    outcome TEXT NOT NULL CHECK (outcome IN ('allow', 'deny')),
+    PRIMARY KEY (trail_id, source_id)
 ) STRICT;
 
-CREATE TABLE source_trail_candidates (
-    trail_id BLOB NOT NULL CHECK (typeof(trail_id) = 'blob' AND length(trail_id) = 32 AND trail_id != zeroblob(32)) REFERENCES source_trails(id) ON DELETE RESTRICT,
-    ordinal INTEGER NOT NULL CHECK (typeof(ordinal) = 'integer' AND ordinal >= 0),
-    segment_id BLOB NOT NULL CHECK (typeof(segment_id) = 'blob' AND length(segment_id) = 32 AND segment_id != zeroblob(32)) REFERENCES segments(id) ON DELETE RESTRICT,
-    final_rank INTEGER NOT NULL CHECK (typeof(final_rank) = 'integer' AND final_rank >= 0),
-    disposition TEXT NOT NULL COLLATE BINARY CHECK (disposition IN ('accepted', 'rejected')),
-    selected INTEGER NOT NULL CHECK (selected IN (0, 1)),
-    PRIMARY KEY (trail_id, ordinal),
-    CHECK (disposition = 'accepted' OR final_rank = 0),
-    CHECK (selected = 0 OR (disposition = 'accepted' AND final_rank > 0))
+CREATE TABLE trail_segments (
+    trail_id BLOB NOT NULL REFERENCES trails(id) ON DELETE RESTRICT,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    segment_id BLOB NOT NULL REFERENCES segments(id) ON DELETE RESTRICT,
+    PRIMARY KEY (trail_id, ordinal)
 ) STRICT;
 
 CREATE TABLE local_items (
@@ -222,30 +209,10 @@ CREATE TABLE note_citations (
         REFERENCES notes(id) ON DELETE RESTRICT,
     citation_ordinal INTEGER NOT NULL CHECK (typeof(citation_ordinal) = 'integer' AND citation_ordinal >= 0),
     segment_ordinal INTEGER NOT NULL CHECK (typeof(segment_ordinal) = 'integer' AND segment_ordinal >= 0),
-    trail_id BLOB NOT NULL CHECK (typeof(trail_id) = 'blob' AND length(trail_id) = 32 AND trail_id != zeroblob(32))
-        REFERENCES source_trails(id) ON DELETE RESTRICT,
-    segment_id BLOB NOT NULL CHECK (typeof(segment_id) = 'blob' AND length(segment_id) = 32 AND segment_id != zeroblob(32))
-        REFERENCES segments(id) ON DELETE RESTRICT,
+    trail_id BLOB NOT NULL CHECK (typeof(trail_id) = 'blob' AND length(trail_id) = 32 AND trail_id != zeroblob(32)),
+    segment_id BLOB NOT NULL CHECK (typeof(segment_id) = 'blob' AND length(segment_id) = 32 AND segment_id != zeroblob(32)),
     PRIMARY KEY (note_id, citation_ordinal, segment_ordinal)
 ) STRICT;
-
--- Caller-declared spaces and source/segment-bound immutable embeddings.
--- Current eligibility is always read from local_items, never from these records.
-CREATE TABLE vector_spaces (
-    id BLOB PRIMARY KEY NOT NULL CHECK (length(id) = 32 AND id != zeroblob(32)),
-    record_json BLOB NOT NULL CHECK (length(record_json) BETWEEN 1 AND 4096)
-) STRICT;
-CREATE TABLE embeddings (
-    id BLOB PRIMARY KEY NOT NULL CHECK (length(id) = 32 AND id != zeroblob(32)),
-    space_id BLOB NOT NULL REFERENCES vector_spaces(id) ON DELETE RESTRICT,
-    source_id BLOB NOT NULL REFERENCES sources(id) ON DELETE RESTRICT,
-    segment_id BLOB NOT NULL REFERENCES segments(id) ON DELETE RESTRICT,
-    record_json BLOB NOT NULL CHECK (length(record_json) BETWEEN 1 AND 131072),
-    UNIQUE (space_id, source_id, segment_id)
-) STRICT;
--- These indexes bound enumeration before decoding or scoring source passages.
-CREATE INDEX local_items_vector_current_idx ON local_items(source_id, active, item_id);
-CREATE INDEX segments_vector_order_idx ON segments(representation_id, selector_start, selector_end, id);
 
 -- The random identity given to this store when it was created. Exactly one row.
 CREATE TABLE store_identity (
@@ -264,17 +231,19 @@ CREATE TABLE access_events (
 
 CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 
--- The append-only store log. Every ingest receipt, access event and withdrawal is one leaf,
+-- The append-only store log. Each receipt, access event, withdrawal, note and trail is one leaf,
 -- written in the same transaction as its record. seq runs 1, 2, 3 ... with no gaps; leaf_hash
 -- is the RFC 6962 leaf hash SHA-256(0x00 || record_json) of the record named by kind and
 -- record_id.
 CREATE TABLE log (
     seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal', 'note')),
+    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal', 'note', 'trail')),
     record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
-    source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
+    source_id BLOB CHECK (source_id IS NULL OR (length(source_id) = 32 AND source_id != zeroblob(32))) REFERENCES sources(id) ON DELETE RESTRICT,
     leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),
-    UNIQUE (kind, record_id)
+    UNIQUE (kind, record_id),
+    CHECK ((kind = 'trail') = (source_id IS NULL))
 ) STRICT;
 
 CREATE INDEX log_source_kind_seq_idx ON log(source_id, kind, seq);
+CREATE INDEX log_source_seq_idx ON log(source_id, seq);

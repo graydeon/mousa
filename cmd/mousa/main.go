@@ -46,8 +46,6 @@ func main() {
 		err = queryCommand(ctx, *storePath, rest)
 	case "trail":
 		err = trailCommand(ctx, *storePath, rest)
-	case "vector":
-		err = vectorCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
@@ -83,12 +81,7 @@ commands:
   query --source <id> <text>  query a JSONL-synced source, returns bounded evidence (JSON)
   status <dir>                report the source's ingest state (JSON)
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
-  trail <dir> <trail-id>      inspect authorized historical metadata, never text (JSON)
-  trail --source <id> <id>    inspect a JSONL source's trail (JSON)
-  vector inputs <dir>       export authorized current normalized passages and pins (JSON)
-  vector inputs --source <id>
-  vector import <dir>       import one bounded vector batch from stdin (JSON)
-  vector import --source <id>
+  trail <trail-id>            inspect one recorded query trail, never text (JSON)
   access <dir> allow|deny     record an access event for every caller of the source (JSON)
   access --source <id> allow|deny
                             a source with no access event is denied to every caller;
@@ -99,6 +92,8 @@ commands:
                             query trail, repeatable
   notes export --source <id>
                             export the source's notes exactly, one JSONL record each
+  notes import --source <id>
+                            import previously exported notes from stdin JSONL
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
   mcp --caller <id> --source <id>
@@ -109,14 +104,8 @@ commands:
                             until access <dir>|--source <id> allow
 
 query options (before positional arguments):
-  --policy original|dedup    query-term policy; default original retains repetition
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
-  --packing-policy original|exact-v1
-                            exact-v1 omits byte-equal copies of selected passages
-  --vector-space <sha256>    exact cosine mode; no query text, query vector JSON on stdin;
-                            cannot combine with an explicit policy flag
-  --hybrid-space <sha256>    fuse query text and stdin query vector with equal RRF(k=60);
-                            supports --policy; no vector-space flag
+  --mode lexical             query mode; only lexical is available
 
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
@@ -198,71 +187,6 @@ func statusCommand(ctx context.Context, storePath string, args []string) error {
 		return err
 	}
 	return runStatus(ctx, storePath, source, label)
-}
-
-// queryCommand names its source with a directory argument or --source, and
-// always takes the query text as the remaining argument.
-func queryCommand(ctx context.Context, storePath string, args []string) error {
-	flags := newCommandFlags("query")
-	sourceID := flags.String("source", "", "external source ID instead of a directory root")
-	policy := flags.String("policy", "original", "query-term policy: original or dedup")
-	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
-	packing := flags.String("packing-policy", mousa.PackingOriginal, "packing policy: original or exact-v1")
-	vectorSpace := flags.String("vector-space", "", "exact cosine space identity; query vector JSON on stdin")
-	hybridSpace := flags.String("hybrid-space", "", "RRF lexical/vector space identity; query text argument and vector JSON on stdin")
-	if err := flags.Parse(args); err != nil {
-		return usageError{err.Error()}
-	}
-	vectorMode := false
-	flags.Visit(func(option *flag.Flag) {
-		if option.Name == "vector-space" {
-			vectorMode = true
-		}
-	})
-	hybridMode := false
-	flags.Visit(func(option *flag.Flag) {
-		if option.Name == "hybrid-space" {
-			hybridMode = true
-		}
-	})
-	if hybridMode {
-		if vectorMode {
-			return usageError{"hybrid mode cannot be combined with vector-space"}
-		}
-		return hybridQueryCommand(ctx, storePath, *sourceID, flags.Args(), *hybridSpace, *policy, *budget, *packing)
-	}
-	if vectorMode {
-		incompatible := false
-		flags.Visit(func(option *flag.Flag) {
-			switch option.Name {
-			case "policy":
-				incompatible = true
-			}
-		})
-		if incompatible {
-			return usageError{"vector mode cannot be combined with an explicit policy"}
-		}
-		return vectorQueryCommand(ctx, storePath, *sourceID, flags.Args(), *vectorSpace, *budget, *packing)
-	}
-	if *policy != "original" && *policy != "dedup" {
-		return usageError{"query policy must be original or dedup"}
-	}
-	if *packing != mousa.PackingOriginal && *packing != mousa.PackingExactV1 {
-		return usageError{"packing policy must be original or exact-v1"}
-	}
-	if *budget == 0 {
-		return usageError{"query byte budget must be positive"}
-	}
-	positional := flags.Args()
-	if len(positional) == 0 {
-		return usageError{"query requires a source and query text"}
-	}
-	source, label, err := selectSource(*sourceID, positional[:len(positional)-1], "query")
-	if err != nil {
-		return err
-	}
-	query := positional[len(positional)-1]
-	return runQuery(ctx, storePath, source, label, query, *policy, *budget, *packing)
 }
 
 // selectSource resolves the source a command acts on: either a directory root
@@ -551,70 +475,6 @@ type statusResult struct {
 	CollectionState string `json:"collection_state"`
 	Observations    int    `json:"observations"`
 	ActiveItems     int    `json:"active_items"`
-}
-type evidenceResult struct {
-	Query             string                       `json:"query"`
-	Source            string                       `json:"source"`
-	QueryPolicy       string                       `json:"query_policy"`
-	Expression        string                       `json:"expression"`
-	RequestID         string                       `json:"request_id"`
-	DecisionID        string                       `json:"decision_id"`
-	DecisionOutcome   string                       `json:"decision_outcome"`
-	DecisionReasons   []mousa.PolicyDecisionReason `json:"decision_reasons"`
-	AccessEvent       string                       `json:"access_event"`
-	EvaluatedAtUsec   int64                        `json:"evaluated_at_usec"`
-	TrailID           string                       `json:"trail_id"`
-	PacketID          string                       `json:"packet_id"`
-	Outcome           string                       `json:"outcome"`
-	MatchedCandidates int                          `json:"matched_candidates"`
-	CandidateLimit    int                          `json:"candidate_limit"`
-	LifecycleExcluded int                          `json:"lifecycle_excluded"`
-	BudgetOmitted     int                          `json:"budget_omitted"`
-	DuplicateOmitted  *int                         `json:"duplicate_omitted,omitempty"`
-	PackingPolicy     string                       `json:"packing_policy,omitempty"`
-	UsedBytes         uint64                       `json:"used_bytes"`
-	BudgetBytes       uint64                       `json:"budget_bytes"`
-	Evidence          []evidenceHit                `json:"evidence"`
-	LatencyMicros     int64                        `json:"latency_micros"`
-}
-
-type evidenceHit struct {
-	Item                 string               `json:"item"`
-	SegmentID            string               `json:"segment_id"`
-	ContentSHA256        string               `json:"content_sha256"`
-	RepresentationID     string               `json:"representation_id"`
-	RepresentationSHA256 string               `json:"representation_sha256"`
-	ByteStart            uint64               `json:"byte_start"`
-	ByteEnd              uint64               `json:"byte_end"`
-	SegmentPolicy        string               `json:"segment_policy"`
-	Rank                 int                  `json:"rank,omitempty"`
-	Score                float64              `json:"bm25_score,omitempty"`
-	ByteLength           int                  `json:"byte_length"`
-	Text                 string               `json:"text"`
-	Origin               string               `json:"origin,omitempty"`
-	Note                 *sqlite.NoteEvidence `json:"note,omitempty"`
-}
-
-// runQuery runs one authorized query against one resolved source.
-func runQuery(ctx context.Context, storePath string, source mousa.Source, label, query, policy string, budgetBytes uint64, packingPolicy string) error {
-	started := time.Now()
-	store, err := sqlite.Open(ctx, storePath)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	request, err := newRetrievalRequest(source.ID)
-	if err != nil {
-		return err
-	}
-	result, err := queryItemsForRequest(ctx, store, source, request, query, policy, budgetBytes, packingPolicy)
-	if err != nil {
-		return err
-	}
-	result.Query = query
-	result.Source = label
-	result.LatencyMicros = time.Since(started).Microseconds()
-	return emit(result)
 }
 
 func emit(value any) error {

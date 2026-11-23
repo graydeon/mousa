@@ -89,7 +89,7 @@ func TestStoreSchemaRefusesOtherStores(t *testing.T) {
 		run, _ := setup(t)
 		run.runInput(`{"id":"note","text":"The heron waits by the river."}`+"\n", false, "sync", "--source", "fixture", "--allow")
 		_, report := run.run(false, "query", "--source", "fixture", "heron")
-		if lenOf(report, "evidence") != 1 {
+		if lenOf(report, "passages") != 1 {
 			t.Fatalf("fresh store query = %v", report)
 		}
 	})

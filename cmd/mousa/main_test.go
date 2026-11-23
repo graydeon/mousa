@@ -140,14 +140,14 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 		t.Fatalf("update sync should report 1 updated, got %v", sync3["updated"])
 	}
 	_, query1 := run.run(false, "query", root, "ferrets")
-	if hits := lenOf(query1, "evidence"); hits != 1 {
+	if hits := lenOf(query1, "passages"); hits != 1 {
 		t.Fatalf("changed content not retrievable: %v", query1)
 	}
-	if text := query1["evidence"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "Marmalade") {
+	if text := query1["passages"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "Marmalade") {
 		t.Fatalf("query returned stale text: %v", text)
 	}
 	_, queryOld := run.run(false, "query", root, "canonical records")
-	if hits := lenOf(queryOld, "evidence"); hits != 0 {
+	if hits := lenOf(queryOld, "passages"); hits != 0 {
 		t.Fatalf("old revision still retrievable after update: %v", queryOld)
 	}
 
@@ -160,7 +160,7 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 		t.Fatalf("delete sync should report 1 deleted, got %v", sync4["deleted"])
 	}
 	_, query2 := run.run(false, "query", root, "zebra arc")
-	if hits := lenOf(query2, "evidence"); hits != 0 {
+	if hits := lenOf(query2, "passages"); hits != 0 {
 		t.Fatalf("deleted content still retrievable: %v", query2)
 	}
 
@@ -173,7 +173,7 @@ func TestLocalSliceEndToEnd(t *testing.T) {
 
 	// 6. Provenance resolves the item's stable path.
 	_, query3 := run.run(false, "query", root, "ferrets")
-	hit := query3["evidence"].([]any)[0].(map[string]any)
+	hit := query3["passages"].([]any)[0].(map[string]any)
 	if hit["item"] != "alpha.md" {
 		t.Fatalf("evidence provenance item = %v", hit["item"])
 	}
@@ -208,7 +208,7 @@ func TestLocalSliceErrorsAndEdgeCases(t *testing.T) {
 	// The renamed item is retrievable under its new identity (same content,
 	// same segments re-ingested under the new item path).
 	_, query1 := run.run(false, "query", root, "walruses")
-	if hits := lenOf(query1, "evidence"); hits != 1 {
+	if hits := lenOf(query1, "passages"); hits != 1 {
 		t.Fatalf("renamed content should be retrievable: %v", query1)
 	}
 	// Status reflects the stored source.
@@ -230,10 +230,11 @@ func TestLocalSliceBudgetBoundsOutput(t *testing.T) {
 	writeFile(t, root, "large.md", large.String())
 	run.run(false, "sync", "--allow", root)
 	_, query := run.run(false, "query", root, "quokkas")
-	if used := query["used_bytes"].(float64); used > query["budget_bytes"].(float64) {
-		t.Fatalf("used bytes %v exceed budget %v", used, query["budget_bytes"])
+	limit := trailOf(query)["request"].(map[string]any)["budget"].(map[string]any)["limit"].(float64)
+	if used := packingOf(query)["used"].(float64); used > limit {
+		t.Fatalf("used bytes %v exceed budget %v", used, limit)
 	}
-	if hits := len(query["evidence"].([]any)); hits < 2 {
+	if hits := len(query["passages"].([]any)); hits < 2 {
 		t.Fatalf("expected several segments selected, got %d", hits)
 	}
 }
@@ -248,7 +249,7 @@ func TestLocalSliceRestoresIndexAfterDeletedFileIsRecreated(t *testing.T) {
 	}
 	run.run(false, "sync", root)
 	_, before := run.run(false, "query", root, "ferrets")
-	if lenOf(before, "evidence") != 0 {
+	if lenOf(before, "passages") != 0 {
 		t.Fatalf("deleted content still retrievable: %v", before)
 	}
 	// Recreating the identical file must restore retrieval, not silently leave
@@ -268,7 +269,7 @@ func TestLocalSliceRestoresIndexAfterDeletedFileIsRecreated(t *testing.T) {
 		t.Fatalf("recreated file must not be reported deleted again: %v", sync)
 	}
 	_, after := run.run(false, "query", root, "ferrets")
-	if lenOf(after, "evidence") != 1 {
+	if lenOf(after, "passages") != 1 {
 		t.Fatalf("recreated content not retrievable: %v", after)
 	}
 }
@@ -289,11 +290,11 @@ func TestLocalSliceRevertsToStoredRevisionContent(t *testing.T) {
 		t.Fatalf("revert of an active item should report one update, got %v", revert)
 	}
 	_, stale := run.run(false, "query", root, "beetles")
-	if lenOf(stale, "evidence") != 0 {
+	if lenOf(stale, "passages") != 0 {
 		t.Fatalf("reverted-away revision still retrievable: %v", stale)
 	}
 	_, restored := run.run(false, "query", root, "aardvarks")
-	if lenOf(restored, "evidence") != 1 {
+	if lenOf(restored, "passages") != 1 {
 		t.Fatalf("reverted-to revision not retrievable: %v", restored)
 	}
 	for range 3 {
@@ -319,7 +320,7 @@ func TestLocalSliceEmptyFileIsStoredWithoutRetrievableText(t *testing.T) {
 		t.Fatalf("first sync of an empty file is an addition, not unchanged: %v", sync)
 	}
 	_, emptyQuery := run.run(false, "query", root, "walruses")
-	for _, hit := range emptyQuery["evidence"].([]any) {
+	for _, hit := range emptyQuery["passages"].([]any) {
 		if item := hit.(map[string]any)["item"].(string); item == "empty.md" {
 			t.Fatalf("empty item must not be retrievable: %v", emptyQuery)
 		}
@@ -341,7 +342,7 @@ func TestLocalSliceNormalizedFilesRemainUnchanged(t *testing.T) {
 		t.Fatalf("normalization must not change raw-content retry identity: %v", resync)
 	}
 	_, query := run.run(false, "query", root, "walrus")
-	if lenOf(query, "evidence") != 2 {
+	if lenOf(query, "passages") != 2 {
 		t.Fatalf("normalized files must both remain retrievable: %v", query)
 	}
 }
@@ -354,7 +355,7 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 	run.run(false, "sync", "--all-text", "--allow", root)
 	_, query := run.run(false, "query", root, "walrus")
 	want := map[string]bool{"doc": true, "doc@draft.md": true, "nested@folder/note@review.md": true}
-	for _, raw := range query["evidence"].([]any) {
+	for _, raw := range query["passages"].([]any) {
 		item := raw.(map[string]any)["item"].(string)
 		if !want[item] {
 			t.Fatalf("unexpected or duplicate item %q: %v", item, query)
@@ -372,7 +373,7 @@ func TestLocalSliceAtSignPathsRemainDistinct(t *testing.T) {
 		t.Fatalf("deleting a prefix item must leave longer names unchanged: %v", sync)
 	}
 	_, after := run.run(false, "query", root, "walrus")
-	if lenOf(after, "evidence") != 2 {
+	if lenOf(after, "passages") != 2 {
 		t.Fatalf("deleting a prefix item removed other items: %v", after)
 	}
 }
@@ -384,7 +385,7 @@ func TestLocalSliceQueryIsScopedToItsSource(t *testing.T) {
 	run.run(false, "sync", "--allow", root)
 	run.runInput(record("leaked.md", "Private walrus colony details."), false, "sync", "--source", "pipeline/other", "--allow")
 	_, scoped := run.run(false, "query", root, "walrus")
-	for _, hit := range scoped["evidence"].([]any) {
+	for _, hit := range scoped["passages"].([]any) {
 		if item := hit.(map[string]any)["item"].(string); item == "leaked.md" {
 			t.Fatalf("query leaked another source's item: %v", scoped)
 		}

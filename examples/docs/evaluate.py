@@ -47,7 +47,7 @@ def main():
                     row = call("ask", ["ask", "--budget-bytes", str(questions["budget_bytes"]), question["question"]],
                                repeat=repeat, question_id=question["id"], prior_queries=repeat * 5 + index)
                     packet = row["packet"]
-                    text = "\n".join(hit["text"] for hit in packet["response"]["evidence"] or []
+                    text = "\n".join(hit["text"] for hit in packet["response"]["passages"] or []
                                      if hit["item"] == question.get("item"))
                     row["support_covered"] = all(passage in text for passage in question["support"])
                     if "expected_outcome" in question:

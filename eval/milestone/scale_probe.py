@@ -17,7 +17,7 @@ every sync passes --allow.
 
 --equality N: sync source A (N documents, seed), run --queries queries, sync an unrelated
 source B (N documents, seed+1, same vocabulary), run the same queries on A again, and compare
-each pair of stored trails (`mousa trail`) on everything except identifiers.
+the stored result digests. Each stored trail must match its query response.
 
 --emit-docs N PATH and --emit-queries K PATH write a corpus (JSONL records for `sync
 --source`) and query lines from the same generator, for contention_probe.
@@ -119,17 +119,6 @@ def queries(sample, k, seed):
     return [" ".join(rng.sample(rng.choice(sample), 3)) for _ in range(k)]
 
 
-ID_FIELDS = ("id", "request_id", "decision_id", "authorization_decision_id", "packet_id", "trail_id", "evaluated_at_usec")
-
-
-def strip_ids(value):
-    if isinstance(value, dict):
-        return {k: strip_ids(v) for k, v in value.items() if k not in ID_FIELDS}
-    if isinstance(value, list):
-        return [strip_ids(v) for v in value]
-    return value
-
-
 def equality(binary, n, doc_bytes, nq, seed):
     a, sample = corpus(n, doc_bytes, seed, "a")
     b, _ = corpus(n, doc_bytes, seed + 1, "b")
@@ -141,17 +130,20 @@ def equality(binary, n, doc_bytes, nq, seed):
         def trails():
             out = []
             for q in qs:
-                trail_id = json.loads(run(binary, store, "query", "--source", "A", q)[1])["trail_id"]
-                out.append(json.loads(run(binary, store, "trail", "--source", "A", trail_id)[1]))
+                trail = json.loads(run(binary, store, "query", "--source", "A", q)[1])["trail"]
+                checked = json.loads(run(binary, store, "trail", trail["id"])[1])
+                if checked != trail:
+                    raise RuntimeError("stored trail disagrees with query response")
+                out.append(checked)
             return out
         before = trails()
         run(binary, store, "sync", "--source", "B", "--allow", stdin="\n".join(b) + "\n")
         after = trails()
     rows = []
     for q, x, y in zip(qs, before, after):
-        cx, cy = x["historical"]["candidates"], y["historical"]["candidates"]
+        cx, cy = x["candidates"], y["candidates"]
         seg = lambda c: [r.get("segment_id") for r in c]
-        rows.append({"query": q, "equal": strip_ids(x) == strip_ids(y),
+        rows.append({"query": q, "equal": x["result_sha256"] == y["result_sha256"],
                      "same_candidate_order": seg(cx) == seg(cy),
                      "same_candidate_set": sorted(seg(cx)) == sorted(seg(cy)),
                      "candidates": [len(cx), len(cy)]})

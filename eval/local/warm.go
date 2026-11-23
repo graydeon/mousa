@@ -57,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 	costs := []stageCost{}
-	for _, stage := range []string{"preparation", "warm_verified", "new_historical_trace", "fresh_current_query"} {
+	for _, stage := range []string{"preparation", "warm_verified", "fresh_current_query"} {
 		cost, err := measureStage(*fixture, sourceID, *query, stage, *iterations, *budget)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -74,9 +74,9 @@ func main() {
 		Limitations string      `json:"limitations"`
 		Stages      []stageCost `json:"stages"`
 	}{
-		Protocol: "mousa-warm-query-cost-v1", GoVersion: runtime.Version(),
+		Protocol: "mousa-warm-query-cost-v2", GoVersion: runtime.Version(),
 		Iterations: *iterations, Budget: *budget, Query: *query,
-		Limitations: "Each stage uses a separate copy of the same closed single-source CLI fixture. Copying, open, request construction, warmup, and historical policy pre-evaluation are excluded. Each trace is new, not a retry. Stages are not additive. Allocations are process-wide runtime counter deltas, not peak RSS. No model inference.",
+		Limitations: "Each store stage uses a separate copy of the same closed CLI fixture. Copying, open, and warmup are excluded. Each query writes a fresh trail. Stages are not additive. Allocations are process-wide counter deltas, not peak RSS.",
 		Stages:      costs,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
@@ -93,7 +93,6 @@ func measureStage(fixture string, sourceID mousa.SourceID, query, stage string, 
 	}
 	expression := strings.Join(terms, " OR ")
 	var store *sqlite.Store
-	var requests []mousa.PolicyEvaluationRequest
 	if stage != "preparation" {
 		work, err := os.MkdirTemp("", "mousa-warm-cost-")
 		if err != nil {
@@ -127,30 +126,8 @@ func measureStage(fixture string, sourceID mousa.SourceID, query, stage string, 
 			return stageCost{}, err
 		}
 	}
-	if stage == "new_historical_trace" || stage == "fresh_current_query" {
-		requests = make([]mousa.PolicyEvaluationRequest, iterations+1)
-		for index := range requests {
-			request := mousa.PolicyEvaluationRequest{
-				Schema: mousa.PolicyEvaluationRequestSchema, Action: mousa.SourceRetrievalAction,
-				CallerNamespace: "mousa-local.caller", ExternalCallerID: "cli",
-				PurposeNamespace: "mousa-local.purpose", ExternalPurposeID: "retrieval",
-				ExternalRequestID: fmt.Sprintf("warm-%s-%d", stage, index), SourceID: sourceID,
-				RequestedAtUsec: time.Now().UnixMicro(),
-			}
-			request.ID, err = mousa.NewPolicyEvaluationRequestID(request)
-			if err != nil {
-				return stageCost{}, err
-			}
-			requests[index] = request
-			if stage == "new_historical_trace" {
-				if _, err := store.EvaluateSourceRetrieval(ctx, request); err != nil {
-					return stageCost{}, err
-				}
-			}
-		}
-	}
 	cost := stageCost{Stage: stage, SamplesNS: make([]int64, iterations)}
-	call := func(index int) error {
+	call := func() error {
 		switch stage {
 		case "preparation":
 			terms, err := mousa.PrepareLexicalTerms(query, false)
@@ -164,34 +141,31 @@ func measureStage(fixture string, sourceID mousa.SourceID, query, stage string, 
 				return err
 			}
 			cost.Candidates = len(candidates)
-		case "new_historical_trace", "fresh_current_query":
-			var result sqlite.TracedLexicalResult
-			var err error
-			if stage == "new_historical_trace" {
-				result, err = store.TraceEnforcedLexical(ctx, requests[index], expression, 100, budget, "original")
-			} else {
-				result, err = store.EvaluateAndTraceLexical(ctx, requests[index], expression, 100, budget, "original")
-			}
+		case "fresh_current_query":
+			result, err := store.Query(ctx, mousa.QueryRequest{
+				Scope: mousa.Scope{Source: sourceID}, Texts: []string{query},
+				Budget: mousa.Budget{Limit: budget, Unit: mousa.BudgetBytes}, Caller: "warm-probe",
+			})
 			if err != nil {
 				return err
 			}
-			if result.Decision.Outcome != mousa.PolicyOutcomeAllow {
+			if result.Trail.Packing == nil {
 				return fmt.Errorf("fixture authorization denied")
 			}
-			cost.Candidates, cost.UsedBytes = len(result.Candidates), result.Trail.UsedBytes
+			cost.Candidates, cost.UsedBytes = len(result.Trail.Candidates), result.Trail.Packing.Used
 		default:
 			return fmt.Errorf("unknown measurement stage %q", stage)
 		}
 		return nil
 	}
-	if err := call(iterations); err != nil {
+	if err := call(); err != nil {
 		return stageCost{}, err
 	}
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	for index := range iterations {
 		started := time.Now()
-		err := call(index)
+		err := call()
 		cost.SamplesNS[index] = time.Since(started).Nanoseconds()
 		if err != nil {
 			return stageCost{}, err

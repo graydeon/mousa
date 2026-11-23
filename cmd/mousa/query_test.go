@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
 
-func TestQueryPolicyBudgetAndCanonicalTrail(t *testing.T) {
+func TestQueryBudgetAndCanonicalTrail(t *testing.T) {
 	run, _ := setup(t)
 	const source = "query-policy"
 	jsonlSync(t, run, source, strings.Join([]string{
@@ -16,55 +18,51 @@ func TestQueryPolicyBudgetAndCanonicalTrail(t *testing.T) {
 	}, "\n"))
 	original := querySource(t, run, source, "apple banana banana")
 	if firstItem(t, original) != "b" {
-		t.Fatalf("original policy did not preserve repetition's ranking contribution: %v", original)
-	}
-	_, dedup := run.run(false, "query", "--policy", "dedup", "--source", source, "apple banana banana")
-	if firstItem(t, dedup) != "a" {
-		t.Fatalf("explicit dedup policy did not change the ranking: %v", dedup)
+		t.Fatalf("repetition did not contribute to the ranking: %v", original)
 	}
 	_, packed := run.run(false, "query", "--budget-bytes", "5", "--source", source, "apple banana banana")
-	if len(hits(packed)) != 1 || firstItem(t, packed) != "a" || packed["used_bytes"] != float64(5) || packed["budget_omitted"] != float64(1) {
+	if len(hits(packed)) != 1 || firstItem(t, packed) != "a" || packingOf(packed)["used"] != float64(5) {
 		t.Fatalf("packing did not skip the oversized first candidate and continue: %v", packed)
 	}
 	hit := hits(packed)[0].(map[string]any)
 	if hit["text"] != "apple" || hit["content_sha256"] != fmt.Sprintf("%x", sha256.Sum256([]byte("apple"))) {
 		t.Fatalf("released text disagrees with its content digest: %v", hit)
 	}
-	_, inspected := run.run(false, "trail", "--source", source, packed["trail_id"].(string))
-	history := inspected["historical"].(map[string]any)
-	for _, key := range []string{"request_id", "decision_id", "packet_id", "budget_bytes", "used_bytes"} {
-		if history[key] != packed[key] {
-			t.Fatalf("query %s is not the canonical stored value: query=%v trail=%v", key, packed, inspected)
-		}
+	_, inspected := run.run(false, "trail", trailIDOf(packed))
+	if !reflect.DeepEqual(inspected, trailOf(packed)) {
+		t.Fatalf("trail read differs from the query's recorded trail: %v vs %v", inspected, packed)
 	}
-	selected := 0
-	for _, value := range history["candidates"].([]any) {
+	packedCount := 0
+	for _, value := range inspected["candidates"].([]any) {
 		candidate := value.(map[string]any)
-		if candidate["selected"] == true {
-			selected++
-			if candidate["segment_id"] != hit["segment_id"] || candidate["content_sha256"] != hit["content_sha256"] || candidate["indexed_now"] != true {
-				t.Fatalf("released evidence does not identify the selected stored segment: %v", inspected)
+		if candidate["packed"] == "full" {
+			packedCount++
+			if candidate["segment_id"] != hit["segment_id"] || candidate["content_sha256"] != hit["content_sha256"] {
+				t.Fatalf("released evidence does not identify the packed stored segment: %v", inspected)
 			}
+		} else if candidate["omitted"] != "budget" {
+			t.Fatalf("unpacked candidate lacks a budget omission: %v", candidate)
 		}
 	}
-	if selected != 1 {
-		t.Fatalf("trail selected %d candidates for a one-segment packet", selected)
+	if packedCount != 1 {
+		t.Fatalf("trail packed %d candidates for a one-segment release", packedCount)
 	}
 	jsonlSync(t, run, source, record("unicode", "é"))
 	_, tooSmall := run.run(false, "query", "--budget-bytes", "1", "--source", source, "é")
-	if tooSmall["outcome"] != "budget_omitted" || len(hits(tooSmall)) != 0 || tooSmall["used_bytes"] != float64(0) || tooSmall["budget_omitted"] != float64(1) {
-		t.Fatalf("byte budget was treated as a character budget or a no-match result: %v", tooSmall)
+	if len(hits(tooSmall)) != 0 || packingOf(tooSmall)["used"] != float64(0) {
+		t.Fatalf("byte budget was treated as a character budget: %v", tooSmall)
 	}
 	_, fits := run.run(false, "query", "--budget-bytes", "2", "--source", source, "é")
-	if firstItem(t, fits) != "unicode" || fits["used_bytes"] != float64(2) {
+	if firstItem(t, fits) != "unicode" || packingOf(fits)["used"] != float64(2) {
 		t.Fatalf("exact UTF-8 byte boundary did not fit: %v", fits)
 	}
 	missing := querySource(t, run, source, "absentword")
-	if missing["outcome"] != "no_matches" || len(hits(missing)) != 0 {
-		t.Fatalf("empty lexical result was not distinguished: %v", missing)
+	if len(hits(missing)) != 0 {
+		t.Fatalf("empty lexical result was not empty: %v", missing)
 	}
-	run.run(true, "query", "--policy", "drop-floor", "--source", source, "apple")
+	run.run(true, "query", "--mode", "vector", "--source", source, "apple")
 	run.run(true, "query", "--budget-bytes", "0", "--source", source, "apple")
+	run.run(true, "query", "--policy", "dedup", "--source", source, "apple")
 }
 
 func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
@@ -75,7 +73,7 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 	run.run(false, "sync", "--allow", root)
 	_, original := run.run(false, "query", root, "cedar")
 	oldHit := hits(original)[0].(map[string]any)
-	trailID := original["trail_id"].(string)
+	trailID := trailIDOf(original)
 	jsonlSync(t, run, "peer", record("peer-note", "Cedar peer collection."))
 	writeFile(t, root, "schedule.md", newText)
 	run.run(false, "sync", root)
@@ -83,55 +81,79 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 	if len(hits(revised)) != 1 || hits(revised)[0].(map[string]any)["text"] != newText {
 		t.Fatalf("revision query mixed stale or peer-source evidence: %v", revised)
 	}
-	raw, inspected := run.run(false, "trail", root, trailID)
-	history := inspected["historical"].(map[string]any)
-	candidate := history["candidates"].([]any)[0].(map[string]any)
-	if candidate["segment_id"] != oldHit["segment_id"] || candidate["indexed_now"] != false || strings.Contains(raw, oldText) {
+	raw, inspected := run.run(false, "trail", trailID)
+	if !reflect.DeepEqual(inspected, trailOf(original)) {
+		t.Fatalf("trail read differs from the recorded query trail: %v", inspected)
+	}
+	candidate := inspected["candidates"].([]any)[0].(map[string]any)
+	if candidate["segment_id"] != oldHit["segment_id"] || strings.Contains(raw, oldText) {
 		t.Fatalf("history was confused with current activation or archived text: %v", inspected)
 	}
 	run.run(false, "access", root, "deny")
 	deniedJSON, denied := run.run(false, "query", root, "cedar")
-	if denied["outcome"] != "policy_excluded" || len(hits(denied)) != 0 || denied["matched_candidates"] != float64(0) {
+	if sourceDecision(t, denied)["outcome"] != "deny" || len(hits(denied)) != 0 || len(candidatesOf(denied)) != 0 {
 		t.Fatalf("source denial did not stop retrieval: %v", denied)
 	}
-	deniedTrailJSON, deniedTrail := run.run(false, "trail", root, trailID)
-	if deniedTrail["authorization_outcome"] != "deny" || deniedTrail["historical"] != nil {
-		t.Fatalf("current denial released historical metadata: %v", deniedTrail)
-	}
 	for _, forbidden := range []string{oldText, newText, oldHit["segment_id"].(string), oldHit["content_sha256"].(string)} {
-		if strings.Contains(deniedJSON, forbidden) || strings.Contains(deniedTrailJSON, forbidden) {
-			t.Fatalf("denied command released source evidence: %s\n%s", deniedJSON, deniedTrailJSON)
+		if strings.Contains(deniedJSON, forbidden) {
+			t.Fatalf("denied query released source evidence: %s", deniedJSON)
 		}
 	}
-	_, hiddenMissing := run.run(false, "trail", root, strings.Repeat("1", 64))
-	if hiddenMissing["authorization_outcome"] != "deny" || hiddenMissing["historical"] != nil {
-		t.Fatalf("denied inspection distinguished a nonexistent trail: %v", hiddenMissing)
+	// The denied trail is still recorded; the owner read returns it unchanged.
+	if _, sealed := run.run(false, "trail", trailID); !reflect.DeepEqual(sealed, trailOf(original)) {
+		t.Fatalf("denial changed the recorded trail: %v", sealed)
 	}
+	run.run(true, "trail", strings.Repeat("1", 64))
 	run.run(false, "access", root, "allow")
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	_, afterRemoval := run.run(false, "trail", root, trailID)
-	if afterRemoval["historical"].(map[string]any)["packet_id"] != original["packet_id"] {
-		t.Fatalf("historical inspection depended on the source directory's continued existence: %v", afterRemoval)
+	_, afterRemoval := run.run(false, "trail", trailID)
+	if !reflect.DeepEqual(afterRemoval, trailOf(original)) {
+		t.Fatalf("historical read depended on the source directory's existence: %v", afterRemoval)
 	}
 	run.run(true, "sync", root)
-	wrongSource, _ := run.run(true, "trail", "--source", "peer", trailID)
-	missingTrail, _ := run.run(true, "trail", "--source", "peer", strings.Repeat("1", 64))
-	if wrongSource != missingTrail {
-		t.Fatalf("source scoping exposed another source's trail existence: %q versus %q", wrongSource, missingTrail)
+	// Owner trail reads are global: a peer source's trail is readable too.
+	peerQuery := querySource(t, run, "peer", "cedar")
+	if _, peerTrail := run.run(false, "trail", trailIDOf(peerQuery)); !reflect.DeepEqual(peerTrail, trailOf(peerQuery)) {
+		t.Fatalf("peer trail read differs from its recorded trail: %v", peerTrail)
 	}
 	run.run(false, "withdraw", root)
 	run.run(false, "access", root, "allow")
 	_, withdrawn := run.run(false, "query", root, "cedar")
-	if withdrawn["outcome"] != "lifecycle_excluded" || len(hits(withdrawn)) != 0 {
-		t.Fatalf("policy allow overrode source withdrawal: %v", withdrawn)
+	decision := sourceDecision(t, withdrawn)
+	reasons, _ := decision["reasons"].([]any)
+	if decision["outcome"] != "deny" || len(hits(withdrawn)) != 0 || !slices.Contains(reasons, any("source_withdrawn")) {
+		t.Fatalf("access allow overrode source withdrawal: %v", withdrawn)
 	}
-	_, sealedTrail := run.run(false, "trail", root, trailID)
-	if sealedTrail["authorization_outcome"] != "deny" || sealedTrail["historical"] != nil {
-		t.Fatalf("withdrawal released historical metadata: %v", sealedTrail)
+	if _, sealedTrail := run.run(false, "trail", trailID); !reflect.DeepEqual(sealedTrail, trailOf(original)) {
+		t.Fatalf("withdrawal changed the recorded trail: %v", sealedTrail)
 	}
 	if firstItem(t, querySource(t, run, "peer", "cedar")) != "peer-note" {
 		t.Fatal("withdrawal affected a different source")
+	}
+}
+
+func TestCLIQueryTrailDigestStable(t *testing.T) {
+	run, _ := setup(t)
+	const source = "digest-stable"
+	jsonlSync(t, run, source, record("doc", "Stable digest evidence about otters."))
+	first := querySource(t, run, source, "otters")
+	second := querySource(t, run, source, "otters")
+	if trailIDOf(first) == trailIDOf(second) {
+		t.Fatalf("identical queries shared a trail ID: %v", second)
+	}
+	if trailOf(first)["result_sha256"] != trailOf(second)["result_sha256"] {
+		t.Fatalf("identical requests produced different result digests: %v vs %v", trailOf(first), trailOf(second))
+	}
+	if !reflect.DeepEqual(hits(first), hits(second)) {
+		t.Fatalf("identical queries released different passages: %v vs %v", first, second)
+	}
+	// The owner read returns each full recorded trail.
+	for _, query := range []map[string]any{first, second} {
+		_, inspected := run.run(false, "trail", trailIDOf(query))
+		if !reflect.DeepEqual(inspected, trailOf(query)) {
+			t.Fatalf("owner read did not return the recorded trail: %v", inspected)
+		}
 	}
 }

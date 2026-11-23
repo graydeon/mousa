@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	run.run(false, "sync", "--allow", root)
 	_, old := run.run(false, "query", root, "amber")
 	_, omitted := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
-	if omitted["outcome"] != "budget_omitted" {
+	if len(hits(omitted)) != 0 || packingOf(omitted)["used"] != float64(0) {
 		t.Fatalf("fixed evidence unexpectedly fits: %v", omitted)
 	}
 	_, changed := run.run(false, "sync", "--segment-policy", "passage-v1", root)
@@ -25,18 +26,16 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 		t.Fatalf("policy change was not an update: %v", changed)
 	}
 	_, got := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
-	if len(hits(got)) != 1 || !strings.Contains(hits(got)[0].(map[string]any)["text"].(string), required) || got["used_bytes"].(float64) > 1024 {
+	if len(hits(got)) != 1 || !strings.Contains(hits(got)[0].(map[string]any)["text"].(string), required) || packingOf(got)["used"].(float64) > 1024 {
 		t.Fatalf("missing complete bounded passage: %v", got)
 	}
 	_, replay := run.run(false, "sync", "--segment-policy", "passage-v1", root)
 	if lenOf(replay, "unchanged") != 1 {
 		t.Fatalf("same policy retry: %v", replay)
 	}
-	_, history := run.run(false, "trail", root, old["trail_id"].(string))
-	for _, row := range history["historical"].(map[string]any)["candidates"].([]any) {
-		if row.(map[string]any)["indexed_now"] != false {
-			t.Fatalf("old segment still indexed: %v", history)
-		}
+	_, history := run.run(false, "trail", trailIDOf(old))
+	if !reflect.DeepEqual(history, trailOf(old)) {
+		t.Fatalf("policy change altered the recorded trail: %v", history)
 	}
 	if err := os.Remove(filepath.Join(root, "runbook.md")); err != nil {
 		t.Fatal(err)
@@ -76,7 +75,7 @@ func TestPassageJSONLAccessAndWithdrawal(t *testing.T) {
 	}
 	sync(original)
 	_, tiny := run.run(false, "query", "--source", source, "--budget-bytes", "1", "café")
-	if tiny["outcome"] != "budget_omitted" || len(hits(tiny)) != 0 {
+	if len(hits(tiny)) != 0 || packingOf(tiny)["used"] != float64(0) {
 		t.Fatalf("tiny budget released a fragment: %v", tiny)
 	}
 	old := querySource(t, run, source, "café")
@@ -97,12 +96,11 @@ func TestPassageJSONLAccessAndWithdrawal(t *testing.T) {
 			sync(revised)
 		}
 		raw, denied := run.run(false, "query", "--source", source, "café")
-		historical, trail := run.run(false, "trail", "--source", source, old["trail_id"].(string))
-		if len(hits(denied)) != 0 || denied["matched_candidates"] != float64(0) || trail["historical"] != nil {
-			t.Fatalf("restricted evidence released: %v %v", denied, trail)
+		if len(hits(denied)) != 0 || sourceDecision(t, denied)["outcome"] != "deny" || len(candidatesOf(denied)) != 0 {
+			t.Fatalf("restricted evidence released: %v", denied)
 		}
 		for _, secret := range []string{original, revised, "private-note", hit["segment_id"].(string), hit["content_sha256"].(string)} {
-			if strings.Contains(raw, secret) || strings.Contains(historical, secret) {
+			if strings.Contains(raw, secret) {
 				t.Fatalf("restricted metadata released: %q", secret)
 			}
 		}
@@ -124,8 +122,9 @@ func TestEvidenceNormalizedLocations(t *testing.T) {
 			var representation any
 			for _, value := range hits(result) {
 				hit := value.(map[string]any)
-				start, startOK := hit["byte_start"].(float64)
-				end, endOK := hit["byte_end"].(float64)
+				byteRange, _ := hit["range"].(map[string]any)
+				start, startOK := byteRange["start"].(float64)
+				end, endOK := byteRange["end"].(float64)
 				if !startOK || !endOK || start < 0 || end <= start || end > float64(len(normalized)) {
 					t.Fatalf("invalid normalized range: %v", hit)
 				}

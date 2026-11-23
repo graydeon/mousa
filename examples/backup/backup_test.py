@@ -61,7 +61,7 @@ class BackupConsumerTest(unittest.TestCase):
         self.assertEqual(result["decision"], "unresolved")
         self.assertEqual(set(result["unresolved_facts"]), {"concurrency", "pages", "progress", "closure"})
         value["facts"] = [{"id": "concurrency", "judgment": "supported", "reason": "Claimed support",
-                           "references": [{"packet_id": "0" * 64, "segment_id": "1" * 64}]}]
+                           "references": [{"trail_id": "0" * 64, "segment_id": "1" * 64}]}]
         path.write_text(json.dumps(value))
         self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
 
@@ -69,19 +69,21 @@ class BackupConsumerTest(unittest.TestCase):
     def test_changed_packet_revision_digest_and_range_refuse(self):
         value, path = self.assessment()
         original = self.packet.read_bytes()
-        for field in ("revision", "packet_id", "representation_sha256", "byte_start"):
+        for field in ("revision", "trail_id", "representation_sha256", "range_start"):
             with self.subTest(field=field):
                 packet = json.loads(original)
                 response = packet["packet"]["response"]
                 if field == "revision":
-                    packet["packet"]["corpus"][field] = "other revision"
-                elif field == "packet_id":
-                    response[field] = "0" * 64
+                    packet["packet"]["corpus"]["revision"] = "other revision"
+                elif field == "trail_id":
+                    response["trail"]["id"] = "0" * 64
+                elif field == "range_start":
+                    response["passages"][0]["range"]["start"] += 1
                 else:
-                    response["evidence"][0][field] = 1 if field == "byte_start" else "0" * 64
+                    response["passages"][0][field] = "0" * 64
                 self.packet.write_text(json.dumps(packet))
                 self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
-                if field != "packet_id":
+                if field != "trail_id":
                     value["packet_file_sha256"] = hashlib.sha256(self.packet.read_bytes()).hexdigest()
                     path.write_text(json.dumps(value))
                     self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
@@ -92,7 +94,7 @@ class BackupConsumerTest(unittest.TestCase):
     def test_unsupported_contradictory_and_unassessed_are_visible(self):
         value, path = self.assessment()
         evidence = json.loads(self.packet.read_bytes())["packet"]["response"]
-        reference = {"packet_id": evidence["packet_id"], "segment_id": evidence["evidence"][0]["segment_id"]}
+        reference = {"trail_id": evidence["trail"]["id"], "segment_id": evidence["passages"][0]["segment_id"]}
         value["facts"] = [
             {"id": "concurrency", "judgment": "unsupported", "references": [], "reason": "No support asserted"},
             {"id": "pages", "judgment": "contradictory", "references": [reference], "reason": "Caller disputes applicability"}]
@@ -114,7 +116,7 @@ class BackupConsumerTest(unittest.TestCase):
         self.assertEqual(result["decision"], "retrieve")
         followup = self.call("followup", "--packet", str(self.packet), "--assessment", str(path))
         self.assertEqual(followup["original"], original)
-        self.assertEqual(followup["packet"]["response"]["query"], value["next_retrieval"]["question"])
+        self.assertEqual(followup["packet"]["response"]["trail"]["request"]["texts"], [value["next_retrieval"]["question"]])
         self.packet.write_text(json.dumps(followup))
         value, path = self.assessment()
         value["next_retrieval"] = {"fact": "closure", "question": "close", "budget_bytes": 4096}
@@ -138,7 +140,7 @@ class BackupConsumerTest(unittest.TestCase):
         self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
         self.call("sync")
         current = self.call("retrieve", "--case", "complete")
-        self.assertNotEqual(current["packet"]["response"]["packet_id"], json.loads(self.packet.read_bytes())["packet"]["response"]["packet_id"])
+        self.assertNotEqual(current["packet"]["response"]["trail"]["id"], json.loads(self.packet.read_bytes())["packet"]["response"]["trail"]["id"])
         for operation in ("deny", "withdraw"):
             if operation == "deny":
                 docs.invoke(self.binary, self.store, ["access", str(old_directory), "deny"], 30)
@@ -146,7 +148,7 @@ class BackupConsumerTest(unittest.TestCase):
                 docs.invoke(self.binary, self.store, ["access", str(old_directory), "allow"], 30)
                 docs.invoke(self.binary, self.store, ["withdraw", str(old_directory)], 30)
             denied = self.call("retrieve", "--case", "complete")
-            self.assertFalse(denied["packet"]["response"]["evidence"])
+            self.assertFalse(denied["packet"]["response"]["passages"])
             self.directory = saved
             result = self.call("assess", "--packet", str(self.packet), "--assessment", str(path))
             self.assertEqual(result["citation_consistency"], "verified_against_saved_corpus")
@@ -159,11 +161,11 @@ class BackupConsumerTest(unittest.TestCase):
         docs.sync(self.binary, self.store, peer, 30)
         other = docs.ask(self.binary, self.store, peer, "backup pages progress context manager closes connection", 8192, 30)
         local = json.loads(self.packet.read_bytes())["packet"]["response"]
-        self.assertEqual({h["text"] for h in local["evidence"]}, {h["text"] for h in other["response"]["evidence"]})
-        self.assertTrue({h["segment_id"] for h in local["evidence"]}.isdisjoint({h["segment_id"] for h in other["response"]["evidence"]}))
+        self.assertEqual({h["text"] for h in local["passages"]}, {h["text"] for h in other["response"]["passages"]})
+        self.assertTrue({h["segment_id"] for h in local["passages"]}.isdisjoint({h["segment_id"] for h in other["response"]["passages"]}))
         value, path = self.assessment()
         value["facts"] = [{"id": "pages", "judgment": "supported", "reason": "Wrong provenance",
-                           "references": [{"packet_id": local["packet_id"], "segment_id": other["response"]["evidence"][0]["segment_id"]}]}]
+                           "references": [{"trail_id": local["trail"]["id"], "segment_id": other["response"]["passages"][0]["segment_id"]}]}]
         path.write_text(json.dumps(value))
         self.call("assess", "--packet", str(self.packet), "--assessment", str(path), expected=1)
 

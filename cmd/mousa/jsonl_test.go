@@ -28,10 +28,40 @@ func querySource(t *testing.T, run testRun, sourceID, query string) map[string]a
 }
 
 func hits(report map[string]any) []any {
-	if evidence, ok := report["evidence"].([]any); ok {
-		return evidence
+	if passages, ok := report["passages"].([]any); ok {
+		return passages
 	}
 	return nil
+}
+
+func trailOf(report map[string]any) map[string]any {
+	trail, _ := report["trail"].(map[string]any)
+	return trail
+}
+
+func trailIDOf(report map[string]any) string {
+	id, _ := trailOf(report)["id"].(string)
+	return id
+}
+
+// sourceDecision returns the single trail source decision a query recorded.
+func sourceDecision(t *testing.T, report map[string]any) map[string]any {
+	t.Helper()
+	sources, ok := trailOf(report)["sources"].([]any)
+	if !ok || len(sources) != 1 {
+		t.Fatalf("query trail did not record exactly one source decision: %v", report)
+	}
+	return sources[0].(map[string]any)
+}
+
+func packingOf(report map[string]any) map[string]any {
+	packing, _ := trailOf(report)["packing"].(map[string]any)
+	return packing
+}
+
+func candidatesOf(report map[string]any) []any {
+	candidates, _ := trailOf(report)["candidates"].([]any)
+	return candidates
 }
 
 func firstItem(t *testing.T, report map[string]any) string {

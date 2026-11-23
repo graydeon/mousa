@@ -25,8 +25,9 @@ python3 examples/backup/backup.py --directory /tmp/backup-docs template --packet
 Read `packet.json` and edit `assessment.json`. Every fact starts `unassessed`.
 For each required fact, choose `supported`, `partial`, `unsupported`,
 `contradictory`, or `unassessed`; explain your judgment in `reason`. References
-are objects with a returned `packet_id` and `segment_id`. Copy the IDs from the
-saved packet, not another retrieval. Supported, partial and contradictory
+are objects with a returned `trail_id` and `segment_id`. Copy the trail `id`
+from `response.trail` and the segment ID from `response.passages` in the saved
+packet, not another retrieval. Supported, partial and contradictory
 judgments require at least one reference. A valid reference does not establish
 that its text supports your judgment.
 
@@ -77,7 +78,7 @@ Mousa authorizes each new query and returns source passages. Retrieval continues
 to use `answer: null` and `support: not_assessed`. Offline assessment verifies the
 exact saved file SHA-256, corpus manifest/revision, full normalized representation
 digests, UTF-8 byte ranges, selected text, content digests and released-byte
-accounting. References must belong to the assessed packet. Existing packet and
+accounting. References must belong to the assessed packet. Existing trail and
 segment IDs retain their meanings; the saved-file checksum binds additional
 consumer metadata and all retained packets to the caller's assessment.
 

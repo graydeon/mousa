@@ -46,27 +46,37 @@ def verify_packet(packet, directory):
     require(packet["answer"] is None and packet["support"] == "not_assessed",
             "retrieval must remain separate from caller judgment")
     response = packet["response"]
-    evidence = response["evidence"] or []
-    require(not evidence or (response["decision_outcome"] == "allow" and response["outcome"] == "evidence"),
+    trail = response["trail"]
+    request = trail["request"]
+    evidence = response["passages"] or []
+    decisions = trail["sources"]
+    require(len(decisions) == 1, "packet is not a single-source decision")
+    expected = decisions[0]["source_id"]
+    require(request["scope"] == {"kind": "source", "sources": [expected]},
+            "packet scope does not match its source decision")
+    require(not evidence or decisions[0]["outcome"] == "allow",
             "evidence without an allowed retrieval")
     references = {}
     used = 0
     for hit in evidence:
+        require(hit["source_id"] == expected, "evidence from a foreign source")
         require(hit["item"] in documents, "evidence outside the corpus")
         selected = docs.verify_evidence(hit, documents[hit["item"]])
         normalized = documents[hit["item"]].removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-        expected_location = {"path": hit["item"], "line_start": normalized[:hit["byte_start"]].count(b"\n") + 1,
-                             "line_end": normalized[:hit["byte_end"] - 1].count(b"\n") + 1,
+        bounds = hit["range"]
+        expected_location = {"path": hit["item"], "line_start": normalized[:bounds["start"]].count(b"\n") + 1,
+                             "line_end": normalized[:bounds["end"] - 1].count(b"\n") + 1,
                              "url": manifest["files"][hit["item"]]["url"]}
         require(hit["location"] == expected_location, "passage location mismatch")
-        key = (response["packet_id"], hit["segment_id"])
+        key = (trail["id"], hit["segment_id"])
         require(key not in references, "duplicate evidence reference")
         references[key] = hit
         used += len(selected)
-    require(type(response["budget_bytes"]) is int and 0 < response["budget_bytes"] <= 65536,
+    budget = request["budget"]["limit"]
+    require(request["budget"]["unit"] == "bytes" and type(budget) is int and 0 < budget <= 65536,
             "invalid packet byte budget")
-    require(used == response["used_bytes"] and used <= response["budget_bytes"], "packet accounting mismatch")
-    require(bool(evidence) == (response["outcome"] == "evidence"), "packet outcome mismatch")
+    require(used == (trail.get("packing") or {}).get("used", 0) <= budget, "packet accounting mismatch")
+    require(bool(evidence) == (packet["outcome"] == "evidence_available"), "packet outcome mismatch")
     return references
 
 
@@ -80,10 +90,11 @@ def inspect(raw, directory):
         prior = assess(original_raw, saved["assessment"], directory)
         require(prior["decision"] == "retrieve", "follow-up was not requested by the original assessment")
         choice = saved["assessment"]["next_retrieval"]
-        require(saved["packet"]["response"]["query"] == choice["question"] and
-                saved["packet"]["response"]["budget_bytes"] == choice["budget_bytes"],
+        followup_request = saved["packet"]["response"]["trail"]["request"]
+        require(followup_request["texts"] == [choice["question"]] and
+                followup_request["budget"]["limit"] == choice["budget_bytes"],
                 "follow-up differs from caller request")
-        require(saved["packet"]["response"]["source"] == original["packet"]["response"]["source"],
+        require(followup_request["scope"] == original["packet"]["response"]["trail"]["request"]["scope"],
                 "follow-up source changed")
         packets = [original["packet"], saved["packet"]]
         original_wrapper = original
@@ -136,8 +147,8 @@ def assess(raw, assessment, directory):
                 "this judgment requires evidence references")
         unique = set()
         for reference in fact["references"]:
-            require(set(reference) == {"packet_id", "segment_id"}, "invalid evidence reference fields")
-            identity = (reference["packet_id"], reference["segment_id"])
+            require(set(reference) == {"trail_id", "segment_id"}, "invalid evidence reference fields")
+            identity = (reference["trail_id"], reference["segment_id"])
             require(identity in references, "reference absent from assessed packets")
             require(identity not in unique, "duplicate fact reference")
             unique.add(identity)
@@ -156,8 +167,8 @@ def assess(raw, assessment, directory):
             "citation_consistency": "verified_against_saved_corpus", "semantic_support": "caller_assessed",
             "current_authorization": "not_checked", "current_source_state": "not_checked",
             "followup_count": followups, "followup_remaining": 1 - followups,
-            "requested_retrieval": choice, "released_bytes": sum(p["response"]["used_bytes"] for p in packets),
-            "original_query": original["packet"]["response"]["query"],
+            "requested_retrieval": choice, "released_bytes": sum(p["response"]["trail"].get("packing", {}).get("used", 0) for p in packets),
+            "original_query": original["packet"]["response"]["trail"]["request"]["texts"][0],
             "packet_file_sha256": digest(raw)}
 
 
@@ -209,7 +220,8 @@ def main():
                 if args.operation == "followup":
                     require(result["decision"] == "retrieve", "no available caller-requested follow-up")
                     original, _, _ = inspect(raw, directory)
-                    require(original["packet"]["response"]["source"] == str(directory), "follow-up requires the original source path")
+                    require(original["packet"]["response"]["trail"]["request"]["scope"]["sources"] ==
+                            [docs.directory_source_id(directory)], "follow-up requires the original source path")
                     choice = assessment["next_retrieval"]
                     response = docs.ask(args.mousa.resolve(strict=True), args.store, directory,
                                         choice["question"], choice["budget_bytes"], args.timeout)

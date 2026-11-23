@@ -9,7 +9,7 @@ import (
 // while identical configurations must derive the identical namespace so retries
 // inside one run keep the same request identity.
 func TestRunConfigNamespace(t *testing.T) {
-	base := RunConfig{Mode: ModeEnforced, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 50}
+	base := RunConfig{Mode: ModeVerified, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 50}
 	namespace := base.Namespace()
 	if namespace == "" {
 		t.Fatal("namespace is empty")
@@ -19,11 +19,11 @@ func TestRunConfigNamespace(t *testing.T) {
 	}
 	for _, changed := range []RunConfig{
 		{Mode: ModeTraced, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 50},
-		{Mode: ModeEnforced, Limit: 10, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 50},
-		{Mode: ModeEnforced, Limit: 100, Budget: 512, Dataset: "scifact", Corpus: 100, Judged: 50},
-		{Mode: ModeEnforced, Limit: 100, Budget: 1 << 20, Dataset: "nfcorpus", Corpus: 100, Judged: 50},
-		{Mode: ModeEnforced, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 200, Judged: 50},
-		{Mode: ModeEnforced, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 51},
+		{Mode: ModeVerified, Limit: 10, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 50},
+		{Mode: ModeVerified, Limit: 100, Budget: 512, Dataset: "scifact", Corpus: 100, Judged: 50},
+		{Mode: ModeVerified, Limit: 100, Budget: 1 << 20, Dataset: "nfcorpus", Corpus: 100, Judged: 50},
+		{Mode: ModeVerified, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 200, Judged: 50},
+		{Mode: ModeVerified, Limit: 100, Budget: 1 << 20, Dataset: "scifact", Corpus: 100, Judged: 51},
 	} {
 		if other := changed.Namespace(); other == namespace {
 			t.Fatalf("config %+v shares namespace %q with base", changed, namespace)

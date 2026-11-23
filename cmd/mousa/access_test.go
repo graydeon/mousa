@@ -17,18 +17,23 @@ func TestAccessEventsDefaultDenyAndSyncAllow(t *testing.T) {
 
 	requireDecision := func(report map[string]any, outcome, event string, reasons ...string) {
 		t.Helper()
-		if report["decision_outcome"] != outcome {
-			t.Fatalf("decision_outcome = %v, want %s: %v", report["decision_outcome"], outcome, report)
+		decision := sourceDecision(t, report)
+		if decision["outcome"] != outcome {
+			t.Fatalf("decision outcome = %v, want %s: %v", decision["outcome"], outcome, report)
 		}
 		var got []string
-		for _, reason := range report["decision_reasons"].([]any) {
+		for _, reason := range decision["reasons"].([]any) {
 			got = append(got, reason.(string))
 		}
 		if !reflect.DeepEqual(got, reasons) {
-			t.Fatalf("decision_reasons = %v, want %v", got, reasons)
+			t.Fatalf("decision reasons = %v, want %v", got, reasons)
 		}
-		if report["access_event"] != event {
-			t.Fatalf("access_event = %v, want %s", report["access_event"], event)
+		if event == "default" {
+			if decision["access"] != "default" || decision["access_event_id"] != nil {
+				t.Fatalf("default-denied source cited an access event: %v", decision)
+			}
+		} else if decision["access_event_id"] != event {
+			t.Fatalf("access_event_id = %v, want %s", decision["access_event_id"], event)
 		}
 	}
 
@@ -110,8 +115,9 @@ func TestSyncAllowKeepsExplicitDeny(t *testing.T) {
 		t.Fatalf("resync --allow = %v, want deny citing %v", resync, deny["access_event_id"])
 	}
 	denied := querySource(t, run, source, "walrus")
-	reasons, _ := denied["decision_reasons"].([]any)
-	if denied["decision_outcome"] != "deny" || len(reasons) != 1 || reasons[0] != "access_denied" || len(hits(denied)) != 0 {
+	decision := sourceDecision(t, denied)
+	reasons, _ := decision["reasons"].([]any)
+	if decision["outcome"] != "deny" || len(reasons) != 1 || reasons[0] != "access_denied" || len(hits(denied)) != 0 {
 		t.Fatalf("resync --allow reversed deny: %v", denied)
 	}
 	db, err := sql.Open("sqlite", run.store)
@@ -136,7 +142,8 @@ func TestAccessSyncAllowAndPreviewUsageError(t *testing.T) {
 		t.Fatalf("sync --allow = %v", synced)
 	}
 	_, allowed := run.run(false, "query", root, "cedar")
-	if allowed["decision_outcome"] != "allow" || allowed["access_event"] != synced["access_event_id"] || len(hits(allowed)) == 0 {
+	decision := sourceDecision(t, allowed)
+	if decision["outcome"] != "allow" || decision["access_event_id"] != synced["access_event_id"] || len(hits(allowed)) == 0 {
 		t.Fatalf("sync --allow source not retrievable: %v", allowed)
 	}
 	out, _ := run.run(true, "sync", "--preview", "--allow", root)

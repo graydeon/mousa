@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -105,22 +108,28 @@ func parseNoteCitation(value string) (mousa.NoteCitation, error) {
 	return citation, nil
 }
 
-// notesCommand exports the notes of one source as one JSON object per line.
+// notesCommand exports or imports the notes of one source. Export writes one
+// JSON object per line; import reads the same JSONL records from stdin and
+// commits them verbatim in one batch.
 func notesCommand(ctx context.Context, storePath string, args []string) error {
-	if len(args) == 0 || args[0] != "export" {
-		return usageError{"notes requires a subcommand: export"}
+	if len(args) == 0 || (args[0] != "export" && args[0] != "import") {
+		return usageError{"notes requires a subcommand: export or import"}
 	}
-	flags := newCommandFlags("notes export")
+	operation := args[0]
+	flags := newCommandFlags("notes " + operation)
 	sourceID := flags.String("source", "", "external source ID (required)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return usageError{err.Error()}
 	}
 	if *sourceID == "" || len(flags.Args()) != 0 {
-		return usageError{"notes export requires --source <external-id>"}
+		return usageError{"notes " + operation + " requires --source <external-id>"}
 	}
 	source, err := streamSource(*sourceID)
 	if err != nil {
 		return err
+	}
+	if operation == "import" {
+		return runNotesImport(ctx, storePath, source)
 	}
 	store, err := sqlite.OpenReadOnly(ctx, storePath)
 	if err != nil {
@@ -138,4 +147,59 @@ func notesCommand(ctx context.Context, storePath string, args []string) error {
 		}
 	}
 	return nil
+}
+
+// runNotesImport validates every stdin record before the batch write begins, so
+// a malformed line never becomes a partial import.
+func runNotesImport(ctx context.Context, storePath string, source mousa.Source) error {
+	data, err := readBoundedInput(os.Stdin, 16<<20, "notes import")
+	if err != nil {
+		return err
+	}
+	var notes []sqlite.ExportedNote
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 64<<10), maxItemRecordBytes+2)
+	line := 0
+	for scanner.Scan() {
+		line++
+		raw := scanner.Bytes()
+		if len(raw) > maxItemRecordBytes {
+			return recordError{Line: line, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			continue
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var note sqlite.ExportedNote
+		if err := decoder.Decode(&note); err != nil {
+			return recordError{Line: line, Err: err}
+		}
+		var extra any
+		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+			return recordError{Line: line, Err: errors.New("record has trailing data")}
+		}
+		notes = append(notes, note)
+	}
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return recordError{Line: line + 1, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+		}
+		return recordError{Line: line + 1, Err: err}
+	}
+	store, err := sqlite.Open(ctx, storePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	created, err := store.ImportNotes(ctx, source.ID, notes, func(scoped *sqlite.Store, exported sqlite.ExportedNote) error {
+		_, err := applyItem(ctx, scoped, source, itemInput{ID: exported.ItemID, Content: []byte(exported.Text), Captured: exported.CreatedAtUsec}, nil, mousa.TextSegmentNoteV1)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return emit(struct {
+		Imported int `json:"imported"`
+	}{created})
 }

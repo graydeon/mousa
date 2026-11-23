@@ -19,38 +19,10 @@ Keep earlier schema versions, public signatures, canonical encodings and identit
 
 Reuse the supplied SQLite transaction for candidate, administrative and provenance reads. Calling a public method that opens another transaction can mix snapshots. Distinguish verified no history from damaged recorded state: a missing event named by an existing projection is corruption; an unknown identity requested directly from a historical reader can be not-found. Fail without manufacturing, repairing or committing partial records.
 
-Historical trail reads verify recorded immutable evidence and current authorization. Keep unavailable historical text verification limits explicit.
-
-For vector work, read [caller-supplied exact vector retrieval](../../docs/CAPABILITIES.md#caller-supplied-exact-vector-retrieval).
-Native `vector inputs`, `vector import` and `query --vector-space` form one supported
-workflow; embedding inference stays external and never holds a canonical transaction.
-The source/segment/space slot is immutable; vector identities bind supplied values
-and canonical revision pins. Fresh authorization/current-pointer selection and v5
-trace persistence share one writer snapshot. Historical verification reads recorded
-producing embeddings rather than current vectors. Keep cosine separate from BM25,
-report coverage and reject explicit vector query-term policy.
-MCP
-`mousa_vector_query` reuses that native transaction for configured JSONL sources.
-
-For hybrid changes, read [native hybrid retrieval](../../docs/CAPABILITIES.md#native-hybrid-lexical-and-vector-retrieval).
-`query --hybrid-space` combines prepared lexical text and an explicitly supplied
-query vector in one immediate snapshot. v6 records separate BM25/cosine branch
-ranks, canonical pins and equal-weight RRF(k60); both packers consume fused order.
-Preserve v1–v5 bytes and vector-only behavior. Verify immutable producing facts
-in history without rerunning lexical search or asserting past coverage completeness.
-MCP `mousa_hybrid_query` reuses this transaction. Its retrieval-details history
-opt-in projects the verified producing view without reranking. Preserve default
-lexical query and trail property sets, canonical hex identities and closed schemas.
-MCP exports current
-authorized passage inputs through `mousa_vector_inputs` and imports exact pinned
-external values through `mousa_vector_import`. Reuse `ExportEmbeddingInputs`,
-`DecodeVectorImport` and atomic `ImportEmbeddings`; preserve their native bounds
-and the smaller transport frame bound. Export needs retrieval authorization, not
-ingestion permission. Import needs the alias's `--ingest-source` and runtime HTTP
-`mousa:write` scope, not a new native retrieval-policy gate. Withdrawal/current
-pins still reject in native import. Exact retries count accepted submissions,
-not new rows; conflicts/stale/foreign pins cannot partially insert a space or batch.
-No external snapshot lease exists. Fresh inspection may append authorization evidence.
+Historical trail reads verify immutable evidence; MCP separately rechecks current
+access and masks absent or unauthorized IDs. Query writes one `mousa.trail.v1`
+record and its leaf before returning passages. Keep caller-view masking and the
+unavailable historical text boundary explicit.
 
 ## Prove and deliver the change
 

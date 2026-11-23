@@ -1,20 +1,17 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/graydeon/mousa/internal/mousa"
-	"github.com/graydeon/mousa/internal/sqlite"
 )
 
-// inspectionRows includes WAL-visible rows from every table. Only the response-bound
-// decision may be excluded from the post-command comparison.
-func inspectionRows(t *testing.T, path string, exclude []byte) map[string][]string {
+// inspectionRows includes WAL-visible rows from every table: a read path must
+// leave the store byte-identical.
+func inspectionRows(t *testing.T, path string) map[string][]string {
 	t.Helper()
 	db := openRawStore(t, path)
 	tables, err := db.Query(`SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name`)
@@ -35,13 +32,7 @@ func inspectionRows(t *testing.T, path string, exclude []byte) map[string][]stri
 	tables.Close()
 	state := make(map[string][]string, len(names))
 	for _, name := range names {
-		query := `SELECT * FROM "` + strings.ReplaceAll(name, `"`, `""`) + `"`
-		var args []any
-		if exclude != nil && name == "policy_decisions" {
-			query += " WHERE id != ?"
-			args = append(args, exclude)
-		}
-		rows, err := db.Query(query, args...)
+		rows, err := db.Query(`SELECT * FROM "` + strings.ReplaceAll(name, `"`, `""`) + `"`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,147 +61,111 @@ func inspectionRows(t *testing.T, path string, exclude []byte) map[string][]stri
 	return state
 }
 
-func requireInspectionAudit(t *testing.T, run testRun, before map[string][]string, result map[string]any, sourceLabel, outcome string) {
-	t.Helper()
-	id, err := hex.DecodeString(result["authorization_decision_id"].(string))
-	if err != nil || len(id) != 32 {
-		t.Fatalf("invalid authorization identity: %v", result)
-	}
-	if after := inspectionRows(t, run.store, id); !reflect.DeepEqual(before, after) {
-		t.Fatal("inspection changed rows outside its fresh authorization decision and inputs")
-	}
-	db := openRawStore(t, run.store)
-	var sourceID, record []byte
-	var storedOutcome string
-	if err := db.QueryRow(`SELECT source_id, outcome, record_json FROM policy_decisions WHERE id = ?`, id).Scan(&sourceID, &storedOutcome, &record); err != nil {
-		t.Fatal(err)
-	}
-	source, err := streamSource(sourceLabel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decision, err := mousa.DecodePolicyDecision(record)
-	if err != nil || decision.ID.String() != result["authorization_decision_id"] || decision.Request.SourceID != source.ID ||
-		hex.EncodeToString(sourceID) != source.ID.String() || storedOutcome != outcome || string(decision.Outcome) != outcome || result["authorization_outcome"] != outcome {
-		t.Fatalf("authorization row is not bound to response/source/outcome: %s; %v", record, err)
-	}
-	if mcpCanonicalJSON(t, decision.ReasonCodes) != mcpCanonicalJSON(t, result["authorization_reasons"]) {
-		t.Fatal("authorization reasons differ from committed decision")
-	}
-	logMCPReceipt(t, map[string]any{"audit_decision": decision, "other_rows_unchanged": true})
-}
-
-func TestMCPTrailDeniedAudit(t *testing.T) {
+// The caller view is the only metadata contract a caller can inspect: denied
+// decisions disclose exactly the scoped identity and outcome, and none of the
+// retrieval snapshot facts ever leave the store.
+func TestMCPAuditedDenialView(t *testing.T) {
 	run, _ := setup(t)
-	jsonlSync(t, run, "alpha", record("doc", "harbor audit evidence"))
-	client := startMCPClient(t, run, "cli", false)
-	query := client.call("mousa_query", mcpQueryPacking("alpha", "harbor", 8192, mousa.PackingOriginal), "")
-	// The access change is preparation, not part of any inspection bracket.
-	run.run(false, "access", "--source", "alpha", "deny")
-	args := map[string]any{"source": "alpha", "trail_id": query["trail_id"]}
-	before := inspectionRows(t, run.store, nil)
-	denied := client.call("mousa_trail", args, "")
-	if _, present := denied["historical"]; present {
-		t.Fatalf("denial released historical payload: %v", denied)
-	}
-	requireInspectionAudit(t, run, before, denied, "alpha", "deny")
-	encoded, err := json.Marshal(denied)
+	run.runInput(record("doc", "harbor seeded evidence")+"\n", false, "sync", "--source", "seeded")
+	run.runInput(record("doc", "harbor allowed evidence")+"\n", false, "sync", "--source", "allowed", "--allow")
+	run.runInput(record("doc", "harbor denied evidence")+"\n", false, "sync", "--source", "denied", "--allow")
+	run.run(false, "access", "--source", "denied", "deny")
+	run.runInput(record("doc", "harbor withdrawn evidence")+"\n", false, "sync", "--source", "withdrawn", "--allow")
+	run.run(false, "withdraw", "--source", "withdrawn")
+	run.runInput(record("doc", "harbor stateless evidence")+"\n", false, "sync", "--source", "stateless", "--allow")
+	client := startMCPClient(t, run, "cli", false,
+		"--source", "allowed", "--source", "seeded", "--source", "denied", "--source", "withdrawn", "--source", "stateless", "--source", "unknown")
+	stateless, err := streamSource("stateless")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("successful denied inspection commits its response-bound authorization: %s", encoded)
-	client.close()
-}
+	rawExec(t, run.store, fmt.Sprintf(`DELETE FROM source_ingest_state WHERE source_id = X'%s'`, stateless.ID.String()))
 
-func TestMCPTrailOrphanSourceMasking(t *testing.T) {
-	for _, deny := range []bool{false, true} {
-		name := "allow"
-		if deny {
-			name = "deny"
-		}
-		t.Run(name, func(t *testing.T) {
-			run, _ := setup(t)
-			for _, source := range []string{"alpha", "beta"} {
-				jsonlSync(t, run, source, record("doc", "harbor orphan evidence"))
+	for _, source := range []string{"unknown", "seeded", "denied", "withdrawn", "stateless"} {
+		t.Run(source, func(t *testing.T) {
+			result := client.call("mousa_query", mcpQuery(source, "harbor", 4096), "")
+			trail := trailOf(result)
+			sources, _ := trail["sources"].([]any)
+			if len(sources) != 1 {
+				t.Fatalf("trail sources: %v", trail)
 			}
-			client := startMCPClient(t, run, "cli", false)
-			var ids []string
-			for _, source := range []string{"alpha", "beta"} {
-				query := client.call("mousa_query", mcpQueryPacking(source, "harbor", 8192, mousa.PackingOriginal), "")
-				ids = append(ids, query["trail_id"].(string))
-			}
-			if deny {
-				// Access preparation must finish before damage makes a fresh open fail.
-				run.run(false, "access", "--source", "alpha", "deny")
-			}
-			canonical, err := sqlite.Open(t.Context(), run.store)
+			decision, _ := sources[0].(map[string]any)
+			expected, err := streamSource(source)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer canonical.Close()
-			// Only these fresh synthetic stores receive FK-disabled out-of-band damage.
-			rawExec(t, run.store, `DELETE FROM policy_decisions WHERE id IN (SELECT decision_id FROM source_trails)`)
-			ids = append(ids, strings.Repeat("a", 64))
-			var refusal map[string]any
-			for _, id := range ids {
-				args := map[string]any{"source": "alpha", "trail_id": id}
-				before := inspectionRows(t, run.store, nil)
-				if deny {
-					result := client.call("mousa_trail", args, "")
-					if _, present := result["historical"]; present {
-						t.Fatalf("denial disclosed damaged history: %v", result)
-					}
-					requireInspectionAudit(t, run, before, result, "alpha", "deny")
-				} else {
-					result := client.call("mousa_trail", args, "not_found")
-					if refusal == nil {
-						refusal = result
-					} else if !reflect.DeepEqual(refusal, result) {
-						t.Fatalf("own/foreign/unknown refusal differs: %v versus %v", refusal, result)
-					}
-					if after := inspectionRows(t, run.store, nil); !reflect.DeepEqual(before, after) {
-						t.Fatal("scoped refusal committed its in-flight authorization or repaired damage")
-					}
+			if len(decision) != 2 || decision["source_id"] != expected.ID.String() || decision["outcome"] != "deny" {
+				t.Fatalf("denied view discloses more than the scoped identity and outcome: %v", decision)
+			}
+			for _, key := range []string{"as_of", "retrieval", "packing", "candidates"} {
+				if _, present := trail[key]; present {
+					t.Fatalf("denied view disclosed %s: %v", key, trail)
 				}
 			}
-			for _, id := range ids[:2] {
-				before := inspectionRows(t, run.store, nil)
-				if _, err := canonical.GetSourceTrail(t.Context(), requireTrailID(t, id)); !sqlite.IsCode(err, sqlite.CodeIntegrity) {
-					t.Fatalf("unscoped canonical orphan read = %v, want integrity", err)
-				}
-				if after := inspectionRows(t, run.store, nil); !reflect.DeepEqual(before, after) {
-					t.Fatal("canonical refusal changed damaged state")
-				}
-			}
-			client.close()
-			before := inspectionRows(t, run.store, nil)
-			message, _ := run.run(true, "status", "--source", "alpha")
-			if !strings.Contains(message, "integrity") {
-				t.Fatalf("fresh-open verification did not reject damage as integrity: %s", message)
-			}
-			if after := inspectionRows(t, run.store, nil); !reflect.DeepEqual(before, after) {
-				t.Fatal("fresh-open verification repaired damaged state")
+			if len(hits(result)) != 0 {
+				t.Fatalf("denied query released passages: %v", result)
 			}
 		})
 	}
+
+	result := client.call("mousa_query", mcpQuery("allowed", "harbor", 4096), "")
+	trail := trailOf(result)
+	decision, _ := trail["sources"].([]any)[0].(map[string]any)
+	if decision["outcome"] != "allow" {
+		t.Fatalf("allowed source denied: %v", decision)
+	}
+	head, _ := decision["head"].(map[string]any)
+	if head["leaf_sha256"] == nil {
+		t.Fatalf("allowed view lacks head.leaf_sha256: %v", decision)
+	}
+	if _, present := head["seq"]; present {
+		t.Fatalf("caller view disclosed global head seq: %v", head)
+	}
+	retrieval, _ := trail["retrieval"].(map[string]any)
+	for _, raw := range retrieval["branches"].([]any) {
+		branch, _ := raw.(map[string]any)
+		for _, key := range []string{"dropped_unknown", "dropped_not_allowed"} {
+			if _, present := branch[key]; present {
+				t.Fatalf("caller view disclosed %s: %v", key, branch)
+			}
+		}
+	}
+	if _, present := trail["as_of"]; present {
+		t.Fatalf("caller view disclosed as_of: %v", trail)
+	}
+	client.close()
 }
 
-// mcpQueryPacking is mcpQuery with an explicit packing policy; the empty policy keeps the default.
-func mcpQueryPacking(source, text string, budget int, packing string) map[string]any {
-	args := mcpQuery(source, text, budget)
-	if packing != "" {
-		args["packing_policy"] = packing
+// A trail whose allowed decision names a source the caller cannot read now —
+// denied, withdrawn, or never configured — is indistinguishable from a random
+// trail ID, and the read commits nothing.
+func TestMCPTrailUnauthorizedIsNotFound(t *testing.T) {
+	run, _ := setup(t)
+	jsonlSync(t, run, "alpha", record("doc", "harbor hidden evidence"))
+	client := startMCPClient(t, run, "cli", false)
+	query := client.call("mousa_query", mcpQuery("alpha", "harbor", 4096), "")
+	trailID := trailIDOf(query)
+	read := client.call("mousa_trail", map[string]any{"trail_id": trailID}, "")
+	if !reflect.DeepEqual(read, trailOf(query)) {
+		t.Fatalf("trail read differs from the query's caller view: %v", read)
 	}
-	return args
-}
-
-func requireTrailID(t *testing.T, value string) mousa.SourceTrailID {
-	t.Helper()
-	id, err := mousa.ParseSourceTrailID(value)
-	if err != nil || id == (mousa.SourceTrailID{}) {
-		t.Fatalf("inspection returned an invalid trail id %q", value)
+	run.run(false, "access", "--source", "alpha", "deny")
+	// A trail granted by a source outside the startup set is not_found too.
+	jsonlSync(t, run, "outsider", record("doc", "harbor outsider evidence"))
+	foreign := querySource(t, run, "outsider", "harbor outsider")
+	before := inspectionRows(t, run.store)
+	denied := client.call("mousa_trail", map[string]any{"trail_id": trailID}, "not_found")
+	random := client.call("mousa_trail", map[string]any{"trail_id": strings.Repeat("1", 64)}, "not_found")
+	if !reflect.DeepEqual(denied, random) {
+		t.Fatalf("denial distinguishes a withheld trail from an unknown one: %v vs %v", denied, random)
 	}
-	return id
+	if foreignRead := client.call("mousa_trail", map[string]any{"trail_id": trailIDOf(foreign)}, "not_found"); !reflect.DeepEqual(foreignRead, denied) {
+		t.Fatalf("ungranted trail differs from withheld: %v vs %v", foreignRead, denied)
+	}
+	if after := inspectionRows(t, run.store); !reflect.DeepEqual(before, after) {
+		t.Fatal("trail reads committed rows")
+	}
+	client.close()
 }
 
 func mcpCanonicalJSON(t *testing.T, value any) string {

@@ -230,8 +230,8 @@ func TestTamperedAccessEventOrLeafRefusedOnRead(t *testing.T) {
 			allowSource(t, store, batch.Source.ID)
 			other := testSourceNamed(t, "second")
 			rawExec(t, store.path, test.damage(batch.Source.ID, other.ID))
-			if _, err := store.EvaluateSourceRetrieval(ctx, testEvaluationRequest(t, test.target(batch.Source.ID, other.ID), "tampered-read")); !IsCode(err, CodeIntegrity) {
-				t.Fatalf("EvaluateSourceRetrieval = %v, want integrity", err)
+			if _, err := store.Query(ctx, auditRequest(test.target(batch.Source.ID, other.ID))); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("Query = %v, want integrity", err)
 			}
 			if err := store.Close(); err != nil {
 				t.Fatal(err)

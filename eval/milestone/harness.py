@@ -241,8 +241,8 @@ def mousa_adapter(binary, store, directory, prefix):
         out = subprocess.run([binary, "-store", store, "query", "--budget-bytes", str(budget * 8),
                               directory, q["question"]], capture_output=True, text=True, check=True).stdout
         return [{"source": prefix + e["item"], "text": e["text"],
-                 "byte_start": e["byte_start"], "byte_end": e["byte_end"]}
-                for e in json.loads(out).get("evidence", [])]
+                 "byte_start": e["range"]["start"], "byte_end": e["range"]["end"]}
+                for e in json.loads(out)["passages"]]
     return run
 
 

@@ -5,6 +5,22 @@ import (
 	"crypto/sha256"
 )
 
+// NoteStale describes a citation that cannot support a fresh note.
+type NoteStale struct {
+	TrailID   SourceTrailID `json:"trail_id"`
+	SegmentID *SegmentID    `json:"segment_id,omitempty"`
+	Reason    string        `json:"reason"`
+}
+
+type NoteEvidence struct {
+	ID            SHA256         `json:"id"`
+	Author        string         `json:"author"`
+	CreatedAtUsec int64          `json:"created_at_usec"`
+	DerivedFrom   []NoteCitation `json:"derived_from"`
+	Origin        string         `json:"origin"`
+	Stale         []NoteStale    `json:"stale"`
+}
+
 // NoteSchema is the canonical schema/version of a durable note record.
 const NoteSchema = "mousa.note.v1"
 

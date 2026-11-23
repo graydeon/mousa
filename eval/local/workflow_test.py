@@ -57,18 +57,25 @@ class ClientWorkflowTest(unittest.TestCase):
             self.assertEqual({row["segment_policy"] for row in result["rows"]}, {"fixed-v1", "passage-v1"})
             for policy in ("fixed-v1", "passage-v1"):
                 rows = {row["stage"]: row for row in result["rows"] if row["segment_policy"] == policy}
-                for stage, outcome in (("query", "evidence"), ("deleted_query", "no_matches"),
-                                       ("budget_omitted", "budget_omitted"),
-                                       ("denied_query", "policy_excluded"),
-                                       ("withdrawn_query", "lifecycle_excluded"),
-                                       ("directory_deleted_query", "no_matches")):
-                    self.assertEqual(rows[stage]["response"]["outcome"], outcome)
-                self.assertEqual(rows["updated_query"]["response"]["evidence"][0]["text"],
+                for stage, outcome in (("query", "allow"), ("deleted_query", "allow"),
+                                       ("budget_omitted", "allow"),
+                                       ("denied_query", "deny"),
+                                       ("withdrawn_query", "deny"),
+                                       ("directory_deleted_query", "allow")):
+                    self.assertEqual(rows[stage]["response"]["trail"]["sources"][0]["outcome"], outcome)
+                for stage in ("deleted_query", "budget_omitted", "denied_query",
+                              "withdrawn_query", "directory_deleted_query"):
+                    self.assertFalse(rows[stage]["response"]["passages"])
+                self.assertEqual(rows["deleted_query"]["response"]["trail"].get("candidates"), [])
+                self.assertEqual(rows["directory_deleted_query"]["response"]["trail"].get("candidates"), [])
+                self.assertIn("source_withdrawn",
+                              rows["withdrawn_query"]["response"]["trail"]["sources"][0]["reasons"])
+                self.assertEqual(rows["updated_query"]["response"]["passages"][0]["text"],
                                  "Cedar launch moved to Friday.")
-                self.assertNotIn("historical", rows["denied_trail"]["response"])
-                self.assertEqual(rows["cross_source_trail"]["exit_code"], 1)
+                self.assertEqual(rows["denied_trail"]["response"], rows["query"]["response"]["trail"])
+                self.assertNotIn("cross_source_trail", rows)
                 for stage in ("query", "directory_query", "policy_restored_query", "directory_restored_query"):
-                    self.assertTrue(all(hit["segment_policy"] == policy for hit in rows[stage]["response"]["evidence"]))
+                    self.assertTrue(all(hit["segment_policy"] == policy for hit in rows[stage]["response"]["passages"]))
         code, stdout, stderr = run_process(
             [sys.executable, str(Path(__file__).resolve().parents[2] / "examples/docs/docs_test.py"),
              "--mousa", os.environ["MOUSA_EXECUTABLE"]],
