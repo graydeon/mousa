@@ -22,7 +22,7 @@ func (store *Store) ApplyDocumentBatch(ctx context.Context, count int, apply fun
 	}
 	var completed int
 	var itemErr error
-	err := store.writeImmediate(ctx, "sync batch", func(conn *sql.Conn) error {
+	err := store.writeImmediateAttempts(ctx, "sync batch", syncWriteAttempts, func(conn *sql.Conn) error {
 		scoped := *store
 		scoped.writeConn = conn
 		for i := range count {

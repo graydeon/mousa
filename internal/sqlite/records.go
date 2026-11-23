@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
 )
@@ -16,6 +17,7 @@ import (
 const (
 	maxRecordBytes          = 32 * 1024 * 1024
 	maxRepresentationInputs = 4096
+	syncWriteAttempts       = 20
 )
 
 type queryRower interface {
@@ -527,6 +529,10 @@ func (store *Store) requireWritable(op string) error {
 }
 
 func (store *Store) writeImmediate(ctx context.Context, op string, write func(*sql.Conn) error) error {
+	return store.writeImmediateAttempts(ctx, op, 1, write)
+}
+
+func (store *Store) writeImmediateAttempts(ctx context.Context, op string, attempts int, write func(*sql.Conn) error) error {
 	if err := store.requireWritable(op); err != nil {
 		return err
 	}
@@ -538,8 +544,24 @@ func (store *Store) writeImmediate(ctx context.Context, op string, write func(*s
 		return classify(op, err)
 	}
 	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return classify(op, err)
+	// Retry only writer acquisition. A failed transaction body or commit
+	// must not replay the callback or a committed sync prefix.
+	for attempt := 1; ; attempt++ {
+		_, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE")
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return classify(op, ctx.Err())
+		}
+		if attempt == attempts || !sqlitePrimaryCodeIs(err, 5) { // SQLITE_BUSY
+			return classify(op, err)
+		}
+		select {
+		case <-ctx.Done():
+			return classify(op, ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 	committed := false
 	defer func() {
@@ -547,6 +569,9 @@ func (store *Store) writeImmediate(ctx context.Context, op string, write func(*s
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return classify(op, err)
+	}
 	if err := write(conn); err != nil {
 		return err
 	}
@@ -558,6 +583,10 @@ func (store *Store) writeImmediate(ctx context.Context, op string, write func(*s
 }
 
 func sqliteConstraint(err error) bool {
+	return sqlitePrimaryCodeIs(err, 19)
+}
+
+func sqlitePrimaryCodeIs(err error, code int) bool {
 	var sqliteErr interface{ Code() int }
-	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == 19
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == code
 }

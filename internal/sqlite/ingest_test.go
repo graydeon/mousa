@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
 )
@@ -411,6 +412,74 @@ func TestApplyIngestBusyIsBoundedAndRetryable(t *testing.T) {
 	var storageErr *Error
 	if !errors.As(err, &storageErr) || storageErr.Code != CodeBusy || !storageErr.Retryable {
 		t.Fatalf("busy = %#v", err)
+	}
+}
+
+func TestDocumentBatchWaitsForWriterWithoutReplaying(t *testing.T) {
+	for _, cancelWait := range []bool{false, true} {
+		name := "writer releases"
+		if cancelWait {
+			name = "caller cancels"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			path := filepath.Join(t.TempDir(), "busy.sqlite")
+			store, err := Open(ctx, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			locker, err := Open(ctx, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer locker.Close()
+			conn, err := locker.db.Conn(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			if _, err := store.db.ExecContext(ctx, `PRAGMA busy_timeout = 25`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+				t.Fatal(err)
+			}
+			var released chan error
+			if cancelWait {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+				defer conn.ExecContext(context.Background(), `ROLLBACK`)
+			} else {
+				released = make(chan error, 1)
+				time.AfterFunc(300*time.Millisecond, func() {
+					_, err := conn.ExecContext(context.Background(), `ROLLBACK`)
+					released <- err
+				})
+			}
+			source := testSourceNamed(t, "wait")
+			calls := 0
+			count, err := store.ApplyDocumentBatch(ctx, 1, func(scoped *Store, _ int) error {
+				calls++
+				return scoped.PutSource(ctx, source)
+			})
+			if cancelWait {
+				if !errors.Is(err, context.DeadlineExceeded) || calls != 0 || count != 0 {
+					t.Fatalf("canceled batch = (%d, %v) with %d calls", count, err, calls)
+				}
+				return
+			}
+			if releaseErr := <-released; releaseErr != nil {
+				t.Fatal(releaseErr)
+			}
+			if err != nil || count != 1 || calls != 1 {
+				t.Fatalf("batch = (%d, %v) with %d calls, want one committed call", count, err, calls)
+			}
+			if got, err := store.GetSource(ctx, source.ID); err != nil || got != source {
+				t.Fatalf("source = (%#v, %v), want committed source", got, err)
+			}
+		})
 	}
 }
 

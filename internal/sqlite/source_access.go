@@ -28,7 +28,11 @@ func (store *Store) AllowSourceIfUnset(ctx context.Context, sourceID mousa.Sourc
 func (store *Store) setSourceAccess(ctx context.Context, sourceID mousa.SourceID, access mousa.SourceAccess, actor string, ifUnset bool, nowUsec int64) (mousa.AccessEvent, bool, error) {
 	var current mousa.AccessEvent
 	changed := false
-	err := store.writeImmediate(ctx, "set source access", func(conn *sql.Conn) error {
+	attempts := 1
+	if ifUnset {
+		attempts = syncWriteAttempts
+	}
+	err := store.writeImmediateAttempts(ctx, "set source access", attempts, func(conn *sql.Conn) error {
 		if err := requireParent(ctx, conn, "sources", sourceID[:]); err != nil {
 			return err
 		}
