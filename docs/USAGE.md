@@ -82,6 +82,13 @@ and unauthorized IDs both return `not_found`. The caller view omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
 
+Use `mousa -store STORE trail list [--source ID] [--segment ID] [--since SEQ]`
+to stream owner-visible trail metadata as JSONL without writing. Each line
+contains the trail `id`, its log `seq`, `requested_at_usec`, and `result_sha256`.
+`--source` selects trails whose scope named that JSONL source; `--segment`
+selects only trails that released that segment in full or in part. `--since`
+excludes log entries at or before the supplied sequence. Filters combine.
+
 ### Query a collection or source list
 
 ```sh

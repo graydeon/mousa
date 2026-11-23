@@ -13,6 +13,79 @@ import (
 
 const queryTrailKind = "trail"
 
+type TrailListFilter struct {
+	Source  mousa.SourceID
+	Segment mousa.SegmentID
+	Since   uint64
+}
+
+type TrailListEntry struct {
+	ID              mousa.SourceTrailID `json:"id"`
+	Seq             uint64              `json:"seq"`
+	RequestedAtUsec uint64              `json:"requested_at_usec"`
+	ResultSHA256    mousa.SHA256        `json:"result_sha256"`
+}
+
+// ListTrails streams verified metadata in log order through the owner view.
+// The lookup names all candidates, but a segment filter selects releases only.
+func (store *Store) ListTrails(ctx context.Context, filter TrailListFilter, emit func(TrailListEntry) error) error {
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return classify("begin trail list", err)
+	}
+	defer tx.Rollback()
+	var source, segment any
+	if filter.Source != (mousa.SourceID{}) {
+		source = filter.Source[:]
+	}
+	if filter.Segment != (mousa.SegmentID{}) {
+		segment = filter.Segment[:]
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT l.seq, l.record_id FROM log l WHERE l.kind = 'trail' AND l.seq > ?1
+		AND (?2 IS NULL OR EXISTS (SELECT 1 FROM trail_sources s WHERE s.trail_id = l.record_id AND s.source_id = ?2))
+		AND (?3 IS NULL OR EXISTS (SELECT 1 FROM trail_segments s WHERE s.trail_id = l.record_id AND s.segment_id = ?3))
+		ORDER BY l.seq`, filter.Since, source, segment)
+	if err != nil {
+		return classify("list trails", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entry TrailListEntry
+		var raw []byte
+		if err := rows.Scan(&entry.Seq, &raw); err != nil {
+			return classify("scan trail list", err)
+		}
+		if len(raw) != len(entry.ID) {
+			return integrity("scan trail list", "invalid trail ID length")
+		}
+		entry.ID = mousa.SourceTrailID(raw)
+		trail, _, err := readTrailRecord(ctx, tx, entry.ID)
+		if IsCode(err, CodeNotFound) {
+			return integrity("list trails", "log leaf has no matching trail")
+		}
+		if err != nil {
+			return err
+		}
+		if err := checkTrailLookups(ctx, tx, trail); err != nil {
+			return err
+		}
+		if segment != nil && !slices.ContainsFunc(trail.Candidates, func(candidate mousa.Candidate) bool {
+			return candidate.SegmentID == filter.Segment && candidate.Packed != "none"
+		}) {
+			continue
+		}
+		entry.RequestedAtUsec, entry.ResultSHA256 = trail.Request.RequestedAtUsec, trail.ResultSHA256
+		if err := emit(entry); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return classify("finish listing trails", err)
+	}
+	return classify("finish trail list", tx.Commit())
+}
+
 func verifyQueryTrails(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

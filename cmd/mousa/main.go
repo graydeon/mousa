@@ -100,6 +100,8 @@ commands:
   status <dir>                report the source's ingest state (JSON)
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
   trail <trail-id>            inspect one recorded query trail, never text (JSON)
+  trail list [--source ID] [--segment ID] [--since SEQ]
+                            list owner-visible trail metadata in log order (JSONL)
   verify [--log | --trail <trail-id> | --stdin]
                             verify the store, log, or named trails read-only (JSON)
   access <dir> allow|deny     record an access event for every caller of the source (JSON)
