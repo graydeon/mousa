@@ -9,8 +9,11 @@ import (
 const (
 	TextSegmentFixedV1   = "fixed-v1"
 	TextSegmentPassageV1 = "passage-v1"
-	MaxUTF8PassageBytes  = 1024
-	MaxUTF8Passages      = 65536
+	// TextSegmentNoteV1 is the internal-only segmentation of a durable note:
+	// the exact stored bytes in one segment. It is not a sync policy option.
+	TextSegmentNoteV1   = "note-v1"
+	MaxUTF8PassageBytes = 1024
+	MaxUTF8Passages     = 65536
 )
 
 func textPolicyParameters(policy string) (SHA256, error) {
@@ -19,6 +22,8 @@ func textPolicyParameters(policy string) (SHA256, error) {
 		return SHA256(sha256.Sum256(nil)), nil
 	case TextSegmentPassageV1:
 		return SHA256(sha256.Sum256([]byte(`{"segmentation":"passage-v1"}`))), nil
+	case TextSegmentNoteV1:
+		return SHA256(sha256.Sum256([]byte(`{"segmentation":"note-v1"}`))), nil
 	default:
 		return SHA256{}, newValidationError("segmentation", ValidationCodeInvalidValue, "must be fixed-v1 or passage-v1", nil)
 	}
@@ -31,7 +36,7 @@ func TextSegmentationPolicy(representation Representation) (string, error) {
 		return TextSegmentFixedV1, nil
 	}
 	if representation.ProcessorVersion == UTF8TextProcessorVersion {
-		for _, policy := range []string{TextSegmentFixedV1, TextSegmentPassageV1} {
+		for _, policy := range []string{TextSegmentFixedV1, TextSegmentPassageV1, TextSegmentNoteV1} {
 			parameters, _ := textPolicyParameters(policy)
 			if representation.ParametersSHA256 == parameters {
 				return policy, nil

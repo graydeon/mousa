@@ -56,6 +56,11 @@ func (store *Store) ApplyIngest(ctx context.Context, batch mousa.IngestBatch) er
 		}
 	}
 	return store.writeImmediate(ctx, "apply ingest", func(conn *sql.Conn) error {
+		if store.noteConn == nil {
+			if err := requireDocumentSource(ctx, conn, batch.Source.ID); err != nil {
+				return err
+			}
+		}
 		var existing []byte
 		err := conn.QueryRowContext(ctx, `SELECT record_json FROM ingest_receipts WHERE observation_id = ?`, receipt.ObservationID[:]).Scan(&existing)
 		if err == nil {
@@ -252,6 +257,9 @@ func (store *Store) GetIngestState(ctx context.Context, sourceID mousa.SourceID)
 // content-addressed observation reads this to reproduce the accepted delivery
 // evidence instead of contradicting it with a fresh capture time.
 func (store *Store) GetIngestReceipt(ctx context.Context, observationID mousa.ObservationID) (mousa.IngestReceipt, error) {
+	if store.noteConn != nil {
+		return getIngestReceipt(ctx, store.noteConn, observationID)
+	}
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return mousa.IngestReceipt{}, classify("begin ingest receipt read", err)

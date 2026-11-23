@@ -35,6 +35,7 @@ binary, until the scale probe passes at both sizes.
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>`; opt-in `--packing-policy exact-v1` | Byte boundaries, skip-oversized selection, duplicate displacement, versioned explanations and historical compatibility |
 | Explicit query-term policy | Yes | Default `original`; explicit `--policy dedup` | Repetition changes ranking; shared expression capping |
 | Durable Source Trails and context packet IDs | Yes | Every query; `trail` inspection | Actual-CLI ID round-trip, current authorization, retired revisions; transaction rollback and rejected metadata filtering |
+| Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`; MCP `mousa_remember` for configured ingest JSONL | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources |
 | Embedding inference, answer generation | No | No | Not implemented |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown |
 | OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries |
@@ -243,6 +244,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_hybrid_query` | Same as vector plus lexical `query` and `policy`: `original` or `dedup` | Same packing option | Primary evidence and actual branch ranks, BM25/cosine and RRF(k60) |
 | `mousa_vector_inputs` | `source` | None | Native `mousa.embedding_inputs.v1`: fresh decision ID/outcome/reasons and exact normalized current passages/pins; denied/withdrawn has only an empty passage list |
 | `mousa_vector_import` | `source`, `import` | None | Native `mousa.vector_import_result.v1`: canonical space ID and accepted submitted count `imported`, including exact retries, not newly inserted rows |
+| `mousa_remember` | `source`, `text` | `derived_from`: array of `{trail_id, segment_ids?}` | Canonical `mousa.note.v1` record: ID, content digest, author (trusted caller), time and stored lineage; exact retries return the first note |
 
 Export calls `ExportEmbeddingInputs` with the trusted caller's retrieval request.
 Fresh policy/lifecycle and current passage reads share its existing writer snapshot.
@@ -580,6 +582,50 @@ Passages make smaller evidence units eligible for packing, not necessarily more
 relevant. They change lexical document frequencies and ranking. A complete
 structure larger than the budget cannot fit; smaller budgets can still omit all
 matching segments.
+
+## Durable notes
+
+`remember --source <id>` and `mousa_remember` write one immutable
+`mousa.note.v1` record per note: a canonical record carrying the note ID
+(record digest), content digest, author, creation time, source and typed
+lineage, plus one internal note-policy item holding the exact bytes. Every
+write is transactional and idempotent: the first valid write wins, so
+repeating the same text returns the first note's ID, author, time and lineage
+without appending anything, regardless of the retry's author or submitted
+lineage. Submitted citations are still validated on every write; an invalid
+citation rejects.
+
+Lineage is `derived_from`: an array of `{trail_id, segment_ids?}` objects.
+`trail_id` is required and must name a committed trail whose decision allowed
+retrieval; `segment_ids` omitted or empty means every segment that trail
+selected, and each listed segment must have been selected. Each cited source
+must currently allow access and not be withdrawn, and for MCP must be a
+configured source. A note without lineage is unsourced (`origin: "unsourced"`,
+empty `derived_from`). A checked citation identifies what the trail released,
+not whether the note is true and not whether its citations are complete. Note
+text is untrusted content: never store secrets or transcripts.
+
+Lexical query emits selected notes as ordinary evidence plus a `note` object
+(`id`, `author`, `created_at_usec`, `derived_from`, `origin`, `stale`).
+`stale` is an array of `{trail_id, segment_id?, reason}` entries; reasons are
+`source_denied`, `source_withdrawn` and `segment_retired`, describing what
+changed under the citation without rewriting the note. Notes follow the same
+access, lifecycle and budget rules as document evidence: a denied or
+withdrawn note source releases nothing, and access changes do not redact note
+bytes that were already released. `notes export --source <id>` streams each
+canonical record plus exact text as JSONL from a read-only open.
+
+Notes share their source's normal access grant; there are no agent-specific
+sources or per-note grants. The CLI author is the operator identity, the MCP
+author is the trusted `--caller`, and an MCP note write requires the source's
+`--ingest-source` grant (plus `mousa:write` over HTTP). Document and note
+sources stay disjoint: `sync` and `mousa_sync` refuse a source holding notes,
+and `remember` refuses a source holding document items, active or not.
+Not supported: editing or retracting a note, importing existing notes,
+recalling across multiple sources, a citation change cursor or standalone
+recheck, a daemon, and any change to ranking. Like every canonical record,
+notes do not migrate across breaking store schema versions: export them
+before upgrading a store that predates the current schema.
 
 ## Store schema and older stores
 

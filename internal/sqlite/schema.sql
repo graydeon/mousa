@@ -202,6 +202,33 @@ CREATE TABLE local_items (
 CREATE INDEX local_items_active_representation_idx
 ON local_items(source_id, representation_id) WHERE active = 1;
 
+-- Immutable durable notes. A note owns exactly one local item whose
+-- representation holds the exact note bytes; the canonical record carries the
+-- author, content digest, and query-trail lineage.
+CREATE TABLE notes (
+    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32)),
+    source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)),
+    item_id TEXT NOT NULL CHECK (typeof(item_id) = 'text' AND length(item_id) > 0),
+    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0),
+    UNIQUE (source_id, item_id),
+    FOREIGN KEY (source_id, item_id)
+        REFERENCES local_items(source_id, item_id) ON DELETE RESTRICT
+) STRICT;
+
+-- Ordered citation lineage: one row per cited segment, projected from the
+-- canonical record's derived_from array.
+CREATE TABLE note_citations (
+    note_id BLOB NOT NULL CHECK (typeof(note_id) = 'blob' AND length(note_id) = 32 AND note_id != zeroblob(32))
+        REFERENCES notes(id) ON DELETE RESTRICT,
+    citation_ordinal INTEGER NOT NULL CHECK (typeof(citation_ordinal) = 'integer' AND citation_ordinal >= 0),
+    segment_ordinal INTEGER NOT NULL CHECK (typeof(segment_ordinal) = 'integer' AND segment_ordinal >= 0),
+    trail_id BLOB NOT NULL CHECK (typeof(trail_id) = 'blob' AND length(trail_id) = 32 AND trail_id != zeroblob(32))
+        REFERENCES source_trails(id) ON DELETE RESTRICT,
+    segment_id BLOB NOT NULL CHECK (typeof(segment_id) = 'blob' AND length(segment_id) = 32 AND segment_id != zeroblob(32))
+        REFERENCES segments(id) ON DELETE RESTRICT,
+    PRIMARY KEY (note_id, citation_ordinal, segment_ordinal)
+) STRICT;
+
 -- Caller-declared spaces and source/segment-bound immutable embeddings.
 -- Current eligibility is always read from local_items, never from these records.
 CREATE TABLE vector_spaces (
@@ -243,7 +270,7 @@ CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 -- record_id.
 CREATE TABLE log (
     seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal')),
+    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal', 'note')),
     record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
     source_id BLOB NOT NULL CHECK (typeof(source_id) = 'blob' AND length(source_id) = 32 AND source_id != zeroblob(32)) REFERENCES sources(id) ON DELETE RESTRICT,
     leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),

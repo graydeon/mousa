@@ -50,6 +50,10 @@ func main() {
 		err = vectorCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
+	case "remember":
+		err = rememberCommand(ctx, *storePath, rest)
+	case "notes":
+		err = notesCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
 	case "mcp":
@@ -87,7 +91,14 @@ commands:
   vector import --source <id>
   access <dir> allow|deny     record an access event for every caller of the source (JSON)
   access --source <id> allow|deny
-                            a source with no access event is denied to every caller
+                            a source with no access event is denied to every caller;
+                            --create first registers an explicit JSONL source
+  remember --source <id> [text]
+                            store one durable note; exact stdin text when no
+                            argument is given; --from TRAIL[:SEG,SEG] cites a
+                            query trail, repeatable
+  notes export --source <id>
+                            export the source's notes exactly, one JSONL record each
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
   mcp --caller <id> --source <id>
@@ -492,6 +503,9 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 		return err
 	}
 	defer store.Close()
+	if err := store.RequireDocumentSource(ctx, source.ID); err != nil {
+		return err
+	}
 	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: selection.Skipped, SegmentPolicy: segmentPolicy}
 	var sequence uint64
 	selected := make(map[string]struct{}, len(selection.Items))
@@ -565,19 +579,20 @@ type evidenceResult struct {
 }
 
 type evidenceHit struct {
-	Item                 string  `json:"item"`
-	SegmentID            string  `json:"segment_id"`
-	ContentSHA256        string  `json:"content_sha256"`
-	RepresentationID     string  `json:"representation_id"`
-	RepresentationSHA256 string  `json:"representation_sha256"`
-	ByteStart            uint64  `json:"byte_start"`
-	ByteEnd              uint64  `json:"byte_end"`
-	SegmentPolicy        string  `json:"segment_policy"`
-	Rank                 int     `json:"rank,omitempty"`
-	Score                float64 `json:"bm25_score,omitempty"`
-	ByteLength           int     `json:"byte_length"`
-	Text                 string  `json:"text"`
-	Origin               string  `json:"origin,omitempty"`
+	Item                 string               `json:"item"`
+	SegmentID            string               `json:"segment_id"`
+	ContentSHA256        string               `json:"content_sha256"`
+	RepresentationID     string               `json:"representation_id"`
+	RepresentationSHA256 string               `json:"representation_sha256"`
+	ByteStart            uint64               `json:"byte_start"`
+	ByteEnd              uint64               `json:"byte_end"`
+	SegmentPolicy        string               `json:"segment_policy"`
+	Rank                 int                  `json:"rank,omitempty"`
+	Score                float64              `json:"bm25_score,omitempty"`
+	ByteLength           int                  `json:"byte_length"`
+	Text                 string               `json:"text"`
+	Origin               string               `json:"origin,omitempty"`
+	Note                 *sqlite.NoteEvidence `json:"note,omitempty"`
 }
 
 // runQuery runs one authorized query against one resolved source.

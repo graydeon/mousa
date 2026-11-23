@@ -94,7 +94,7 @@ true; default lexical tools and inspection stay unchanged.
 ## What works today?
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, byte-budget packing, exact-content deduplication and
-Source Trail inspection are implemented. The same executable serves local stdio MCP.
+Source Trail inspection are implemented. Agents can save durable notes and recall them through lexical query with authorship, lineage, and stale-citation flags. The same executable serves local stdio MCP.
 
 Caller-supplied vector retrieval uses a separate v5 trail; hybrid selection
 records branch contributions in v6. Access is an append-only per-source event

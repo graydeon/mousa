@@ -18,6 +18,9 @@ type TracedLexicalResult struct {
 	Decision   mousa.PolicyDecision
 	Trail      mousa.SourceTrail
 	Candidates []mousa.VerifiedLexicalCandidate
+	// Notes carries verified note metadata for each selected note segment,
+	// keyed by the candidate segment ID. Nil when no note was selected.
+	Notes map[mousa.SegmentID]NoteEvidence
 }
 
 // TraceEnforcedLexical verifies the exact stored decision for the request, reads the verified
@@ -77,7 +80,11 @@ func (store *Store) traceLexical(ctx context.Context, request mousa.PolicyEvalua
 		if !reflect.DeepEqual(written, trail) {
 			return integrity("trace enforced lexical", "exact read-back disagrees with write")
 		}
-		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates}
+		notes, err := traceNoteEvidence(ctx, conn, enforced.Decision.Request.SourceID, written, enforced.Candidates)
+		if err != nil {
+			return err
+		}
+		result = TracedLexicalResult{Decision: enforced.Decision, Trail: written, Candidates: enforced.Candidates, Notes: notes}
 		return nil
 	})
 	if err != nil {

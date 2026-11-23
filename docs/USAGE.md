@@ -313,9 +313,65 @@ A source synced by an agent through MCP stays denied until the operator runs
 `mousa -store STORE access --source ID allow`. MCP has no allow option, on
 purpose: a client that can write a source cannot also release it.
 
+## Notes
+
+`remember` stores one durable note (a fact, decision or preference) as an
+immutable canonical record on an external JSONL source. The source needs no
+synced items: the operator bootstraps it with
+`access --source <id> --create allow`, a single command that registers the
+source and records the allow event. It is not one atomic operation: the
+registration is safe to retry, and without the access event the source stays
+denied. Without `--create` the command keeps the old missing-source behavior;
+access is never granted silently. Every note write is transactional and
+idempotent, and the first valid write wins: a valid retry with the same text
+returns the first note's ID, author, time and lineage without appending anything.
+Invalid citations still reject every time.
+
+```sh
+./mousa -store local.sqlite access --source memory --create allow
+./mousa -store local.sqlite remember --source memory --from TRAIL_ID 'The harbor inspection uses dry dock 3.'
+./mousa -store local.sqlite query --source memory 'dry dock'
+./mousa -store local.sqlite notes export --source memory
+```
+
+`--from TRAIL[:SEG,SEG]` cites a committed query trail (repeat for several
+trails); an omitted segment list cites every segment the trail selected. A
+cited trail must have allowed retrieval, each listed segment must have been
+selected, and the cited source must currently allow access and not be
+withdrawn. A citation identifies what the trail released; it does not prove
+the note is true, and it does not prove the note's citations are complete.
+Note text is untrusted content: never store secrets or transcripts. A note
+without lineage is unsourced (`origin: "unsourced"`). One positional argument
+stores its exact bytes; with no positional argument, stdin supplies the bytes
+up to 4,096, unmodified. Both forms preserve CRLF and BOM exactly.
+`notes export --source <id>` streams each canonical note record plus its exact
+text as JSONL, opened read-only.
+
+Lexical query surfaces a stored note as ordinary evidence plus a `note` object
+carrying its ID, author, creation time, lineage and a `stale` array. Each
+stale entry names the affected `trail_id` (and `segment_id` when a single
+segment retired) with a reason of `source_denied`, `source_withdrawn` or
+`segment_retired`; no cited text is released. Notes follow the same per-source
+access rules as document evidence: a denied or withdrawn note source releases
+nothing, and later access changes do not redact note bytes already released.
+`sync` and `mousa_sync` refuse a source holding notes, and `remember` refuses
+a document source, including one whose items are all inactive.
+
+Notes share the source's static identity and access grant; there are no
+agent-specific sources or per-note grants yet. Over MCP, `mousa_remember`
+takes `source`, `text` and an optional `derived_from` array of
+`{trail_id, segment_ids?}` objects; the trusted `--caller` is the author, and
+the write needs the source's `--ingest-source` grant plus `mousa:write` over
+HTTP. Cited sources must also be configured with `--source`. Not supported:
+editing or retracting a note, importing existing notes,
+recalling across multiple sources in one query, a citation change cursor or
+standalone recheck, a daemon, and any change to lexical ranking. Like every
+record, notes do not migrate across breaking store schema versions; export
+before replacing an old-schema store.
+
 ## What the store does not protect against
 
-Integrity. Each ingest receipt, access event and withdrawal appends a hashed
+Integrity. Each ingest receipt, access event, withdrawal and note appends a hashed
 leaf to an append-only log in the same transaction. Until signed checkpoints
 exist, anyone who can write the SQLite file can forge a consistent history.
 The log detects accidental damage and partial edits, not a deliberate rewrite.
@@ -353,11 +409,15 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The eight tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
-`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs` and
-`mousa_vector_import`. MCP has no access tool and no allow option: a source
-synced through `mousa_sync` stays denied until the operator runs
-`mousa -store STORE access --source ID allow` natively (see [Access](#access)).
+The nine tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_vector_query`, `mousa_hybrid_query`, `mousa_vector_inputs`,
+`mousa_vector_import` and `mousa_remember`. MCP has no access tool and no
+allow option: a source synced through `mousa_sync` stays denied until the
+operator runs `mousa -store STORE access --source ID allow` natively (see
+[Access](#access)). `mousa_remember` writes one durable note to a configured
+ingest source (see [Notes](#notes)) — the trusted `--caller` becomes the note
+author, never a caller-supplied value; optional `derived_from` citations use
+the same `trail_id`/`segment_ids` shape as the CLI.
 Store, permitted sources and trusted caller are fixed at startup. Item ingestion
 and embedding import are disabled unless that source also has `--ingest-source`.
 The default stdio mode has no listener, directory import, shell, access administration or withdrawal tool.

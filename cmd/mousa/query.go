@@ -100,7 +100,7 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 		if !ok || byteRange.End-byteRange.Start != uint64(len(candidate.Text)) {
 			return nil, fmt.Errorf("selected evidence range disagrees with released text")
 		}
-		result.Evidence = append(result.Evidence, evidenceHit{
+		hit := evidenceHit{
 			Item: location.item, SegmentID: segment.ID.String(),
 			RepresentationID:     segment.RepresentationID.String(),
 			RepresentationSHA256: location.record.ContentSHA256.String(),
@@ -109,7 +109,15 @@ func lexicalEvidenceProjection(ctx context.Context, store *sqlite.Store, source 
 			Rank:          candidate.FinalRank, Score: candidate.BM25,
 			ByteLength: len(candidate.Text), Text: candidate.Text,
 			Origin: "lexical",
-		})
+		}
+		if location.policy == mousa.TextSegmentNoteV1 {
+			note, exists := traced.Notes[segment.ID]
+			if !exists {
+				return nil, fmt.Errorf("note segment %s was selected without note metadata", segment.ID)
+			}
+			hit.Note = &note
+		}
+		result.Evidence = append(result.Evidence, hit)
 	}
 	switch {
 	case traced.Decision.Outcome != mousa.PolicyOutcomeAllow:

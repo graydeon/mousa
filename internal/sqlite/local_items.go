@@ -21,6 +21,9 @@ type LocalItem struct {
 
 // GetLocalItem reads the indexed current-item relationship and its verified ancestry.
 func (store *Store) GetLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string) (LocalItem, error) {
+	if store.noteConn != nil {
+		return getLocalItem(ctx, store.noteConn, sourceID, itemID)
+	}
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return LocalItem{}, classify("begin local item read", err)
@@ -85,9 +88,19 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 	}
 	var action string
 	err := store.writeImmediate(ctx, "activate local item", func(conn *sql.Conn) error {
+		if store.noteConn == nil {
+			if err := requireDocumentSource(ctx, conn, sourceID); err != nil {
+				return err
+			}
+		}
 		representation, err := getRepresentation(ctx, conn, representationID)
 		if err != nil {
 			return err
+		}
+		if store.noteConn == nil {
+			if policy, policyErr := mousa.TextSegmentationPolicy(representation); policyErr == nil && policy == mousa.TextSegmentNoteV1 {
+				return wrap(CodeConflict, "activate local item", errors.New("note segments are internal to durable notes"))
+			}
 		}
 		expected, err := mousa.SegmentUTF8Text(representation, content)
 		if err != nil {
@@ -160,6 +173,11 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string) (string, error) {
 	var action string
 	err := store.writeImmediate(ctx, "delete local item", func(conn *sql.Conn) error {
+		if store.noteConn == nil {
+			if err := requireDocumentSource(ctx, conn, sourceID); err != nil {
+				return err
+			}
+		}
 		item, err := getLocalItem(ctx, conn, sourceID, itemID)
 		if IsCode(err, CodeNotFound) {
 			action = "absent"
@@ -260,6 +278,15 @@ func verifyLocalItemRecords(ctx context.Context, db *sql.DB) error {
 		item, err := getLocalItem(ctx, tx, k.source, k.item)
 		if err != nil {
 			return err
+		}
+		if item.SegmentationPolicy == mousa.TextSegmentNoteV1 {
+			var hasNote bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM notes WHERE source_id = ? AND item_id = ?)`, k.source[:], k.item).Scan(&hasNote); err != nil {
+				return classify("verify note item", err)
+			}
+			if !hasNote {
+				return integrity("verify local items", "note-policy item has no note record")
+			}
 		}
 		var total, indexed int
 		err = tx.QueryRowContext(ctx, `SELECT count(*), count(lr.segment_id) FROM segments AS s

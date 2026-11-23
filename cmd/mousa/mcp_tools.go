@@ -33,6 +33,8 @@ type mcpArguments struct {
 	SpaceID          mousa.SHA256
 	Values           []float64
 	VectorImport     mousa.VectorImport
+	NoteText         string
+	DerivedFrom      []mousa.NoteCitation
 }
 
 type mcpToolError struct {
@@ -117,6 +119,9 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_vector_import":
 		allowed = append(allowed, "import")
 		required = append(required, "import")
+	case "mousa_remember":
+		allowed = append(allowed, "text", "derived_from")
+		required = append(required, "text")
 	case "mousa_query":
 		allowed = append(allowed, "query", "policy", "budget_bytes", "packing_policy")
 		required = append(required, "query", "policy", "budget_bytes")
@@ -189,6 +194,15 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			if err := json.Unmarshal(value, &args.RetrievalDetails); err != nil {
 				return args, errors.New("retrieval_details must be a boolean")
 			}
+		case "derived_from":
+			citations, err := mousa.DecodeNoteCitations(value)
+			if err != nil {
+				return args, err
+			}
+			if len(citations) > mcpMaxItems {
+				return args, fmt.Errorf("derived_from exceeds %d citations", mcpMaxItems)
+			}
+			args.DerivedFrom = citations
 		default:
 			text, err := decodeItemString(value)
 			if err != nil {
@@ -210,6 +224,11 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 					return args, errors.New("query must contain 1 to 4096 UTF-8 bytes")
 				}
 				args.Query = text
+			case "text":
+				if text == "" || len(text) > mousa.MaxUTF8TextSegmentBytes {
+					return args, errors.New("text must contain 1 to 4096 UTF-8 bytes")
+				}
+				args.NoteText = text
 			case "policy":
 				if text != "original" && text != "dedup" {
 					return args, errors.New("policy must be original or dedup")
@@ -366,6 +385,24 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 		&mcp.Tool{Name: "mousa_vector_import", Description: "Atomically import externally supplied pinned embeddings into an ingestion-enabled source. Requires startup write permission and HTTP mousa:write; this is administration, not retrieval authorization. imported counts submitted embeddings accepted, including immutable retries, not newly inserted rows.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "import"}, "properties": map[string]any{"source": source, "import": mcpVectorImportSchema()},
 		}, OutputSchema: imported},
+	)
+	remember, err := mcpOutputSchema[mousa.Note]("mousa_remember")
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions,
+		&mcp.Tool{Name: "mousa_remember", Description: "Store one durable fact, decision, or preference. Cite the query trail when the fact came from Mousa. Do not store secrets or transcripts.", InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"source", "text"}, "properties": map[string]any{
+				"source": source,
+				"text":   map[string]any{"type": "string", "minLength": 1, "maxLength": mousa.MaxUTF8TextSegmentBytes},
+				"derived_from": map[string]any{"type": "array", "maxItems": mcpMaxItems, "items": map[string]any{
+					"type": "object", "additionalProperties": false, "required": []string{"trail_id"}, "properties": map[string]any{
+						"trail_id":    map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
+						"segment_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+					},
+				}},
+			},
+		}, OutputSchema: remember},
 	)
 	return definitions, nil
 }

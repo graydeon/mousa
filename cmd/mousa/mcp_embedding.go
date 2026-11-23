@@ -20,7 +20,7 @@ type mcpVectorImportResult struct {
 }
 
 func mcpIngestionTool(name string) bool {
-	return name == "mousa_sync" || name == "mousa_vector_import"
+	return name == "mousa_sync" || name == "mousa_vector_import" || name == "mousa_remember"
 }
 
 func mcpVectorImportSchema() map[string]any {

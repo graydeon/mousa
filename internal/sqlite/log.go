@@ -26,12 +26,13 @@ func appendLog(ctx context.Context, conn *sql.Conn, kind string, recordID, sourc
 
 // logRecordSQL selects each leaf with the stored bytes and source of the record it names.
 const logRecordSQL = `SELECT l.seq, l.kind, l.record_id, l.source_id, l.leaf_hash,
-  coalesce(r.record_json, a.record_json, w.record_json),
-  coalesce(r.source_id, a.source_id, w.source_id)
+  coalesce(r.record_json, a.record_json, w.record_json, n.record_json),
+  coalesce(r.source_id, a.source_id, w.source_id, n.source_id)
 FROM log l
 LEFT JOIN ingest_receipts r ON l.kind = 'ingest_receipt' AND r.observation_id = l.record_id
 LEFT JOIN access_events a ON l.kind = 'access_event' AND a.id = l.record_id
-LEFT JOIN source_withdrawals w ON l.kind = 'source_withdrawal' AND w.id = l.record_id`
+LEFT JOIN source_withdrawals w ON l.kind = 'source_withdrawal' AND w.id = l.record_id
+LEFT JOIN notes n ON l.kind = 'note' AND n.id = l.record_id`
 
 func checkLeaf(kind string, sourceID, leaf, record, recordSource []byte) error {
 	if record == nil {
@@ -86,13 +87,16 @@ func verifyLog(ctx context.Context, db *sql.DB) error {
 		return startupError("scan log", err)
 	}
 	var records int64
-	if err := tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM ingest_receipts) + (SELECT count(*) FROM access_events) + (SELECT count(*) FROM source_withdrawals)`).Scan(&records); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM ingest_receipts) + (SELECT count(*) FROM access_events) + (SELECT count(*) FROM source_withdrawals) + (SELECT count(*) FROM notes)`).Scan(&records); err != nil {
 		return startupError("count logged records", err)
 	}
 	if records != want-1 {
 		return integrity("verify log", fmt.Sprintf("%d records but %d log leaves", records, want-1))
 	}
 	if err := verifyAccessEvents(ctx, tx); err != nil {
+		return err
+	}
+	if err := verifyNoteRows(ctx, tx); err != nil {
 		return err
 	}
 	if _, err := getStoreID(ctx, tx); err != nil {

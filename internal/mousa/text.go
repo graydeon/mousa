@@ -1,6 +1,7 @@
 package mousa
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"unicode/utf8"
 )
@@ -39,19 +40,28 @@ func NormalizeUTF8TextWithPolicy(artifact Artifact, content []byte, policy strin
 		return Representation{}, nil, newValidationError("content", ValidationCodeInvalidValue, "must be valid UTF-8", nil)
 	}
 
-	start := 0
-	if len(content) >= 3 && content[0] == 0xef && content[1] == 0xbb && content[2] == 0xbf {
-		start = 3
-	}
-	normalized := make([]byte, 0, len(content)-start)
-	for index := start; index < len(content); index++ {
-		if content[index] != '\r' {
-			normalized = append(normalized, content[index])
-			continue
+	var normalized []byte
+	if policy == TextSegmentNoteV1 {
+		// Notes store their exact bytes: no BOM or newline normalization.
+		if len(content) < 1 || len(content) > MaxUTF8TextSegmentBytes {
+			return Representation{}, nil, newValidationError("content", ValidationCodeInvalidRange, "note text must be 1 to 4096 bytes", nil)
 		}
-		normalized = append(normalized, '\n')
-		if index+1 < len(content) && content[index+1] == '\n' {
-			index++
+		normalized = bytes.Clone(content)
+	} else {
+		start := 0
+		if len(content) >= 3 && content[0] == 0xef && content[1] == 0xbb && content[2] == 0xbf {
+			start = 3
+		}
+		normalized = make([]byte, 0, len(content)-start)
+		for index := start; index < len(content); index++ {
+			if content[index] != '\r' {
+				normalized = append(normalized, content[index])
+				continue
+			}
+			normalized = append(normalized, '\n')
+			if index+1 < len(content) && content[index+1] == '\n' {
+				index++
+			}
 		}
 	}
 

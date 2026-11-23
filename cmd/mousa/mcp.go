@@ -181,6 +181,8 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 			definition.Title = "Import Mousa embeddings"
 		case "mousa_trail":
 			definition.Title = "Inspect Mousa Source Trail"
+		case "mousa_remember":
+			definition.Title = "Remember Mousa note"
 		}
 		closed := false
 		destructive := mcpIngestionTool(definition.Name)
@@ -239,6 +241,9 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	var result any
 	switch operation {
 	case "mousa_sync":
+		if err := a.store.RequireDocumentSource(ctx, source.ID); err != nil {
+			return mcpFailure(operation, args.Source, mcpErrorCode(err), err, 0, 0)
+		}
 		report := syncResult{Source: args.Source, Input: inputJSONL, SegmentPolicy: args.SegmentPolicy}
 		seen := make(map[string]struct{}, len(args.Items))
 		for i, raw := range args.Items {
@@ -326,6 +331,16 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 			var inspection sqlite.TrailInspection
 			inspection, err = a.store.InspectSourceTrail(ctx, request, args.TrailID)
 			result = mcpTrailProjection(args.Source, args.TrailID.String(), inspection, args.RetrievalDetails)
+		}
+	case "mousa_remember":
+		permitted := make(map[mousa.SourceID]bool, len(a.sources))
+		for _, configured := range a.sources {
+			permitted[configured.source.ID] = true
+		}
+		var note mousa.Note
+		note, err = rememberNote(ctx, a.store, source, a.caller, []byte(args.NoteText), args.DerivedFrom, permitted)
+		if err == nil {
+			result = note
 		}
 	default:
 		return nil, fmt.Errorf("unregistered tool %q", operation)

@@ -12,6 +12,7 @@ import (
 func accessCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("access")
 	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	create := flags.Bool("create", false, "register the explicit JSONL source first; requires --source and allow")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -23,6 +24,9 @@ func accessCommand(ctx context.Context, storePath string, args []string) error {
 	if access.Validate() != nil {
 		return usageError{"access effect must be allow or deny"}
 	}
+	if *create && (*sourceID == "" || access != mousa.SourceAccessAllow) {
+		return usageError{"access --create requires --source <external-id> and allow"}
+	}
 	source, label, err := selectSource(*sourceID, positional[:len(positional)-1], "access")
 	if err != nil {
 		return err
@@ -33,7 +37,12 @@ func accessCommand(ctx context.Context, storePath string, args []string) error {
 	}
 	defer store.Close()
 	if _, err := store.GetSource(ctx, source.ID); err != nil {
-		return err
+		if !*create || !sqlite.IsCode(err, sqlite.CodeNotFound) {
+			return err
+		}
+		if err := store.PutSource(ctx, source); err != nil {
+			return err
+		}
 	}
 	event, changed, err := store.SetSourceAccess(ctx, source.ID, access, accessActor)
 	if err != nil {

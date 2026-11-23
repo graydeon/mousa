@@ -175,6 +175,9 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 		return err
 	}
 	defer store.Close()
+	if err := store.RequireDocumentSource(ctx, source.ID); err != nil {
+		return err
+	}
 	result := syncResult{Source: externalSourceID, Input: inputJSONL, SegmentPolicy: segmentPolicy}
 	lineOf := make(map[string]int)
 	limited := &io.LimitedReader{R: input, N: maxItemStreamBytes + 1}
