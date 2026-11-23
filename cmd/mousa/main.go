@@ -49,6 +49,8 @@ func main() {
 		err = trailCommand(ctx, *storePath, rest)
 	case "verify":
 		err = verifyCommand(ctx, *storePath, rest)
+	case "collection":
+		err = collectionCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
@@ -81,7 +83,11 @@ commands:
   sync <dir>                  import or re-sync a UTF-8/Markdown directory (JSON result)
   sync --source <id>          import or re-sync JSONL item records from stdin (JSON result)
   query <dir> <text>          query a synced directory, returns bounded evidence (JSON)
-  query --source <id> <text>  query a JSONL-synced source, returns bounded evidence (JSON)
+  query --source <id> <text>  query JSONL sources (repeat --source for a list)
+  query --collection <name> <text>
+                            query a named collection
+  collection create|list|add|remove
+                            manage a named set of sources; add/remove take --source ID NAME
   status <dir>                report the source's ingest state (JSON)
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
   trail <trail-id>            inspect one recorded query trail, never text (JSON)

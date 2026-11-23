@@ -209,13 +209,21 @@ func (a *mcpApplication) server(serverContext context.Context) (*mcp.Server, err
 	return server, nil
 }
 
+func (a *mcpApplication) sourceGrants() map[mousa.SourceID]bool {
+	grants := make(map[mousa.SourceID]bool, len(a.sources))
+	for _, configured := range a.sources {
+		grants[configured.source.ID] = true
+	}
+	return grants
+}
+
 func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte) (*mcp.CallToolResult, error) {
 	args, err := decodeMCPArguments(raw, operation)
 	if err != nil {
 		return mcpFailure(operation, "", "invalid_arguments", err, 0, 0)
 	}
 	var configured mcpSource
-	if operation != "mousa_trail" {
+	if operation != "mousa_trail" && (operation != "mousa_query" || args.Source != "") {
 		var ok bool
 		configured, ok = a.sources[args.Source]
 		if !ok {
@@ -300,24 +308,29 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 	case "mousa_status":
 		result, err = sourceStatus(ctx, a.store, source, args.Source)
 	case "mousa_query":
+		scope := mousa.Scope{Source: source.ID, Collection: args.Collection}
+		for _, external := range args.Sources {
+			configured, ok := a.sources[external]
+			if !ok {
+				return mcpFailure(operation, "", "source_not_permitted", errors.New("source is not configured"), 0, 0)
+			}
+			scope.Sources = append(scope.Sources, configured.source.ID)
+		}
 		var queried mousa.QueryResult
 		queried, err = a.store.Query(ctx, mousa.QueryRequest{
-			Scope:  mousa.Scope{Source: source.ID},
-			Texts:  []string{args.Query},
-			Mode:   args.Mode,
-			Budget: mousa.Budget{Unit: mousa.BudgetBytes, Limit: args.BudgetBytes},
-			Caller: a.caller,
+			Scope:            scope,
+			Texts:            []string{args.Query},
+			Mode:             args.Mode,
+			Budget:           mousa.Budget{Unit: mousa.BudgetBytes, Limit: args.BudgetBytes},
+			Caller:           a.caller,
+			PermittedSources: a.sourceGrants(),
 		})
 		if err == nil {
 			result = mcpQueryResult{queried.Trail.CallerView(), queried.Passages}
 		}
 	case "mousa_trail":
-		grants := make(map[mousa.SourceID]bool, len(a.sources))
-		for _, configured := range a.sources {
-			grants[configured.source.ID] = true
-		}
 		var trail mousa.Trail
-		trail, err = a.store.GetTrail(ctx, args.TrailID, grants)
+		trail, err = a.store.GetTrail(ctx, args.TrailID, a.sourceGrants())
 		if err == nil {
 			result = trail.CallerView()
 		}

@@ -21,6 +21,7 @@ type proposal struct {
 	SegmentID     mousa.SegmentID
 	ContentSHA256 mousa.SHA256
 	Score         float64
+	Sources       []mousa.SourceID
 }
 
 var errQueryHeadMoved = errors.New("query snapshot source head moved")
@@ -39,7 +40,10 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 		return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", errors.New("choose one scope kind"))
 	}
 	if request.Scope.Collection != "" {
-		return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", errors.New("collection scope is not supported"))
+		if request.Scope.Source != (mousa.SourceID{}) || request.Scope.Sources != nil {
+			return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", errors.New("choose one scope kind"))
+		}
+		scope = mousa.TrailScope{Kind: "collection", Name: request.Scope.Collection, Sources: []mousa.SourceID{}}
 	}
 	req := mousa.TrailRequest{
 		Budget: request.Budget, Caller: request.Caller, Limit: request.Limit, Mode: request.Mode,
@@ -62,7 +66,7 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 		return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", err)
 	}
 	for range 2 {
-		result, err := store.queryReadThenWrite(ctx, req)
+		result, err := store.queryReadThenWrite(ctx, req, request.PermittedSources)
 		if !errors.Is(err, errQueryHeadMoved) {
 			return result, err
 		}
@@ -70,7 +74,7 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 	var result mousa.QueryResult
 	err := store.writeImmediate(ctx, "query and append trail", func(conn *sql.Conn) error {
 		var err error
-		result, err = store.querySnapshot(ctx, conn, req)
+		result, err = store.querySnapshot(ctx, conn, req, request.PermittedSources)
 		if err != nil {
 			return err
 		}
@@ -82,12 +86,21 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 	return result, nil
 }
 
-func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailRequest) (mousa.QueryResult, error) {
-	result, err := store.readQuerySnapshot(ctx, req)
+func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+	result, err := store.readQuerySnapshot(ctx, req, grants)
 	if err != nil {
 		return mousa.QueryResult{}, err
 	}
 	err = store.writeImmediate(ctx, "append query trail", func(conn *sql.Conn) error {
+		if req.Scope.Kind == "collection" {
+			current, err := collectionSources(ctx, conn, req.Scope.Name)
+			if err != nil {
+				return err
+			}
+			if !slices.Equal(current, result.Trail.Request.Scope.Sources) {
+				return errQueryHeadMoved
+			}
+		}
 		for _, source := range result.Trail.Sources {
 			if source.Head == nil {
 				continue
@@ -108,13 +121,13 @@ func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailReque
 	return result, nil
 }
 
-func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailRequest) (mousa.QueryResult, error) {
+func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return mousa.QueryResult{}, classify("begin query snapshot", err)
 	}
 	defer tx.Rollback()
-	result, err := store.querySnapshot(ctx, tx, req)
+	result, err := store.querySnapshot(ctx, tx, req, grants)
 	if err != nil {
 		return mousa.QueryResult{}, err
 	}
@@ -124,8 +137,22 @@ func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailReques
 	return result, nil
 }
 
-func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.TrailRequest) (mousa.QueryResult, error) {
-	trail := mousa.Trail{Request: req}
+func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+	if req.Scope.Kind == "collection" {
+		sources, err := collectionSources(ctx, q, req.Scope.Name)
+		if err != nil {
+			return mousa.QueryResult{}, err
+		}
+		req.Scope.Sources = sources
+	}
+	if grants != nil {
+		for _, id := range req.Scope.Sources {
+			if !grants[id] {
+				return mousa.QueryResult{}, readError("resolve query scope", sql.ErrNoRows)
+			}
+		}
+	}
+	trail := mousa.Trail{Request: req, Sources: make([]mousa.SourceDecision, 0, len(req.Scope.Sources))}
 	if err := q.QueryRowContext(ctx, `SELECT coalesce(max(seq),0) FROM log`).Scan(&trail.AsOf); err != nil {
 		return mousa.QueryResult{}, classify("query log index", err)
 	}
@@ -222,7 +249,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		if err != nil {
 			return nil, wrap(CodeInvalidQuery, "prepare lexical query", err)
 		}
-		branch := mousa.Branch{Kind: "lexical", Scoring: "fts5-bm25", TermPolicy: "original", Text: i}
+		branch := mousa.Branch{Kind: "lexical", Scoring: mousa.ScopedBM25, TermPolicy: "original", Text: i}
 		for _, term := range quoted {
 			// The splitter does not retain quote characters.
 			branch.Terms = append(branch.Terms, term[1:len(term)-1])
@@ -250,6 +277,9 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 					continue
 				}
 				candidates[proposed.SegmentID] = row
+			}
+			if proposed.Sources != nil && !slices.Equal(proposed.Sources, row.candidate.SourceIDs) {
+				return nil, integrity("verify query scope", "proposal shard disagrees with canonical ancestry")
 			}
 			if proposed.ContentSHA256 != row.candidate.ContentSHA256 {
 				row.candidate.Rejected = []string{"content_mismatch"}
@@ -395,68 +425,4 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate) (mousa.Pa
 func localRevisionSuffix(digest mousa.SHA256) string {
 	// Local observation IDs use fmt's %x on SHA256's Stringer, not raw bytes.
 	return fmt.Sprintf("@%x", digest)
-}
-
-func proposeLexical(ctx context.Context, q queryer, expression string, sources []mousa.SourceID, limit int) ([]proposal, error) {
-	if err := validateLexicalQuery(expression, limit); err != nil {
-		return nil, err
-	}
-	onlySource := false
-	if len(sources) == 1 {
-		if err := q.QueryRowContext(ctx, `SELECT NOT EXISTS(SELECT 1 FROM sources WHERE id != ?)`, sources[0][:]).Scan(&onlySource); err != nil {
-			return nil, classify("check lexical proposal scope", err)
-		}
-	}
-	const selectMatches = `
-		SELECT r.segment_id, f.content_sha256, bm25(segment_lexical_fts)
-		FROM segment_lexical_fts AS f
-		JOIN segment_lexical_rows AS r ON r.rowid = f.rowid`
-	const orderMatches = ` ORDER BY bm25(segment_lexical_fts), r.segment_id LIMIT ?`
-	statement := selectMatches + ` WHERE segment_lexical_fts MATCH ?`
-	args := make([]any, 0, len(sources)+2)
-	// A single-source store needs no ancestry prefilter. Proposal verification
-	// still checks canonical ancestry and content before releasing passages.
-	if !onlySource {
-		for _, source := range sources {
-			args = append(args, source[:])
-		}
-		statement = `
-		WITH RECURSIVE source_representations(id) AS (
-			SELECT ri.representation_id
-			FROM representation_inputs AS ri
-			JOIN artifacts AS a ON a.id = ri.artifact_id
-			JOIN observations AS o ON o.id = a.observation_id
-			WHERE o.source_id IN (` + strings.Repeat("?,", len(sources)-1) + `?)
-			UNION
-			SELECT ri.representation_id
-			FROM representation_inputs AS ri
-			JOIN source_representations AS sr ON sr.id = ri.input_representation_id
-		)` + selectMatches + ` JOIN segments AS s ON s.id = r.segment_id
-		WHERE segment_lexical_fts MATCH ?
-			AND s.representation_id IN (SELECT id FROM source_representations)`
-	}
-	args = append(args, expression, limit)
-	rows, err := q.QueryContext(ctx, statement+orderMatches, args...)
-	if err != nil {
-		return nil, lexicalQueryError(ctx, err)
-	}
-	defer rows.Close()
-	proposals := make([]proposal, 0, limit)
-	for rows.Next() {
-		var id, digest []byte
-		var score float64
-		if err := rows.Scan(&id, &digest, &score); err != nil {
-			return nil, lexicalIntegrityError(ctx, "read lexical proposal", err)
-		}
-		var proposed proposal
-		proposed.Score = score
-		if len(id) == len(proposed.SegmentID) {
-			copy(proposed.SegmentID[:], id)
-		}
-		if len(digest) == len(proposed.ContentSHA256) {
-			copy(proposed.ContentSHA256[:], digest)
-		}
-		proposals = append(proposals, proposed)
-	}
-	return proposals, classify("finish lexical proposals", rows.Err())
 }

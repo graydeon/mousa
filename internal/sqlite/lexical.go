@@ -44,6 +44,14 @@ func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.Repres
 		if len(segments) == 0 {
 			return wrap(CodeNotFound, "index text representation", errors.New("representation has no segments"))
 		}
+		paths, err := lexicalEvidencePaths(ctx, conn, segments[0])
+		if err != nil {
+			return err
+		}
+		scope, err := ensureLexicalScope(ctx, conn, evidenceSourceIDs(paths))
+		if err != nil {
+			return err
+		}
 		for _, segment := range segments {
 			if err := segment.ValidateContentAgainst(representation, content); err != nil {
 				return wrap(CodeInvalidRecord, "index text representation", err)
@@ -53,7 +61,7 @@ func (store *Store) IndexTextRepresentation(ctx context.Context, id mousa.Repres
 				return wrap(CodeResourceLimit, "index text representation", errors.New("segment text exceeds maximum byte length"))
 			}
 			text := content[selector.Start:selector.End]
-			if err := putLexicalRow(ctx, conn, segment, text); err != nil {
+			if err := putLexicalRow(ctx, conn, scope, segment, text); err != nil {
 				return err
 			}
 		}
@@ -193,11 +201,11 @@ func decodeLexicalSegments(ctx context.Context, q queryer, ids [][]byte) ([]mous
 	return segments, nil
 }
 
-func putLexicalRow(ctx context.Context, conn *sql.Conn, segment mousa.Segment, text []byte) error {
-	var rowID int64
-	err := conn.QueryRowContext(ctx, `SELECT rowid FROM segment_lexical_rows WHERE segment_id = ?`, segment.ID[:]).Scan(&rowID)
+func putLexicalRow(ctx context.Context, conn *sql.Conn, scope lexicalScope, segment mousa.Segment, text []byte) error {
+	var rowID, scopeID int64
+	err := conn.QueryRowContext(ctx, `SELECT rowid, scope_id FROM segment_lexical_rows WHERE segment_id = ?`, segment.ID[:]).Scan(&rowID, &scopeID)
 	if errors.Is(err, sql.ErrNoRows) {
-		result, insertErr := conn.ExecContext(ctx, `INSERT INTO segment_lexical_rows(segment_id) VALUES(?)`, segment.ID[:])
+		result, insertErr := conn.ExecContext(ctx, `INSERT INTO segment_lexical_rows(segment_id, scope_id) VALUES(?, ?)`, segment.ID[:], scope.id)
 		if insertErr != nil {
 			if sqliteConstraint(insertErr) {
 				return wrap(CodeConflict, "index lexical relation", insertErr)
@@ -211,10 +219,16 @@ func putLexicalRow(ctx context.Context, conn *sql.Conn, segment mousa.Segment, t
 		if _, err := conn.ExecContext(ctx, `INSERT INTO segment_lexical_fts(rowid, text, content_sha256) VALUES(?, ?, ?)`, rowID, string(text), segment.ContentSHA256[:]); err != nil {
 			return classify("index lexical content", err)
 		}
-		return verifyLexicalRow(ctx, conn, rowID, segment)
+		if _, err := conn.ExecContext(ctx, `INSERT INTO `+scope.table()+`(rowid, text) VALUES(?, ?)`, rowID, string(text)); err != nil {
+			return classify("index scoped lexical content", err)
+		}
+		return verifyScopedLexicalRow(ctx, conn, scope, rowID, segment, text)
 	}
 	if err != nil {
 		return classify("load lexical relation", err)
+	}
+	if scopeID != scope.id {
+		return integrity("index lexical content", "stored scope disagrees with canonical ancestry")
 	}
 	var storedText string
 	var storedDigest []byte
@@ -227,7 +241,7 @@ func putLexicalRow(ctx context.Context, conn *sql.Conn, segment mousa.Segment, t
 	if storedText != string(text) || !equalBytes(storedDigest, segment.ContentSHA256[:]) {
 		return wrap(CodeConflict, "index lexical content", errors.New("stored lexical row disagrees with canonical Segment"))
 	}
-	return verifyLexicalRow(ctx, conn, rowID, segment)
+	return verifyScopedLexicalRow(ctx, conn, scope, rowID, segment, text)
 }
 
 func verifyLexicalRecords(ctx context.Context, q queryer) error {

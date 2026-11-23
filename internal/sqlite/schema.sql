@@ -7,6 +7,18 @@ CREATE TABLE sources (
   record_json BLOB NOT NULL CHECK (length(record_json) > 0)
 ) STRICT;
 
+CREATE TABLE collections (
+  name TEXT PRIMARY KEY NOT NULL
+    CHECK (length(name) BETWEEN 1 AND 64 AND name GLOB '[a-z0-9]*'
+      AND name NOT GLOB '*[^a-z0-9._-]*')
+) STRICT;
+
+CREATE TABLE collection_sources (
+  collection TEXT NOT NULL REFERENCES collections(name) ON DELETE RESTRICT,
+  source_id BLOB NOT NULL REFERENCES sources(id) ON DELETE RESTRICT,
+  PRIMARY KEY (collection, source_id)
+) STRICT;
+
 CREATE TABLE observations (
   id BLOB PRIMARY KEY NOT NULL
     CHECK (length(id) = 32 AND id <> zeroblob(32)),
@@ -144,12 +156,23 @@ CREATE TABLE source_ingest_state (
       OR (collection_state = 'withdrawn' AND current_withdrawal_id IS NOT NULL))
 ) STRICT;
 
+CREATE TABLE lexical_scopes (
+  id INTEGER PRIMARY KEY CHECK (id > 0),
+  source_ids BLOB NOT NULL UNIQUE
+    CHECK (length(source_ids) BETWEEN 32 AND 4096 AND length(source_ids) % 32 = 0)
+) STRICT;
+
+CREATE INDEX lexical_scopes_first_source_idx ON lexical_scopes(substr(source_ids, 1, 32));
+
 CREATE TABLE segment_lexical_rows (
   rowid INTEGER PRIMARY KEY,
+  scope_id INTEGER NOT NULL REFERENCES lexical_scopes(id) ON DELETE RESTRICT,
   segment_id BLOB NOT NULL UNIQUE
     CHECK (length(segment_id) = 32 AND segment_id <> zeroblob(32))
     REFERENCES segments(id) ON DELETE RESTRICT
 ) STRICT;
+
+CREATE INDEX segment_lexical_rows_scope_idx ON segment_lexical_rows(scope_id);
 
 CREATE VIRTUAL TABLE segment_lexical_fts USING fts5(
   text,

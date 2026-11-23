@@ -311,9 +311,10 @@ func TestSearchVerifiedLexicalIntegrityAndResourceBounds(t *testing.T) {
 		root := putVerifiedRepresentation(t, store, []mousa.DerivationInput{
 			mousa.NewRepresentationDerivationInput(first.representation.ID),
 			mousa.NewRepresentationDerivationInput(second.representation.ID),
-		}, "path-root", []byte("pathbound"), true)
-		if got, err := store.SearchVerifiedLexical(ctx, "pathbound", 10); got != nil || !IsCode(err, CodeResourceLimit) {
-			t.Fatalf("path bound for %x = %#v, %v", root.representation.ID, got, err)
+		}, "path-root", []byte("pathbound"), false)
+		putVerifiedSegments(t, store, root.representation, []byte("pathbound"))
+		if err := store.IndexTextRepresentation(ctx, root.representation.ID, []byte("pathbound")); !IsCode(err, CodeResourceLimit) {
+			t.Fatalf("index path bound for %x = %v", root.representation.ID, err)
 		}
 	})
 	t.Run("visited representation limit", func(t *testing.T) {
@@ -323,11 +324,12 @@ func TestSearchVerifiedLexicalIntegrityAndResourceBounds(t *testing.T) {
 		fixture := addVerifiedLexicalDocument(t, store, "node-leaf", "node leaf")
 		parent := fixture.representation
 		for index := 0; index < maxLexicalEvidence; index++ {
-			created := putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(parent.ID)}, fmt.Sprintf("node-%04d", index), []byte("nodebound"), index == maxLexicalEvidence-1)
+			created := putVerifiedRepresentation(t, store, []mousa.DerivationInput{mousa.NewRepresentationDerivationInput(parent.ID)}, fmt.Sprintf("node-%04d", index), []byte("nodebound"), false)
 			parent = created.representation
 		}
-		if got, err := store.SearchVerifiedLexical(ctx, "nodebound", 10); got != nil || !IsCode(err, CodeResourceLimit) {
-			t.Fatalf("node bound = %#v, %v", got, err)
+		putVerifiedSegments(t, store, parent, []byte("nodebound"))
+		if err := store.IndexTextRepresentation(ctx, parent.ID, []byte("nodebound")); !IsCode(err, CodeResourceLimit) {
+			t.Fatalf("index node bound = %v", err)
 		}
 	})
 }
@@ -407,20 +409,25 @@ func putVerifiedRepresentation(t *testing.T, store *Store, inputs []mousa.Deriva
 	if !index {
 		return document
 	}
+	document.segments = putVerifiedSegments(t, store, representation, content)
+	if err := store.IndexTextRepresentation(t.Context(), representation.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
+func putVerifiedSegments(t *testing.T, store *Store, representation mousa.Representation, content []byte) []mousa.Segment {
+	t.Helper()
 	segments, err := mousa.SegmentUTF8Text(representation, content)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, segment := range segments {
-		if err := store.PutSegment(context.Background(), segment); err != nil {
+		if err := store.PutSegment(t.Context(), segment); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := store.IndexTextRepresentation(context.Background(), representation.ID, content); err != nil {
-		t.Fatal(err)
-	}
-	document.segments = segments
-	return document
+	return segments
 }
 
 func withdrawVerifiedSource(t *testing.T, store *Store, sourceID mousa.SourceID, externalID string, occurredAt int64) mousa.WithdrawalID {

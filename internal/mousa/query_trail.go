@@ -18,6 +18,8 @@ import (
 const (
 	TrailSchema                   = "mousa.trail.v1"
 	MaxQueryCandidates            = 100
+	MaxScopeSources               = 128
+	ScopedBM25                    = "fts5-bm25-ancestry-shard-v1"
 	QueryLexical       QueryMode  = "lexical"
 	BudgetBytes        BudgetUnit = "bytes"
 )
@@ -34,6 +36,8 @@ type QueryRequest struct {
 	Caller    string
 	Purpose   string
 	RequestID string
+	// Nil is the store owner. A caller grant must cover the entire scope.
+	PermittedSources map[SourceID]bool
 }
 
 type Scope struct {
@@ -327,9 +331,16 @@ func (request TrailRequest) Validate() error {
 		}
 	}
 	scope := request.Scope
-	if (scope.Kind != "source" && scope.Kind != "list") || scope.Name != "" ||
-		(scope.Kind == "source" && len(scope.Sources) != 1) || len(scope.Sources) == 0 ||
-		len(scope.Sources) > 128 || !sortedSourceIDs(scope.Sources) {
+	valid := false
+	switch scope.Kind {
+	case "source":
+		valid = scope.Name == "" && len(scope.Sources) == 1
+	case "list":
+		valid = scope.Name == "" && len(scope.Sources) != 0
+	case "collection":
+		valid = ValidCollectionName(scope.Name) && scope.Sources != nil
+	}
+	if !valid || len(scope.Sources) > MaxScopeSources || !sortedSourceIDs(scope.Sources) {
 		return errors.New("invalid trail scope")
 	}
 	return nil
@@ -377,7 +388,7 @@ func (trail Trail) validate() error {
 	if err := trail.Request.Validate(); err != nil {
 		return err
 	}
-	if len(trail.Sources) != len(trail.Request.Scope.Sources) {
+	if trail.Sources == nil || len(trail.Sources) != len(trail.Request.Scope.Sources) {
 		return errors.New("trail decisions disagree with scope")
 	}
 	allowed := make(map[SourceID]bool, len(trail.Sources))
@@ -452,7 +463,7 @@ func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 	}
 	var proposed [4]int
 	for i, branch := range branches {
-		if branch.Kind != "lexical" || branch.Text != i || branch.Scoring != "fts5-bm25" ||
+		if branch.Kind != "lexical" || branch.Text != i || (branch.Scoring != "fts5-bm25" && branch.Scoring != ScopedBM25) ||
 			(branch.TermPolicy != "original" && branch.TermPolicy != "dedup") || branch.Terms == nil ||
 			branch.Proposed < 0 || branch.Proposed > trail.Request.Limit || branch.DroppedUnknown < 0 ||
 			branch.DroppedNotAllowed < 0 || branch.DroppedUnknown > branch.Proposed ||

@@ -60,9 +60,9 @@ func TestQueryFaultyProposalsDoNotReleaseEvidence(t *testing.T) {
 		notAllowed, unknown int
 		retained            bool
 	}{
-		{"denied", proposal{denied.ID, denied.ContentSHA256, -4}, 1, 0, false},
-		{"stale digest", proposal{sameSource.ID, good.ContentSHA256, -4}, 0, 0, true},
-		{"unknown", proposal{mousa.SegmentID{1}, good.ContentSHA256, -4}, 0, 1, false},
+		{"denied", proposal{SegmentID: denied.ID, ContentSHA256: denied.ContentSHA256, Score: -4}, 1, 0, false},
+		{"stale digest", proposal{SegmentID: sameSource.ID, ContentSHA256: good.ContentSHA256, Score: -4}, 0, 0, true},
+		{"unknown", proposal{SegmentID: mousa.SegmentID{1}, ContentSHA256: good.ContentSHA256, Score: -4}, 0, 1, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestQueryFaultyProposalsDoNotReleaseEvidence(t *testing.T) {
 				if !slices.Equal(sources, []mousa.SourceID{a}) {
 					t.Fatalf("proposer got %v, want only %v", sources, a)
 				}
-				return []proposal{tt.fault, {good.ID, good.ContentSHA256, -2}}, nil
+				return []proposal{tt.fault, {SegmentID: good.ID, ContentSHA256: good.ContentSHA256, Score: -2}}, nil
 			}
 			result, err := s.Query(t.Context(), auditRequest(a))
 			if err != nil {

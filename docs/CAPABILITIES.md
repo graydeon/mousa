@@ -24,6 +24,7 @@ binary, until the scale probe passes at both sizes.
 | UTF-8 directory import and resync | Yes | `sync <dir>` | Import, repeated no-op, update, revert, delete, restore, restart |
 | Directory preview and selection controls | Yes | `sync --preview`, include/exclude globs, explicit overrides and limits | Actual-CLI scope changes, preview without store creation, failed validation preserving activation, rooted link rejection |
 | JSONL item input | Yes | `sync --source <id>` | Retry, replacement, tombstone, malformed input, committed prefix, input limits |
+| Query scope | Yes | `query --source ID` (repeatable), `query --collection NAME` | Persistent membership, per-source decisions and denied-source score isolation |
 | Raw-content identity and normalized text | Yes | Both input forms | CRLF, BOM, empty text, exact retries |
 | Versioned passage boundaries | Yes | `sync --segment-policy passage-v1`; source-built BEIR `-segment-policy fixed-v1|passage-v1` | Exact source slices, policy replacement, retries, interrupted activation, historical identities and source exclusion; evaluator identity/reuse/resume and explicit comparison axis |
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry |
@@ -75,7 +76,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 |---|---|---|---|
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items and observations |
-| `mousa_query` | `source`, `query`, `budget_bytes` | `mode`: `lexical` (default) | Caller-view trail and selected passages. |
+| `mousa_query` | Exactly one of `source`, `sources`, `collection`; `query`, `budget_bytes` | `mode`: `lexical` (default) | Caller-view trail and selected passages. Every requested member must be configured for the caller. |
 | `mousa_trail` | `trail_id` | None | Caller-view trail, without passage text. |
 | `mousa_remember` | `source`, `text` | `derived_from`: array of `{trail_id, segment_ids?}` | Canonical `mousa.note.v1` record: ID, content digest, author (trusted caller), time and stored lineage; exact retries return the first note |
 

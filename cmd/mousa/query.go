@@ -11,7 +11,15 @@ import (
 // always takes the query text as the remaining argument.
 func queryCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("query")
-	sourceID := flags.String("source", "", "external source ID instead of a directory root")
+	var sources []mousa.SourceID
+	flags.Func("source", "external source ID (repeatable)", func(value string) error {
+		source, err := streamSource(value)
+		if err == nil {
+			sources = append(sources, source.ID)
+		}
+		return err
+	})
+	collection := flags.String("collection", "", "named collection instead of explicit sources")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	mode := flags.String("mode", string(mousa.QueryLexical), "query mode: lexical")
 	if err := flags.Parse(args); err != nil {
@@ -27,9 +35,23 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	if len(positional) == 0 {
 		return usageError{"query requires a source and query text"}
 	}
-	source, _, err := selectSource(*sourceID, positional[:len(positional)-1], "query")
-	if err != nil {
-		return err
+	scope := mousa.Scope{Collection: *collection}
+	switch {
+	case *collection != "" || len(sources) != 0:
+		if len(positional) != 1 || (*collection != "" && len(sources) != 0) {
+			return usageError{"choose a directory, --source IDs, or --collection"}
+		}
+		if len(sources) == 1 {
+			scope.Source = sources[0]
+		} else {
+			scope.Sources = sources
+		}
+	default:
+		source, _, err := selectSource("", positional[:len(positional)-1], "query")
+		if err != nil {
+			return err
+		}
+		scope.Source = source.ID
 	}
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
@@ -37,7 +59,7 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	}
 	defer store.Close()
 	result, err := store.Query(ctx, mousa.QueryRequest{
-		Scope:  mousa.Scope{Source: source.ID},
+		Scope:  scope,
 		Texts:  []string{positional[len(positional)-1]},
 		Mode:   mousa.QueryMode(*mode),
 		Budget: mousa.Budget{Unit: mousa.BudgetBytes, Limit: *budget},

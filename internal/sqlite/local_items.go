@@ -188,14 +188,20 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 			action = "restored"
 		}
 		if previous.Active {
-			if err := removeRepresentationIndex(ctx, conn, previous.RepresentationID); err != nil {
+			if err := removeRepresentationIndex(ctx, conn, sourceID, previous.RepresentationID); err != nil {
 				return err
 			}
 		}
-		for _, segment := range expected {
-			selector, _ := segment.Selector.TextByteRange()
-			if err := putLexicalRow(ctx, conn, segment, content[selector.Start:selector.End]); err != nil {
+		if len(expected) > 0 {
+			scope, err := ensureLexicalScope(ctx, conn, []mousa.SourceID{sourceID})
+			if err != nil {
 				return err
+			}
+			for _, segment := range expected {
+				selector, _ := segment.Selector.TextByteRange()
+				if err := putLexicalRow(ctx, conn, scope, segment, content[selector.Start:selector.End]); err != nil {
+					return err
+				}
 			}
 		}
 		_, err = conn.ExecContext(ctx, `INSERT INTO local_items(source_id, item_id, representation_id, active) VALUES(?, ?, ?, 1)
@@ -229,7 +235,7 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 			action = "absent"
 			return nil
 		}
-		if err := removeRepresentationIndex(ctx, conn, item.RepresentationID); err != nil {
+		if err := removeRepresentationIndex(ctx, conn, sourceID, item.RepresentationID); err != nil {
 			return err
 		}
 		if _, err := conn.ExecContext(ctx, `UPDATE local_items SET active = 0 WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID); err != nil {
@@ -244,8 +250,16 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 	return action, nil
 }
 
-func removeRepresentationIndex(ctx context.Context, conn *sql.Conn, id mousa.RepresentationID) error {
+func removeRepresentationIndex(ctx context.Context, conn *sql.Conn, sourceID mousa.SourceID, id mousa.RepresentationID) error {
 	const rows = `SELECT lr.rowid FROM segment_lexical_rows AS lr JOIN segments AS s ON s.id = lr.segment_id WHERE s.representation_id = ?`
+	scope, err := getLexicalScope(ctx, conn, sourceID[:])
+	if err == nil {
+		if _, err := conn.ExecContext(ctx, `DELETE FROM `+scope.table()+` WHERE rowid IN (`+rows+`)`, id[:]); err != nil {
+			return classify("remove scoped lexical rows", err)
+		}
+	} else if !IsCode(err, CodeNotFound) {
+		return err
+	}
 	if _, err := conn.ExecContext(ctx, `DELETE FROM segment_lexical_fts WHERE rowid IN (`+rows+`)`, id[:]); err != nil {
 		return lexicalQueryError(ctx, err)
 	}

@@ -53,7 +53,7 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 		t.Fatalf("list tables: %v", err)
 	}
 	want := []string{
-		"access_events", "artifacts", "ingest_gaps", "ingest_receipts", "local_items", "log", "note_citations",
+		"access_events", "artifacts", "collection_sources", "collections", "ingest_gaps", "ingest_receipts", "lexical_scopes", "local_items", "log", "note_citations",
 		"notes", "observations", "representation_inputs", "representations", "segment_lexical_fts",
 		"segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data",
 		"segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments",

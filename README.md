@@ -35,7 +35,7 @@ Mousa makes that context smaller and easier to inspect:
 
 | Your need | What Mousa gives you |
 |---|---|
-| Find useful passages | Source-scoped lexical retrieval. |
+| Find useful passages | Lexical retrieval over one source, a source list, or a named collection. |
 | Control context size | A released-text byte budget, with exact-content deduplication. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
 | Keep up with edits | Resync current items while preserving canonical history. |
@@ -76,7 +76,7 @@ would return `trail.sources[0].outcome: deny` and no passages. See
 
 Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, and byte-budget packing are implemented. One query writes one canonical `mousa.trail.v1` record as a log leaf; its `result_sha256` is stable for the same request and store state. Agents can save, export, import, and recall durable notes with authorship and citation status. The same executable serves local stdio MCP. Use `mousa -store STORE verify` to check a read-only snapshot of the store, or `verify --trail ID` to check a named trail.
 
-Access defaults to deny. The owner reads full trails through the store file; MCP checks current access and omits denied-source details. Vector and hybrid retrieval are not supported by this schema.
+Access defaults to deny. Denied sources do not contribute to lexical scores, even when named in the request. The owner reads full trails through the store file; MCP checks current access and omits denied-source details. Vector and hybrid retrieval are not supported by this schema.
 
 Scale at 100k documents and 1M retrieval units is a development target, not a
 property of today's binary. It remains a target until the scale probe passes at

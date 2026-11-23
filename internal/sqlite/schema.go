@@ -20,7 +20,7 @@ const (
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 4
+	schemaVersion = 5
 )
 
 // errResyncRequired is the refusal for a Mousa store this binary cannot read. There is no
@@ -31,18 +31,23 @@ var requiredObjects = []string{
 	"index:access_events_source_id_idx",
 	"index:artifacts_observation_id_idx",
 	"index:ingest_receipts_source_id_idx",
+	"index:lexical_scopes_first_source_idx",
 	"index:local_items_active_representation_idx",
 	"index:log_source_kind_seq_idx",
 	"index:log_source_seq_idx",
 	"index:observations_source_id_idx",
 	"index:representation_inputs_artifact_id_idx",
 	"index:representation_inputs_representation_id_idx",
+	"index:segment_lexical_rows_scope_idx",
 	"index:segments_representation_id_idx",
 	"index:source_withdrawals_source_id_idx",
 	"table:access_events",
 	"table:artifacts",
+	"table:collection_sources",
+	"table:collections",
 	"table:ingest_gaps",
 	"table:ingest_receipts",
+	"table:lexical_scopes",
 	"table:local_items",
 	"table:log",
 	"table:note_citations",
@@ -140,8 +145,18 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 	if err != nil {
 		return startupError("verify database", err)
 	}
-	if !equalStringSets(objects, requiredObjects) {
-		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, requiredObjects))
+	scopes, err := lexicalScopes(ctx, db, nil)
+	if err != nil {
+		return err
+	}
+	expected := slices.Clone(requiredObjects)
+	for _, scope := range scopes {
+		for _, suffix := range []string{"", "_config", "_content", "_data", "_docsize", "_idx"} {
+			expected = append(expected, "table:"+scope.table()+suffix)
+		}
+	}
+	if !equalStringSets(objects, expected) {
+		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, expected))
 	}
 
 	var quickCheck string
@@ -178,6 +193,12 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 		return err
 	}
 	if err := verifyLexicalRecords(ctx, db); err != nil {
+		return err
+	}
+	if err := verifyScopedLexical(ctx, db, scopes, readOnly); err != nil {
+		return err
+	}
+	if _, err := readCollections(ctx, db, ""); err != nil {
 		return err
 	}
 	// The FTS5 integrity-check command is an INSERT, so it needs a writable

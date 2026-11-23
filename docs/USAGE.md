@@ -82,6 +82,30 @@ and unauthorized IDs both return `not_found`. The caller view omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
 
+### Query a collection or source list
+
+```sh
+mousa -store local.sqlite collection create fleet
+mousa -store local.sqlite collection add --source dispatch fleet
+mousa -store local.sqlite collection add --source inspection fleet
+mousa -store local.sqlite collection list
+mousa -store local.sqlite query --collection fleet 'harbor inspection'
+mousa -store local.sqlite query --source dispatch --source inspection 'harbor inspection'
+mousa -store local.sqlite collection remove --source dispatch fleet
+```
+
+Add and remove are idempotent. Add requires an existing source and accepts a
+directory argument in place of `--source`. Collection names are lowercase,
+start with a letter or digit, and may include digits, dots, hyphens, and
+underscores (up to 64 characters). Collections and explicit lists hold at
+most 128 sources. Empty collections return an empty audited result.
+
+The trail records the resolved source IDs and each access decision. BM25
+uses only the statistics of the candidate's source ancestry, and a shard
+is searched only when every source in it allows retrieval. A collection
+does not grant access. For MCP, pass a `sources` array or `collection` in
+place of `source`; all members must be configured for that caller.
+
 ### Verify a store
 
 Open checks only store identity and schema compatibility; it does not scan the
