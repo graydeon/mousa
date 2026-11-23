@@ -10,6 +10,45 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
+// ApplyDocumentBatch commits the successful prefix in one transaction. A
+// savepoint prevents a failed item from leaving partial canonical history.
+// The scoped store is valid only during apply and must not be retained.
+func (store *Store) ApplyDocumentBatch(ctx context.Context, count int, apply func(scoped *Store, index int) error) (int, error) {
+	if count == 0 {
+		return 0, nil
+	}
+	if store.writeConn != nil {
+		return 0, wrap(CodeConflict, "sync batch", errors.New("nested document batch"))
+	}
+	var completed int
+	var itemErr error
+	err := store.writeImmediate(ctx, "sync batch", func(conn *sql.Conn) error {
+		scoped := *store
+		scoped.writeConn = conn
+		for i := range count {
+			if _, err := conn.ExecContext(ctx, `SAVEPOINT sync_item`); err != nil {
+				return classify("start sync item", err)
+			}
+			itemErr = apply(&scoped, i)
+			if itemErr != nil {
+				if _, err := conn.ExecContext(ctx, `ROLLBACK TO sync_item; RELEASE sync_item`); err != nil {
+					return errors.Join(itemErr, classify("roll back sync item", err))
+				}
+				break
+			}
+			if _, err := conn.ExecContext(ctx, `RELEASE sync_item`); err != nil {
+				return classify("finish sync item", err)
+			}
+			completed++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return completed, itemErr
+}
+
 // LocalItem records current activation separately from immutable revision history.
 // Inactive items retain their last representation so a restore is not an addition.
 type LocalItem struct {
@@ -21,8 +60,8 @@ type LocalItem struct {
 
 // GetLocalItem reads the indexed current-item relationship and its verified ancestry.
 func (store *Store) GetLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string) (LocalItem, error) {
-	if store.noteConn != nil {
-		return getLocalItem(ctx, store.noteConn, sourceID, itemID)
+	if store.writeConn != nil {
+		return getLocalItem(ctx, store.writeConn, sourceID, itemID)
 	}
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -88,7 +127,7 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 	}
 	var action string
 	err := store.writeImmediate(ctx, "activate local item", func(conn *sql.Conn) error {
-		if store.noteConn == nil {
+		if !store.noteWrite {
 			if err := requireDocumentSource(ctx, conn, sourceID); err != nil {
 				return err
 			}
@@ -97,7 +136,7 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 		if err != nil {
 			return err
 		}
-		if store.noteConn == nil {
+		if !store.noteWrite {
 			if policy, policyErr := mousa.TextSegmentationPolicy(representation); policyErr == nil && policy == mousa.TextSegmentNoteV1 {
 				return wrap(CodeConflict, "activate local item", errors.New("note segments are internal to durable notes"))
 			}
@@ -173,7 +212,7 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string) (string, error) {
 	var action string
 	err := store.writeImmediate(ctx, "delete local item", func(conn *sql.Conn) error {
-		if store.noteConn == nil {
+		if !store.noteWrite {
 			if err := requireDocumentSource(ctx, conn, sourceID); err != nil {
 				return err
 			}

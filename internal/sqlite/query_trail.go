@@ -83,10 +83,16 @@ func putTrail(ctx context.Context, conn *sql.Conn, trail mousa.Trail) error {
 			return classify("write query trail source", err)
 		}
 	}
-	for ordinal, candidate := range trail.Candidates {
-		if _, err := conn.ExecContext(ctx, `INSERT INTO trail_segments(trail_id, ordinal, segment_id) VALUES(?, ?, ?)`,
-			trail.ID[:], ordinal, candidate.SegmentID[:]); err != nil {
-			return classify("write query trail segment", err)
+	if len(trail.Candidates) > 0 {
+		insert, err := conn.PrepareContext(ctx, `INSERT INTO trail_segments(trail_id, ordinal, segment_id) VALUES(?, ?, ?)`)
+		if err != nil {
+			return classify("prepare query trail segments", err)
+		}
+		defer insert.Close()
+		for ordinal, candidate := range trail.Candidates {
+			if _, err := insert.ExecContext(ctx, trail.ID[:], ordinal, candidate.SegmentID[:]); err != nil {
+				return classify("write query trail segment", err)
+			}
 		}
 	}
 	if err := appendLog(ctx, conn, queryTrailKind, trail.ID[:], nil, data); err != nil {
@@ -99,7 +105,9 @@ func putTrail(ctx context.Context, conn *sql.Conn, trail mousa.Trail) error {
 	if !bytes.Equal(persisted, data) {
 		return integrity("write query trail", "exact read-back disagrees with write")
 	}
-	return checkTrailReferences(ctx, conn, written)
+	// Query already verified these references in its read snapshot. Check
+	// what was just written without rereading candidates under the write lock.
+	return checkTrailLookups(ctx, conn, written)
 }
 
 // GetTrail reads a verified historical trail without writing anything. A nil

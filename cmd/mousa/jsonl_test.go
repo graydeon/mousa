@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestJSONLBatchRollsBackFailedItem(t *testing.T) {
+	run, _ := setup(t)
+	run.runInput(`{"id":"seed","text":"original harbor plan"}`+"\n", false,
+		"sync", "--source", "probe", "--allow")
+	rawExec(t, run.store, `
+		CREATE TRIGGER fail_second_batch_item BEFORE INSERT ON segment_lexical_rows
+		WHEN (SELECT count(*) FROM segment_lexical_rows) = 2
+		BEGIN SELECT RAISE(ABORT, 'injected batch failure'); END`)
+	run.runInput(record("first", "harbor weather")+"\n"+record("second", "harbor tides")+"\n", true,
+		"sync", "--source", "probe")
+	_, status := run.run(false, "status", "--source", "probe")
+	if status["active_items"] != float64(2) || status["observations"] != float64(2) {
+		t.Fatalf("wanted the committed prefix and no partial failed item: %v", status)
+	}
+}
+
 // The JSONL stream tests run the built CLI against a fresh store and exercise
 // the stream input form through the supported interface: identity by record
 // id, digest-driven replay, revision replacement, explicit deletion, malformed

@@ -17,9 +17,9 @@ type Store struct {
 	readOnly bool
 	path     string
 	propose  proposer
-	// noteConn is non-nil only on the scoped copy Remember passes to its item
-	// writer, so the note's ingest work joins the caller's transaction.
-	noteConn *sql.Conn
+	// Scoped copies of Store let item writers join the owning transaction.
+	writeConn *sql.Conn
+	noteWrite bool
 }
 
 // Open opens or creates a writable canonical record store.

@@ -185,47 +185,69 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 	// Allow a maximum-sized record followed by CRLF, then check record size.
 	scanner.Buffer(make([]byte, 0, 64<<10), maxItemRecordBytes+2)
 	line := 0
-	for scanner.Scan() {
-		line++
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if limited.N == 0 {
-			return recordError{Line: line, Err: fmt.Errorf("input exceeds %d bytes", maxItemStreamBytes)}
-		}
-		raw := scanner.Bytes()
-		if len(raw) > maxItemRecordBytes {
-			return recordError{Line: line, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
-		}
-		if len(bytes.TrimSpace(raw)) == 0 {
-			continue
-		}
-		if len(lineOf) == maxItemRecords {
-			return recordError{Line: line, Err: fmt.Errorf("input exceeds %d records", maxItemRecords)}
-		}
-		record, err := decodeItemRecord(raw)
+	pending := make([]itemInput, 0, syncBatchItems)
+	flush := func() error {
+		batch := pending
+		pending = pending[:0]
+		n, err := applyItemBatch(ctx, store, source, batch, nil, segmentPolicy, &result)
 		if err != nil {
-			return recordError{Line: line, Err: err}
+			id := batch[n].ID
+			return recordError{Line: lineOf[id], Err: fmt.Errorf("item %q: %w", id, err)}
 		}
-		if first, duplicate := lineOf[record.ID]; duplicate {
-			return recordError{Line: line, Err: fmt.Errorf("item %q was already named on line %d", record.ID, first)}
-		}
-		lineOf[record.ID] = line
-		item := itemInput{ID: record.ID, Deleted: record.Deleted}
-		if record.Text != nil {
-			item.Content = []byte(*record.Text)
-		}
-		action, err := applyItem(ctx, store, source, item, nil, segmentPolicy)
-		if err != nil {
-			return recordError{Line: line, Err: fmt.Errorf("item %q: %w", record.ID, err)}
-		}
-		result.record(action, record.ID)
+		return nil
 	}
-	if err := scanner.Err(); err != nil {
-		if errors.Is(err, bufio.ErrTooLong) {
-			return recordError{Line: line + 1, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+	scan := func() error {
+		for scanner.Scan() {
+			line++
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if limited.N == 0 {
+				return recordError{Line: line, Err: fmt.Errorf("input exceeds %d bytes", maxItemStreamBytes)}
+			}
+			raw := scanner.Bytes()
+			if len(raw) > maxItemRecordBytes {
+				return recordError{Line: line, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+			}
+			if len(bytes.TrimSpace(raw)) == 0 {
+				continue
+			}
+			if len(lineOf) == maxItemRecords {
+				return recordError{Line: line, Err: fmt.Errorf("input exceeds %d records", maxItemRecords)}
+			}
+			record, err := decodeItemRecord(raw)
+			if err != nil {
+				return recordError{Line: line, Err: err}
+			}
+			if first, duplicate := lineOf[record.ID]; duplicate {
+				return recordError{Line: line, Err: fmt.Errorf("item %q was already named on line %d", record.ID, first)}
+			}
+			lineOf[record.ID] = line
+			item := itemInput{ID: record.ID, Deleted: record.Deleted}
+			if record.Text != nil {
+				item.Content = []byte(*record.Text)
+			}
+			pending = append(pending, item)
+			if len(pending) == syncBatchItems {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
 		}
-		return recordError{Line: line + 1, Err: err}
+		if err := scanner.Err(); err != nil {
+			if errors.Is(err, bufio.ErrTooLong) {
+				return recordError{Line: line + 1, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+			}
+			return recordError{Line: line + 1, Err: err}
+		}
+		return nil
+	}
+	scanErr := scan()
+	if err := flush(); err != nil {
+		return err
+	}
+	if scanErr != nil {
+		return scanErr
 	}
 	result.TotalItems = len(lineOf)
 	if allow {

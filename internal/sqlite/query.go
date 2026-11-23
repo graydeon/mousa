@@ -92,12 +92,11 @@ func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailReque
 			if source.Head == nil {
 				continue
 			}
-			var seq uint64
-			err := conn.QueryRowContext(ctx, `SELECT coalesce(max(seq),0) FROM log WHERE source_id = ?`, source.SourceID[:]).Scan(&seq)
+			head, err := sourceHeadAt(ctx, conn, source.SourceID, math.MaxInt64)
 			if err != nil {
-				return classify("recheck query source head", err)
+				return err
 			}
-			if seq != source.Head.Seq {
+			if head != *source.Head {
 				return errQueryHeadMoved
 			}
 		}
@@ -150,6 +149,9 @@ func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.Trai
 			decision.Head = &head
 			allowed = append(allowed, id)
 			allowedSet[id] = true
+		}
+		if err := checkTrailSource(ctx, q, trail.AsOf, decision); err != nil {
+			return mousa.QueryResult{}, err
 		}
 		trail.Sources = append(trail.Sources, decision)
 	}
@@ -399,30 +401,42 @@ func proposeLexical(ctx context.Context, q queryer, expression string, sources [
 	if err := validateLexicalQuery(expression, limit); err != nil {
 		return nil, err
 	}
-	args := make([]any, 0, len(sources)+2)
-	for _, source := range sources {
-		args = append(args, source[:])
+	onlySource := false
+	if len(sources) == 1 {
+		if err := q.QueryRowContext(ctx, `SELECT NOT EXISTS(SELECT 1 FROM sources WHERE id != ?)`, sources[0][:]).Scan(&onlySource); err != nil {
+			return nil, classify("check lexical proposal scope", err)
+		}
 	}
-	args = append(args, expression, limit)
-	rows, err := q.QueryContext(ctx, `
+	const selectMatches = `
+		SELECT r.segment_id, f.content_sha256, bm25(segment_lexical_fts)
+		FROM segment_lexical_fts AS f
+		JOIN segment_lexical_rows AS r ON r.rowid = f.rowid`
+	const orderMatches = ` ORDER BY bm25(segment_lexical_fts), r.segment_id LIMIT ?`
+	statement := selectMatches + ` WHERE segment_lexical_fts MATCH ?`
+	args := make([]any, 0, len(sources)+2)
+	// A single-source store needs no ancestry prefilter. Proposal verification
+	// still checks canonical ancestry and content before releasing passages.
+	if !onlySource {
+		for _, source := range sources {
+			args = append(args, source[:])
+		}
+		statement = `
 		WITH RECURSIVE source_representations(id) AS (
 			SELECT ri.representation_id
 			FROM representation_inputs AS ri
 			JOIN artifacts AS a ON a.id = ri.artifact_id
 			JOIN observations AS o ON o.id = a.observation_id
-			WHERE o.source_id IN (`+strings.Repeat("?,", len(sources)-1)+`?)
+			WHERE o.source_id IN (` + strings.Repeat("?,", len(sources)-1) + `?)
 			UNION
 			SELECT ri.representation_id
 			FROM representation_inputs AS ri
 			JOIN source_representations AS sr ON sr.id = ri.input_representation_id
-		)
-		SELECT r.segment_id, f.content_sha256, bm25(segment_lexical_fts)
-		FROM segment_lexical_fts AS f
-		JOIN segment_lexical_rows AS r ON r.rowid = f.rowid
-		JOIN segments AS s ON s.id = r.segment_id
+		)` + selectMatches + ` JOIN segments AS s ON s.id = r.segment_id
 		WHERE segment_lexical_fts MATCH ?
-			AND s.representation_id IN (SELECT id FROM source_representations)
-		ORDER BY bm25(segment_lexical_fts), r.segment_id LIMIT ?`, args...)
+			AND s.representation_id IN (SELECT id FROM source_representations)`
+	}
+	args = append(args, expression, limit)
+	rows, err := q.QueryContext(ctx, statement+orderMatches, args...)
 	if err != nil {
 		return nil, lexicalQueryError(ctx, err)
 	}

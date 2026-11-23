@@ -331,7 +331,8 @@ func (store *Store) writeNote(ctx context.Context, conn *sql.Conn, note mousa.No
 		return err
 	}
 	scoped := *store
-	scoped.noteConn = conn
+	scoped.writeConn = conn
+	scoped.noteWrite = true
 	if err := apply(&scoped); err != nil {
 		return err
 	}

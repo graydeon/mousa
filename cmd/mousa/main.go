@@ -25,6 +25,7 @@ const (
 	adapterVersion   = "1"
 	itemPrefix       = "item/"
 	segmentKeyPrefix = "body"
+	syncBatchItems   = 16
 )
 
 func main() {
@@ -267,6 +268,22 @@ const (
 	actionAbsent    = "absent"
 )
 
+func applyItemBatch(ctx context.Context, store *sqlite.Store, source mousa.Source, items []itemInput, sequence *uint64, policy string, result *syncResult) (int, error) {
+	actions := make([]string, len(items))
+	completed, err := store.ApplyDocumentBatch(ctx, len(items), func(scoped *sqlite.Store, i int) error {
+		if sequence != nil && !items[i].Deleted {
+			(*sequence)++
+		}
+		action, err := applyItem(ctx, scoped, source, items[i], sequence, policy)
+		actions[i] = action
+		return err
+	})
+	for i := range completed {
+		result.record(actions[i], items[i].ID)
+	}
+	return completed, err
+}
+
 // applyItem compares raw-content identity with the explicitly active revision.
 // Canonical history may be prepared independently; index activation is atomic.
 func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64, segmentPolicy string) (string, error) {
@@ -437,14 +454,30 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 	result := syncResult{Source: absolute, Root: absolute, Input: inputDirectory, Skipped: selection.Skipped, SegmentPolicy: segmentPolicy}
 	var sequence uint64
 	selected := make(map[string]struct{}, len(selection.Items))
+	pending := make([]itemInput, 0, syncBatchItems)
+	flush := func() error {
+		n, err := applyItemBatch(ctx, store, source, pending, &sequence, segmentPolicy, &result)
+		if err != nil {
+			return fmt.Errorf("item %s: %w", pending[n].ID, err)
+		}
+		pending = pending[:0]
+		return nil
+	}
+	add := func(item itemInput) error {
+		pending = append(pending, item)
+		if len(pending) == syncBatchItems {
+			return flush()
+		}
+		return nil
+	}
 	for _, item := range selection.Items {
 		selected[item.ID] = struct{}{}
-		sequence++
-		action, err := applyItem(ctx, store, source, itemInput{ID: item.ID, Content: item.content, Captured: item.captured}, &sequence, segmentPolicy)
-		if err != nil {
-			return fmt.Errorf("item %s: %w", item.ID, err)
+		if err := add(itemInput{ID: item.ID, Content: item.content, Captured: item.captured}); err != nil {
+			return err
 		}
-		result.record(action, item.ID)
+	}
+	if err := flush(); err != nil {
+		return err
 	}
 	// A completed selection defines both additions and removals from scope.
 	previous, err := store.LocalItemIDs(ctx, source.ID)
@@ -455,11 +488,12 @@ func runSyncDirectory(ctx context.Context, storePath, root string, options direc
 		if _, exists := selected[path]; exists {
 			continue
 		}
-		action, err := applyItem(ctx, store, source, itemInput{ID: path, Deleted: true}, &sequence, segmentPolicy)
-		if err != nil {
-			return fmt.Errorf("item %s: %w", path, err)
+		if err := add(itemInput{ID: path, Deleted: true}); err != nil {
+			return err
 		}
-		result.record(action, path)
+	}
+	if err := flush(); err != nil {
+		return err
 	}
 	result.TotalItems = len(selection.Items)
 	if allow {

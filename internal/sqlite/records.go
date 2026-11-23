@@ -530,8 +530,8 @@ func (store *Store) writeImmediate(ctx context.Context, op string, write func(*s
 	if err := store.requireWritable(op); err != nil {
 		return err
 	}
-	if store.noteConn != nil {
-		return write(store.noteConn)
+	if store.writeConn != nil {
+		return write(store.writeConn)
 	}
 	conn, err := store.db.Conn(ctx)
 	if err != nil {

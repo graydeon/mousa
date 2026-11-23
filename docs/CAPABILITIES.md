@@ -266,12 +266,11 @@ Empty text has no segments and produces no search result. Removing an index entr
 is not secure erasure: canonical records remain as history, and old content may
 remain in SQLite pages, WAL files, backups, or previously released output.
 
-Canonical preparation can commit before activation. A preparation failure may
-therefore leave unactivated historical records, but it does not replace the previous
-searchable revision. Failure or abrupt exit during activation rolls back both index
-replacement and the current-item pointer. Retrying the same input is supported.
-A multi-item sync is not one transaction: earlier successful items remain committed
-when a later item fails. Concurrent syncs of the same source are not a supported
+Sync prepares canonical records and activates them in the same transaction.
+Batches contain at most 16 items. A failed item rolls back to its savepoint
+without replacing the previous searchable revision; earlier completed items
+remain committed. An interruption rolls back the in-flight batch. Retrying the
+same input is supported. Concurrent syncs of the same source are not a
 source-wide snapshot protocol; serialize them.
 
 Canonical history retains identities, digests, and provenance, not a complete text

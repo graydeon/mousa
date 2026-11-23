@@ -245,33 +245,51 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		}
 		report := syncResult{Source: args.Source, Input: inputJSONL, SegmentPolicy: args.SegmentPolicy}
 		seen := make(map[string]struct{}, len(args.Items))
+		pending := make([]itemInput, 0, syncBatchItems)
+		completed := 0
+		flush := func() error {
+			n, err := applyItemBatch(ctx, a.store, source, pending, nil, args.SegmentPolicy, &report)
+			completed += n
+			pending = pending[:0]
+			return err
+		}
+		fail := func(code string, err error) (*mcp.CallToolResult, error) {
+			if writeErr := flush(); writeErr != nil {
+				return mcpFailure(operation, args.Source, mcpErrorCode(writeErr), writeErr, completed, completed+1)
+			}
+			return mcpFailure(operation, args.Source, code, err, completed, completed+1)
+		}
 		for i, raw := range args.Items {
 			if err := ctx.Err(); err != nil {
-				return mcpFailure(operation, args.Source, "cancelled", err, i, i+1)
+				return mcpFailure(operation, args.Source, "cancelled", err, completed, i+1)
 			}
 			if len(raw) > maxItemRecordBytes {
-				return mcpFailure(operation, args.Source, "resource_limit", errors.New("item JSON exceeds 1048576 bytes"), i, i+1)
+				return fail("resource_limit", errors.New("item JSON exceeds 1048576 bytes"))
 			}
 			record, err := decodeItemRecord(raw)
 			if err != nil {
-				return mcpFailure(operation, args.Source, "invalid_item", err, i, i+1)
+				return fail("invalid_item", err)
 			}
 			if _, duplicate := seen[record.ID]; duplicate {
-				return mcpFailure(operation, args.Source, "invalid_item", errors.New("item ID repeated within this call"), i, i+1)
+				return fail("invalid_item", errors.New("item ID repeated within this call"))
 			}
 			seen[record.ID] = struct{}{}
 			item := itemInput{ID: record.ID, Deleted: record.Deleted}
 			if record.Text != nil {
 				if len(*record.Text) > mcpMaxTextBytes {
-					return mcpFailure(operation, args.Source, "resource_limit", errors.New("item text exceeds 262144 UTF-8 bytes"), i, i+1)
+					return fail("resource_limit", errors.New("item text exceeds 262144 UTF-8 bytes"))
 				}
 				item.Content = []byte(*record.Text)
 			}
-			action, err := applyItem(ctx, a.store, source, item, nil, args.SegmentPolicy)
-			if err != nil {
-				return mcpFailure(operation, args.Source, mcpErrorCode(err), err, i, i+1)
+			pending = append(pending, item)
+			if len(pending) == syncBatchItems {
+				if err := flush(); err != nil {
+					return mcpFailure(operation, args.Source, mcpErrorCode(err), err, completed, completed+1)
+				}
 			}
-			report.record(action, record.ID)
+		}
+		if err := flush(); err != nil {
+			return mcpFailure(operation, args.Source, mcpErrorCode(err), err, completed, completed+1)
 		}
 		report.TotalItems = len(args.Items)
 		if info, err := os.Stat(a.path); err == nil {

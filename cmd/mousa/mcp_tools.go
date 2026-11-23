@@ -242,7 +242,7 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 	source := map[string]any{"type": "string", "enum": sources}
 	stringEnum := func(values ...string) map[string]any { return map[string]any{"type": "string", "enum": values} }
 	definitions := []*mcp.Tool{
-		{Name: "mousa_sync", Description: "Apply explicit text items or deletions to an ingestion-enabled JSONL source. Each successful item commits independently; on failure, completed_items identifies the retained prefix. Omission never deletes.", InputSchema: map[string]any{
+		{Name: "mousa_sync", Description: "Apply explicit text items or deletions to an ingestion-enabled JSONL source. On failure, completed_items identifies the committed prefix. Omission never deletes.", InputSchema: map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"source", "items"}, "properties": map[string]any{
 				"source": source, "segment_policy": stringEnum("fixed-v1", "passage-v1"),
 				"items": map[string]any{"type": "array", "minItems": 1, "maxItems": mcpMaxItems, "items": map[string]any{
