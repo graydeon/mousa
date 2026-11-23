@@ -15,7 +15,9 @@ factual truth.
 on other workloads. Measurements are published separately in
 [mousa-benchmarks](https://github.com/graydeon/mousa-benchmarks); the pre-rework
 research record is archived at [archive/research-pre-rework.md](archive/research-pre-rework.md)
-and does not describe the current code.
+and does not describe the current code. Scale at 100k documents and 1M retrieval
+units is a [development target](OVERVIEW.md#scale-targets), not a property of today's
+binary, until the scale probe passes at both sizes.
 
 | Capability | Core | CLI | Behavioral coverage |
 |---|---|---|---|

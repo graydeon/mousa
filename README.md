@@ -103,6 +103,10 @@ Inspection reauthorizes access, including a committed decision on denial without
 historical disclosure. Historical record-by-ID reads remain native-only.
 Automatic embedding generation and secret filtering remain pending.
 
+Scale at 100k documents and 1M retrieval units is a development target, not a
+property of today's binary. It remains a target until the scale probe passes at
+both sizes. See [scale targets](docs/OVERVIEW.md#scale-targets).
+
 The [capability matrix](docs/CAPABILITIES.md) is the detailed supported-behavior reference.
 
 The source-built BEIR evaluator (`cmd/beir`) accepts

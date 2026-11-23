@@ -11,6 +11,14 @@ The supported installation is a source build with Go 1.25 or newer. No release h
 been tagged; merged source is pre-alpha development, not a versioned release or stable
 SDK. The `pre-rework` tag marks the last state before the 2026 rework.
 
+## Scale targets
+
+Opening a store in under 1 s at 100k documents, lexical ingest above 500 documents/s,
+and lexical query p50 below 50 ms at 1M retrieval units are development targets,
+not properties of today's binary. They are targets for verify-on-read instead of
+full-store verification on open, batch ingest, and bounded query work. They remain
+targets until the scale probe passes at 100k documents and 1M retrieval units.
+
 ## Why Mousa?
 
 *Mousa* is the Ancient Greek singular of *Muse*. In Greek mythology, Mnemosyne—the titan Goddess of Memory—is the mother of the nine Muses. The name gives Mousa a practical organizing idea: durable memory is not one act. Sources move through nine explicit stages before they become usable context.
