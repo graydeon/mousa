@@ -425,53 +425,58 @@ func noteStaleness(ctx context.Context, q queryer, note mousa.Note) ([]NoteStale
 		if err := checkTrailReferences(ctx, q, trail); err != nil {
 			return nil, err
 		}
-		packed := make(map[mousa.SegmentID][]mousa.SourceID)
-		for _, candidate := range trail.Candidates {
-			if candidate.Packed != "none" {
-				packed[candidate.SegmentID] = candidate.SourceIDs
+		reasons, err := citationStaleness(ctx, q, trail, citation.SegmentIDs)
+		if err != nil {
+			return nil, err
+		}
+		stale = append(stale, reasons...)
+	}
+	return stale, nil
+}
+
+func citationStaleness(ctx context.Context, q queryer, trail mousa.Trail, segments []mousa.SegmentID) ([]NoteStale, error) {
+	packed := make(map[mousa.SegmentID][]mousa.SourceID)
+	for _, candidate := range trail.Candidates {
+		if candidate.Packed != "none" {
+			packed[candidate.SegmentID] = candidate.SourceIDs
+		}
+	}
+	for _, segment := range segments {
+		if len(packed[segment]) == 0 {
+			return []NoteStale{{TrailID: trail.ID, Reason: noteCitationUnverifiable}}, nil
+		}
+	}
+	stale := []NoteStale{}
+	seen := make(map[mousa.SourceID]bool)
+	withdrawn, denied := false, false
+	for _, segment := range segments {
+		for _, cited := range packed[segment] {
+			if seen[cited] {
+				continue
 			}
-		}
-		unverifiable := false
-		for _, segment := range citation.SegmentIDs {
-			if len(packed[segment]) == 0 {
-				unverifiable = true
-				break
+			seen[cited] = true
+			decision, err := currentSourceDecision(ctx, q, cited)
+			if err != nil {
+				return nil, err
 			}
+			withdrawn = withdrawn || decision.WithdrawalID != nil
+			denied = denied || (decision.Outcome != "allow" &&
+				(decision.WithdrawalID == nil || decision.Access != mousa.SourceAccessAllow))
 		}
-		if unverifiable {
-			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteCitationUnverifiable})
-			continue
+		var indexed bool
+		if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`,
+			segment[:]).Scan(&indexed); err != nil {
+			return nil, classify("recheck cited segment", err)
 		}
-		seen := make(map[mousa.SourceID]bool)
-		withdrawn, denied := false, false
-		for _, segment := range citation.SegmentIDs {
-			for _, cited := range packed[segment] {
-				if seen[cited] {
-					continue
-				}
-				seen[cited] = true
-				decision, err := currentSourceDecision(ctx, q, cited)
-				if err != nil {
-					return nil, err
-				}
-				withdrawn = withdrawn || decision.WithdrawalID != nil
-				denied = denied || decision.Access != mousa.SourceAccessAllow
-			}
-			var indexed bool
-			if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM segment_lexical_rows WHERE segment_id = ?)`,
-				segment[:]).Scan(&indexed); err != nil {
-				return nil, classify("recheck cited segment", err)
-			}
-			if !indexed {
-				stale = append(stale, NoteStale{TrailID: citation.TrailID, SegmentID: &segment, Reason: noteStaleSegmentRetired})
-			}
+		if !indexed {
+			stale = append(stale, NoteStale{TrailID: trail.ID, SegmentID: &segment, Reason: noteStaleSegmentRetired})
 		}
-		if withdrawn {
-			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceWithdrawn})
-		}
-		if denied {
-			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteStaleSourceDenied})
-		}
+	}
+	if withdrawn {
+		stale = append(stale, NoteStale{TrailID: trail.ID, Reason: noteStaleSourceWithdrawn})
+	}
+	if denied {
+		stale = append(stale, NoteStale{TrailID: trail.ID, Reason: noteStaleSourceDenied})
 	}
 	return stale, nil
 }

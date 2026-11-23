@@ -38,7 +38,7 @@ Mousa makes that context smaller and easier to inspect:
 | Find useful passages | Lexical retrieval over one source, a source list, or a named collection. |
 | Control context size | A released-text byte budget, with exact-content deduplication. |
 | Follow the evidence | Source identities, passage coordinates, digests and a durable Source Trail. |
-| Keep up with edits | Resync current items while preserving canonical history. |
+| Keep up with edits | Resync current items, read changes since a log index, and recheck citations. |
 | Use your own tools | One Go executable, SQLite storage, JSON output and local stdio MCP. |
 
 Mousa retrieves evidence; your agent or application decides how to use it.

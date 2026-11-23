@@ -212,6 +212,12 @@ CREATE TABLE local_items (
 CREATE INDEX local_items_active_representation_idx
 ON local_items(source_id, representation_id) WHERE active = 1;
 
+CREATE TABLE item_changes (
+  id BLOB PRIMARY KEY NOT NULL CHECK (length(id) = 32 AND id != zeroblob(32)),
+  source_id BLOB NOT NULL REFERENCES sources(id) ON DELETE RESTRICT,
+  record_json BLOB NOT NULL CHECK (length(record_json) > 0)
+) STRICT;
+
 -- Immutable durable notes. A note owns exactly one local item whose
 -- representation holds the exact note bytes; the canonical record carries the
 -- author, content digest, and query-trail lineage.
@@ -260,7 +266,7 @@ CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 -- record_id.
 CREATE TABLE log (
     seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'source_withdrawal', 'note', 'trail')),
+    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note', 'trail')),
     record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
     source_id BLOB CHECK (source_id IS NULL OR (length(source_id) = 32 AND source_id != zeroblob(32))) REFERENCES sources(id) ON DELETE RESTRICT,
     leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),

@@ -53,8 +53,15 @@ func TestFirstFitPackingSuppressionAndHistory(t *testing.T) {
 			writeFile(t, root, retained["item"].(string), "amber amber")
 			run.run(false, "sync", "--segment-policy", policy, root)
 			_, restored := run.run(false, "query", "--budget-bytes", "33", root, "amber")
-			if trailOf(restored)["result_sha256"] != trailOf(result)["result_sha256"] {
-				t.Fatal("restoration changed the result digest")
+			if !reflect.DeepEqual(hits(restored), hits(result)) {
+				t.Fatal("restoration changed the released passages")
+			}
+			if trailOf(restored)["result_sha256"] == trailOf(result)["result_sha256"] {
+				t.Fatal("restoration did not advance the source history")
+			}
+			_, repeated := run.run(false, "query", "--budget-bytes", "33", root, "amber")
+			if trailOf(restored)["result_sha256"] != trailOf(repeated)["result_sha256"] {
+				t.Fatal("an unchanged restored source did not repeat its result digest")
 			}
 			run.run(true, "query", "--mode", "unknown", root, "amber")
 		})

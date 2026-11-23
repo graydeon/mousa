@@ -23,6 +23,7 @@ type mcpArguments struct {
 	Source        string
 	Sources       []string
 	Collection    string
+	Since         uint64
 	Items         []json.RawMessage
 	SegmentPolicy string
 	Query         string
@@ -114,6 +115,9 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 	case "mousa_trail":
 		allowed = []string{"trail_id"}
 		required = []string{"trail_id"}
+	case "mousa_changes":
+		allowed = []string{"since", "source", "collection"}
+		required = []string{"since"}
 	case "mousa_status":
 		allowed = []string{"source"}
 		required = []string{"source"}
@@ -144,6 +148,10 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("arguments must not contain null fields")
 		}
 		switch key {
+		case "since":
+			if err := json.Unmarshal(value, &args.Since); err != nil || args.Since > 1<<53-1 {
+				return args, errors.New("since must be a nonnegative JSON-safe integer")
+			}
 		case "sources":
 			var entries []json.RawMessage
 			if err := json.Unmarshal(value, &entries); err != nil || len(entries) == 0 || len(entries) > mousa.MaxScopeSources {
@@ -245,6 +253,9 @@ func decodeMCPArguments(raw []byte, operation string) (mcpArguments, error) {
 			return args, errors.New("choose exactly one of source, sources, or collection")
 		}
 	}
+	if operation == "mousa_changes" && seen["source"] && seen["collection"] {
+		return args, errors.New("choose either source or collection")
+	}
 	return args, nil
 }
 
@@ -341,5 +352,21 @@ func mcpToolDefinitions(sources []string) ([]*mcp.Tool, error) {
 			},
 		}, OutputSchema: remember},
 	)
+	changes, err := mcpOutputSchema[sqlite.ChangePage]("mousa_changes")
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, &mcp.Tool{
+		Name: "mousa_changes", Description: "Read a page of authorized item, access and withdrawal changes after a log index. Save next_index for the next call. Does not return passage text.",
+		InputSchema: map[string]any{
+			"type": "object", "additionalProperties": false, "required": []string{"since"},
+			"not": map[string]any{"required": []string{"source", "collection"}},
+			"properties": map[string]any{
+				"since":      map[string]any{"type": "integer", "minimum": 0, "maximum": int64(1<<53 - 1)},
+				"source":     source,
+				"collection": map[string]any{"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+			},
+		}, OutputSchema: changes,
+	})
 	return definitions, nil
 }

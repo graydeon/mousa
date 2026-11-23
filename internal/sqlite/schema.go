@@ -20,7 +20,7 @@ const (
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 5
+	schemaVersion = 6
 )
 
 // errResyncRequired is the refusal for a Mousa store this binary cannot read. There is no
@@ -47,6 +47,7 @@ var requiredObjects = []string{
 	"table:collections",
 	"table:ingest_gaps",
 	"table:ingest_receipts",
+	"table:item_changes",
 	"table:lexical_scopes",
 	"table:local_items",
 	"table:log",

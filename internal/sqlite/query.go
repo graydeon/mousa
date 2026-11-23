@@ -145,15 +145,11 @@ func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.Trai
 		}
 		req.Scope.Sources = sources
 	}
-	if grants != nil {
-		for _, id := range req.Scope.Sources {
-			if !grants[id] {
-				return mousa.QueryResult{}, readError("resolve query scope", sql.ErrNoRows)
-			}
-		}
+	if err := requireSourceGrants(req.Scope.Sources, grants); err != nil {
+		return mousa.QueryResult{}, err
 	}
 	trail := mousa.Trail{Request: req, Sources: make([]mousa.SourceDecision, 0, len(req.Scope.Sources))}
-	if err := q.QueryRowContext(ctx, `SELECT coalesce(max(seq),0) FROM log`).Scan(&trail.AsOf); err != nil {
+	if err := q.QueryRowContext(ctx, logIndexSQL).Scan(&trail.AsOf); err != nil {
 		return mousa.QueryResult{}, classify("query log index", err)
 	}
 	storeID, err := getStoreID(ctx, q)
@@ -194,6 +190,17 @@ func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.Trai
 		return mousa.QueryResult{}, wrap(CodeIntegrity, "seal query trail", err)
 	}
 	return mousa.QueryResult{Trail: sealed, Passages: passages}, nil
+}
+
+func requireSourceGrants(sources []mousa.SourceID, grants map[mousa.SourceID]bool) error {
+	if grants != nil {
+		for _, id := range sources {
+			if !grants[id] {
+				return readError("resolve scope", sql.ErrNoRows)
+			}
+		}
+	}
+	return nil
 }
 
 func currentSourceDecision(ctx context.Context, q queryer, id mousa.SourceID) (mousa.SourceDecision, error) {

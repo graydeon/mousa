@@ -51,6 +51,10 @@ func main() {
 		err = verifyCommand(ctx, *storePath, rest)
 	case "collection":
 		err = collectionCommand(ctx, *storePath, rest)
+	case "changes":
+		err = changesCommand(ctx, *storePath, rest)
+	case "recheck":
+		err = recheckCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
@@ -88,6 +92,11 @@ commands:
                             query a named collection
   collection create|list|add|remove
                             manage a named set of sources; add/remove take --source ID NAME
+  changes --since SEQ [--source ID|--collection NAME]
+                            read new events for allowed sources
+  recheck --trail TRAIL_ID   check whether a trail's released evidence is still current
+  recheck --source ID NOTE_ID
+                            check a durable note's current citation status
   status <dir>                report the source's ingest state (JSON)
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
   trail <trail-id>            inspect one recorded query trail, never text (JSON)

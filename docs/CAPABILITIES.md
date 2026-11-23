@@ -77,6 +77,7 @@ stdio mode exposes no prompts, resources, roots, sampling, tasks or remote trans
 | `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
 | `mousa_status` | `source` | None | Existing status report: collection state, active items and observations |
 | `mousa_query` | Exactly one of `source`, `sources`, `collection`; `query`, `budget_bytes` | `mode`: `lexical` (default) | Caller-view trail and selected passages. Every requested member must be configured for the caller. |
+| `mousa_changes` | `since` | `source` or `collection` | Up to 256 authorized item, access, and withdrawal events; no passage text. |
 | `mousa_trail` | `trail_id` | None | Caller-view trail, without passage text. |
 | `mousa_remember` | `source`, `text` | `derived_from`: array of `{trail_id, segment_ids?}` | Canonical `mousa.note.v1` record: ID, content digest, author (trusted caller), time and stored lineage; exact retries return the first note |
 

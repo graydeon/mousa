@@ -223,7 +223,7 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		return mcpFailure(operation, "", "invalid_arguments", err, 0, 0)
 	}
 	var configured mcpSource
-	if operation != "mousa_trail" && (operation != "mousa_query" || args.Source != "") {
+	if args.Source != "" {
 		var ok bool
 		configured, ok = a.sources[args.Source]
 		if !ok {
@@ -307,6 +307,8 @@ func (a *mcpApplication) call(ctx context.Context, operation string, raw []byte)
 		result = report
 	case "mousa_status":
 		result, err = sourceStatus(ctx, a.store, source, args.Source)
+	case "mousa_changes":
+		result, err = a.store.Changes(ctx, args.Since, mousa.Scope{Source: source.ID, Collection: args.Collection}, a.sourceGrants())
 	case "mousa_query":
 		scope := mousa.Scope{Source: source.ID, Collection: args.Collection}
 		for _, external := range args.Sources {

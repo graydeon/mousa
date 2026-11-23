@@ -206,7 +206,14 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 		}
 		_, err = conn.ExecContext(ctx, `INSERT INTO local_items(source_id, item_id, representation_id, active) VALUES(?, ?, ?, 1)
 			ON CONFLICT(source_id, item_id) DO UPDATE SET representation_id = excluded.representation_id, active = 1`, sourceID[:], itemID, representationID[:])
-		return classify("store local item activation", err)
+		if err != nil {
+			return classify("store local item activation", err)
+		}
+		var prior *mousa.RepresentationID
+		if previous.Active {
+			prior = &previous.RepresentationID
+		}
+		return appendItemChange(ctx, conn, sourceID, itemID, prior, &representationID)
 	})
 	if err != nil {
 		return "", err
@@ -242,7 +249,7 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 			return classify("deactivate local item", err)
 		}
 		action = "deleted"
-		return nil
+		return appendItemChange(ctx, conn, sourceID, itemID, &item.RepresentationID, nil)
 	})
 	if err != nil {
 		return "", err

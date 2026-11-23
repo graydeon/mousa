@@ -218,6 +218,32 @@ editing or retracting a note, recalling across multiple sources in one query,
 a citation change cursor or standalone recheck, a daemon, and any change to
 lexical ranking.
 
+## Changes and recheck
+
+```sh
+mousa -store local.sqlite changes --since 0 --source memory
+mousa -store local.sqlite changes --since SEQ --collection fleet
+mousa -store local.sqlite recheck --source memory NOTE_ID
+mousa -store local.sqlite recheck --trail TRAIL_ID
+```
+
+`changes` returns up to 256 entries in log order, with no passage text.
+Save `next_index` and pass it as the next `--since` for the same scope.
+If `more` is true, call again to finish the page sequence. Without a scope
+flag the CLI reads all allowed sources; MCP reads all configured and allowed
+sources. The MCP `mousa_changes` tool takes `since` and optionally `source`
+or `collection`.
+
+An `updated` item entry names both the retired and newly current revision.
+A denied source contributes nothing; a withdrawn source that still has
+an allow event contributes withdrawal notices only. The cursor is a
+global log index, not a count of visible changes.
+
+`recheck` returns `fresh`, `stale`, `unsourced` (note without citations),
+or `empty` (trail without released passages). Stale reasons include
+withdrawn or denied citation sources, retired segments, and citations
+that this store cannot verify. Rechecking does not rewrite a note or trail.
+
 ## What the store does not protect against
 
 Integrity. Each ingest receipt, access event, withdrawal, query trail and note
@@ -256,8 +282,8 @@ arguments, for example:
 ```
 
 The client launches the process and performs initialization and tool discovery.
-The five tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`
-and `mousa_remember`. MCP has no access tool and no
+The six tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
+`mousa_remember`, and `mousa_changes`. MCP has no access tool and no
 allow option: a source synced through `mousa_sync` stays denied until the
 operator runs `mousa -store STORE access --source ID allow` natively (see
 [Access](#access)). `mousa_remember` writes one durable note to a configured
