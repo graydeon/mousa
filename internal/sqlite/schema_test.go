@@ -14,6 +14,16 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func verifyPath(ctx context.Context, path string) error {
+	store, err := OpenReadOnly(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	_, err = store.Verify(ctx)
+	return err
+}
+
 func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
@@ -59,6 +69,12 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 			before, readErr := os.ReadFile(path)
 			if readErr != nil {
 				t.Fatalf("read before: %v", readErr)
+			}
+			if test.code == CodeIntegrity {
+				if err := verifyPath(ctx, path); !IsCode(err, test.code) {
+					t.Fatalf("verify = %v, want %s", err, test.code)
+				}
+				return
 			}
 			store, err := Open(ctx, path)
 			if store != nil {

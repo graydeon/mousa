@@ -236,12 +236,8 @@ func TestTamperedAccessEventOrLeafRefusedOnRead(t *testing.T) {
 			if err := store.Close(); err != nil {
 				t.Fatal(err)
 			}
-			reopened, err := Open(ctx, path)
-			if !IsCode(err, CodeIntegrity) {
-				if reopened != nil {
-					reopened.Close()
-				}
-				t.Fatalf("reopen = %v, want integrity", err)
+			if err := verifyPath(ctx, path); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("verify = %v, want integrity", err)
 			}
 		})
 	}
@@ -275,12 +271,8 @@ func TestLogSequenceGapRefused(t *testing.T) {
 				t.Fatal(err)
 			}
 			rawExec(t, path, damage)
-			reopened, err := Open(ctx, path)
-			if !IsCode(err, CodeIntegrity) {
-				if reopened != nil {
-					reopened.Close()
-				}
-				t.Fatalf("reopen = %v, want integrity", err)
+			if err := verifyPath(ctx, path); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("verify = %v, want integrity", err)
 			}
 		})
 	}

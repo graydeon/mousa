@@ -49,61 +49,73 @@ func checkLeaf(kind string, sourceID, leaf, record, recordSource []byte) error {
 	return nil
 }
 
-// verifyLog checks that the sequence is 1..n with no gaps, that every leaf hash matches the
-// record it names, and that every receipt, access event and withdrawal has exactly one leaf.
-func verifyLog(ctx context.Context, db *sql.DB) error {
+// verifyLog checks sequence, leaf identity, ordered access history and coverage
+// separately for every logged record kind.
+func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return startupError("begin log verification", err)
+		return nil, startupError("begin log verification", err)
 	}
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, logRecordSQL+` ORDER BY l.seq`)
 	if err != nil {
-		return startupError("scan log", err)
+		return nil, startupError("scan log", err)
 	}
+	defer rows.Close()
+	counts := make(map[string]int64)
+	accessTimes := make(map[mousa.SourceID]int64)
 	var want int64 = 1
 	for rows.Next() {
 		var seq int64
 		var kind string
 		var recordID, sourceID, leaf, record, recordSource []byte
 		if err := rows.Scan(&seq, &kind, &recordID, &sourceID, &leaf, &record, &recordSource); err != nil {
-			rows.Close()
-			return startupError("scan log", err)
+			return nil, startupError("scan log", err)
 		}
 		if seq != want {
-			rows.Close()
-			return integrity("verify log", fmt.Sprintf("sequence has a gap: found %d, want %d", seq, want))
+			return nil, integrity("verify log", fmt.Sprintf("sequence has a gap: found %d, want %d", seq, want))
 		}
 		if err := checkLeaf(kind, sourceID, leaf, record, recordSource); err != nil {
-			rows.Close()
-			return integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
+			return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
 		}
+		if kind == mousa.LogKindAccessEvent {
+			if len(recordID) != len(mousa.AccessEventID{}) {
+				return nil, integrity("verify log", "invalid access event ID")
+			}
+			event, _, err := getAccessEvent(ctx, tx, mousa.AccessEventID(recordID))
+			if err != nil {
+				return nil, err
+			}
+			if event.OccurredAtUsec <= accessTimes[event.SourceID] {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: access event times do not increase", seq))
+			}
+			accessTimes[event.SourceID] = event.OccurredAtUsec
+		}
+		counts[kind]++
 		want++
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
-		return startupError("scan log", err)
+		return nil, startupError("scan log", err)
 	}
 	if err := rows.Close(); err != nil {
-		return startupError("scan log", err)
+		return nil, startupError("scan log", err)
 	}
-	var records int64
-	if err := tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM ingest_receipts) + (SELECT count(*) FROM access_events) + (SELECT count(*) FROM source_withdrawals) + (SELECT count(*) FROM notes) + (SELECT count(*) FROM trails)`).Scan(&records); err != nil {
-		return startupError("count logged records", err)
+	expected, err := verificationCounts(ctx, tx, logCountsSQL)
+	if err != nil {
+		return nil, err
 	}
-	if records != want-1 {
-		return integrity("verify log", fmt.Sprintf("%d records but %d log leaves", records, want-1))
-	}
-	if err := verifyAccessEvents(ctx, tx); err != nil {
-		return err
+	for kind, total := range expected {
+		if total != counts[kind] {
+			return nil, integrity("verify log", fmt.Sprintf("%d %s records but %d log leaves", total, kind, counts[kind]))
+		}
 	}
 	if err := verifyNoteRows(ctx, tx); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := getStoreID(ctx, tx); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	return expected, classify("finish log verification", tx.Commit())
 }
 
 func newStoreID() ([]byte, error) {

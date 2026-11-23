@@ -151,36 +151,6 @@ func getAccessEvent(ctx context.Context, q queryRower, id mousa.AccessEventID) (
 	return event, data, nil
 }
 
-// verifyAccessEvents decodes every access event; verifyLog has already matched each to its leaf.
-func verifyAccessEvents(ctx context.Context, q queryer) error {
-	rows, err := q.QueryContext(ctx, `SELECT id FROM access_events ORDER BY id`)
-	if err != nil {
-		return startupError("scan access events", err)
-	}
-	var ids []mousa.AccessEventID
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			rows.Close()
-			return startupError("scan access events", err)
-		}
-		if len(raw) != len(mousa.AccessEventID{}) {
-			rows.Close()
-			return integrity("scan access events", "invalid ID length")
-		}
-		ids = append(ids, mousa.AccessEventID(raw))
-	}
-	if err := rows.Close(); err != nil {
-		return startupError("scan access events", err)
-	}
-	for _, id := range ids {
-		if _, _, err := getAccessEvent(ctx, q, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // snapshotAccess returns the access state and cited event for one evaluation: deny with no
 // event when the source has never had an access event.
 func snapshotAccess(ctx context.Context, q queryer, sourceID mousa.SourceID) (mousa.SourceAccess, *mousa.AccessEventID, error) {

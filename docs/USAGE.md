@@ -82,6 +82,16 @@ and unauthorized IDs both return `not_found`. The caller view omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
 
+### Verify a store
+
+Open checks only store identity and schema compatibility; it does not scan the
+contents. Run `mousa -store STORE verify` for a full check, `verify --log` for
+log sequence, hashes and per-kind coverage, `verify --trail TRAIL_ID` for a
+named record, or `verify --stdin` for whitespace-delimited trail IDs. All modes
+open the source read-only, return JSON `record_counts` on success, and fail
+with a non-zero exit on damage. Whole-store verification checks an isolated
+SQLite page copy because the FTS5 integrity command requires write permission.
+
 ### CLI client example
 
 Two Python consumers show the CLI contract:

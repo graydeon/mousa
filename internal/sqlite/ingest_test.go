@@ -255,7 +255,7 @@ func TestWithdrawSourceRejectsHistoricalReplayWhenDifferentWithdrawalCurrent(t *
 	}
 }
 
-func TestOpenRejectsCrossSourceCurrentWithdrawalProjection(t *testing.T) {
+func TestVerifyRejectsCrossSourceCurrentWithdrawalProjection(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "mousa.sqlite")
 	store, err := Open(ctx, path)
@@ -291,12 +291,8 @@ func TestOpenRejectsCrossSourceCurrentWithdrawalProjection(t *testing.T) {
 	}
 
 	rawExec(t, path, `UPDATE source_ingest_state SET current_withdrawal_id = (SELECT id FROM source_withdrawals WHERE source_id = x'`+second.Source.ID.String()+`') WHERE source_id = x'`+first.Source.ID.String()+`'`)
-	reopened, err := Open(ctx, path)
-	if reopened != nil {
-		reopened.Close()
-	}
-	if reopened != nil || !IsCode(err, CodeIntegrity) {
-		t.Fatalf("Open = %v, %v, want integrity", reopened, err)
+	if err := verifyPath(ctx, path); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("verify = %v, want integrity", err)
 	}
 }
 
@@ -344,11 +340,8 @@ func TestApplyIngestConflictingReceiptAndProjectionTamperFailClosed(t *testing.T
 		t.Fatal(err)
 	}
 	rawExec(t, path, `UPDATE ingest_receipts SET next_checkpoint = CAST('wrong' AS BLOB)`)
-	if reopened, err := Open(ctx, path); reopened != nil || !IsCode(err, CodeIntegrity) {
-		if reopened != nil {
-			reopened.Close()
-		}
-		t.Fatalf("tampered Open = %v, %v", reopened, err)
+	if err := verifyPath(ctx, path); !IsCode(err, CodeIntegrity) {
+		t.Fatalf("verify = %v, want integrity", err)
 	}
 }
 

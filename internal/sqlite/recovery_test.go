@@ -159,13 +159,8 @@ func TestDamagedStoreFailsWithoutRepairWrites(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read before open: %v", err)
 			}
-			store, err := Open(context.Background(), path)
-			if store != nil {
-				store.Close()
-				t.Fatal("Open returned a store")
-			}
-			if !IsCode(err, CodeIntegrity) {
-				t.Fatalf("Open error = %v, want integrity", err)
+			if err := verifyPath(t.Context(), path); !IsCode(err, CodeIntegrity) {
+				t.Fatalf("verify = %v, want integrity", err)
 			}
 			after, readErr := os.ReadFile(path)
 			if readErr != nil {

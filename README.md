@@ -74,7 +74,7 @@ would return `trail.sources[0].outcome: deny` and no passages. See
 
 ## What works today?
 
-Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, and byte-budget packing are implemented. One query writes one canonical `mousa.trail.v1` record as a log leaf; its `result_sha256` is stable for the same request and store state. Agents can save, export, import, and recall durable notes with authorship and citation status. The same executable serves local stdio MCP.
+Local directory and JSONL ingestion, lexical retrieval, source lifecycle checks, and byte-budget packing are implemented. One query writes one canonical `mousa.trail.v1` record as a log leaf; its `result_sha256` is stable for the same request and store state. Agents can save, export, import, and recall durable notes with authorship and citation status. The same executable serves local stdio MCP. Use `mousa -store STORE verify` to check a read-only snapshot of the store, or `verify --trail ID` to check a named trail.
 
 Access defaults to deny. The owner reads full trails through the store file; MCP checks current access and omits denied-source details. Vector and hybrid retrieval are not supported by this schema.
 

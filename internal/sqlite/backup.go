@@ -47,6 +47,10 @@ func (store *Store) Backup(ctx context.Context, destination string) error {
 	if err != nil {
 		return wrap(CodeIntegrity, "verify backup", err)
 	}
+	if err := verifyStore(ctx, backup.db, false, true); err != nil {
+		_ = backup.Close()
+		return wrap(CodeIntegrity, "verify backup", err)
+	}
 	if err := backup.Close(); err != nil {
 		return wrap(CodeInternal, "verify backup", err)
 	}

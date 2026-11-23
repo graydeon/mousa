@@ -67,25 +67,29 @@ var requiredObjects = []string{
 	"table:trails",
 }
 
-// checkStoreIdentity reads only the SQLite header and the object count, so every store this
-// binary cannot read is refused before any record is verified. It reports whether the
-// database is empty and needs the schema.
+// checkStoreIdentity reads the SQLite header and store ID. Only an unstamped
+// database needs an object-count check to distinguish empty from unrelated.
 func checkStoreIdentity(ctx context.Context, db *sql.DB) (empty bool, err error) {
-	var id, version, objects int
+	var id, version int
 	if err := db.QueryRowContext(ctx, `PRAGMA application_id`).Scan(&id); err != nil {
 		return false, startupError("read application ID", err)
 	}
 	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return false, startupError("read schema version", err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'`).Scan(&objects); err != nil {
-		return false, startupError("inspect database", err)
+	if id == 0 && version == 0 {
+		var objects int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'`).Scan(&objects); err != nil {
+			return false, startupError("inspect database", err)
+		}
+		if objects == 0 {
+			return true, nil
+		}
 	}
 	switch {
-	case id == 0 && version == 0 && objects == 0:
-		return true, nil
 	case id == applicationID && version == schemaVersion:
-		return false, nil
+		_, err := getStoreID(ctx, db)
+		return false, err
 	case id == applicationID && version > schemaVersion:
 		return false, wrap(CodeIncompatibleSchema, "open store", fmt.Errorf("schema version %d is newer than this binary's %d", version, schemaVersion))
 	case id == applicationID || id == preReworkApplicationID:
@@ -155,6 +159,9 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 		foreignRows.Close()
 		return integrity("foreign key check", "foreign-key violation")
 	}
+	if err := foreignRows.Err(); err != nil {
+		return startupError("foreign key check", err)
+	}
 	if err := foreignRows.Close(); err != nil {
 		return startupError("foreign key check", err)
 	}
@@ -167,7 +174,7 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 	if err := verifyIngestRecords(ctx, db); err != nil {
 		return err
 	}
-	if err := verifyLog(ctx, db); err != nil {
+	if _, err := verifyLog(ctx, db); err != nil {
 		return err
 	}
 	if err := verifyLexicalRecords(ctx, db); err != nil {

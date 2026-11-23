@@ -46,6 +46,8 @@ func main() {
 		err = queryCommand(ctx, *storePath, rest)
 	case "trail":
 		err = trailCommand(ctx, *storePath, rest)
+	case "verify":
+		err = verifyCommand(ctx, *storePath, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
@@ -82,6 +84,8 @@ commands:
   status <dir>                report the source's ingest state (JSON)
   status --source <id>        report a JSONL-synced source's ingest state (JSON)
   trail <trail-id>            inspect one recorded query trail, never text (JSON)
+  verify [--log | --trail <trail-id> | --stdin]
+                            verify the store, log, or named trails read-only (JSON)
   access <dir> allow|deny     record an access event for every caller of the source (JSON)
   access --source <id> allow|deny
                             a source with no access event is denied to every caller;

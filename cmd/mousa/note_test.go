@@ -575,9 +575,9 @@ func TestMemoryIntegrityTamper(t *testing.T) {
 			}
 			client.close()
 
-			// A fresh open performs full verification and refuses too.
+			// Both the targeted export and the explicit whole-store audit refuse it.
 			run.run(true, "notes", "export", "--source", "memory")
-			run.run(true, "status", "--source", "memory")
+			run.run(true, "verify")
 		})
 	}
 }

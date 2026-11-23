@@ -42,7 +42,7 @@ func open(ctx context.Context, path string, readOnly bool) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := verifyReadOnly(ctx, db); err != nil {
+		if err := initializeReadOnly(ctx, db); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
@@ -121,22 +121,20 @@ func initializeWritable(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if empty {
-		if err := createSchema(ctx, db); err != nil {
-			return err
-		}
+		return createSchema(ctx, db)
 	}
-	return verifyStore(ctx, db, true, false)
+	return nil
 }
 
-func verifyReadOnly(ctx context.Context, db *sql.DB) error {
+func initializeReadOnly(ctx context.Context, db *sql.DB) error {
 	empty, err := checkStoreIdentity(ctx, db)
 	if err != nil {
 		return err
 	}
 	if empty {
-		return wrap(CodeReadOnly, "verify read-only database", errors.New("store is empty; open it writable to create it"))
+		return wrap(CodeReadOnly, "open read-only database", errors.New("store is empty; open it writable to create it"))
 	}
-	return verifyStore(ctx, db, false, true)
+	return nil
 }
 
 // Close releases the store connection.

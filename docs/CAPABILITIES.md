@@ -412,18 +412,10 @@ Schema 4 refuses old stores without modifying them. Export notes with the old
 binary before creating a new store, then import them under the same source ID.
 Re-sync document sources.
 
-Startup verification opens a writable store once, including the writable FTS
-structural integrity check. Canonical records, ingestion records and local-item
-activation checks each use a read snapshot. Observation, artifact and segment
-records are verified directly from ordered scans with the same canonical decoding
-and projection checks as individual reads. Each source's ingestion state is
-verified once per ingestion snapshot; all receipts, withdrawals and state rows
-remain checked. No verification result is reused across snapshots, opening passes
-or operations.
-
-These snapshots can retain WAL pages while a concurrent writer commits. They
-end when their verification phase finishes or fails. Startup reads and verifies
-retained history, so initialization still depends on corpus size.
+Open checks `application_id`, `user_version` and the store ID. Writes and
+queries verify records they touch. Use `verify` explicitly to scan stored
+records, the log and lookup projections, and FTS integrity. See
+[verification](USAGE.md#verify-a-store).
 
 ## JSONL input
 
