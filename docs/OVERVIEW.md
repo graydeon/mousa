@@ -61,8 +61,7 @@ Each query stores one `mousa.trail.v1` record as a log leaf before returning
 passages. The trail binds the request, decisions, snapshot, candidates and byte
 packing. The `result_sha256` omits per-call metadata and denied-source details so
 the same request and state can be compared. Trail reads are read-only; the file
-owner can inspect the record, while MCP rechecks access and projects a caller
-view. Retired text is not archived, so historical reads can verify immutable
+owner can inspect the record, while a served reply carries a caller view. Retired text is not archived, so historical reads can verify immutable
 digests and coordinates but not reconstruct removed bytes.
 
 ## Intended callers
@@ -72,11 +71,10 @@ Mousa is intended to expose one portable core through narrow interfaces for:
 - agent harnesses and model-independent automation;
 - command-line tools;
 - application and SDK integrations;
-- MCP clients;
 - documented HTTP clients where a service boundary is justified;
 - ordinary JSON and JSONL import and export.
 
-The supported executable, `cmd/mousa`, provides the local CLI and a stdio MCP interface.
+The supported executable, `cmd/mousa`, provides the local CLI and an opt-in loopback HTTP service. Mousa ships no MCP server; an agent with a shell calls the CLI, and anything else calls the HTTP service.
 
 ## Design principles
 

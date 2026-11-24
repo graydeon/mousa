@@ -89,8 +89,6 @@ func main() {
 		err = notesCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
-	case "mcp":
-		err = mcpCommand(ctx, *storePath, rest)
 	case "serve":
 		err = serveCommand(ctx, *storePath, rest)
 	default:
@@ -147,12 +145,6 @@ commands:
                             import previously exported notes from stdin JSONL
   withdraw <dir>             withdraw a directory source from retrieval (JSON)
   withdraw --source <id>     withdraw a JSONL source from retrieval (JSON)
-  mcp --caller <id> --source <id>
-                            serve configured JSONL sources over stdio MCP
-                            --http-config <file> selects OAuth-protected loopback HTTP
-                            repeat --source; --ingest-source <id> permits ingestion/import
-                            MCP has no allow option; MCP-synced sources stay denied
-                            until access <dir>|--source <id> allow
   serve --config <file> [--listen 127.0.0.1:PORT] [--open-monitor]
                             own the store and serve it on loopback HTTP;
                             query, remember and sync --source also run against

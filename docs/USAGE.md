@@ -5,7 +5,7 @@ see [development status](OVERVIEW.md#source-and-release-status).
 
 [← Back to Mousa](../README.md) · [Capability matrix](CAPABILITIES.md) · [How Mousa works](OVERVIEW.md)
 
-Full CLI and MCP usage. Consumer examples are linked where they exist. Run commands from
+Full CLI and service usage. Consumer examples are linked where they exist. Run commands from
 the repository root; build the executable from source before using the examples.
 
 ## Local usage (cmd/mousa)
@@ -77,8 +77,7 @@ an empty candidate list.
 
 `mousa -store STORE trail TRAIL_ID` reads the full canonical record by `trail.id`
 without writing. This is an owner interface, not a way to retrieve historical text.
-MCP trail reads check current access to every originally allowed source. Missing
-and unauthorized IDs both return `not_found`. The caller view omits `as_of`,
+The caller view carried by a served query reply omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
 
@@ -110,8 +109,7 @@ most 128 sources. Empty collections return an empty audited result.
 The trail records the resolved source IDs and each access decision. BM25
 uses only the statistics of the candidate's source ancestry, and a shard
 is searched only when every source in it allows retrieval. A collection
-does not grant access. For MCP, pass a `sources` array or `collection` in
-place of `source`; all members must be configured for that caller.
+does not grant access.
 
 ### Verify a store
 
@@ -163,9 +161,9 @@ or `access_denied`, or a lifecycle reason such as `source_withdrawn`, and no
 passages. Withdrawal blocks retrieval even after a later `allow`; `sync` does
 not resume it.
 
-A source synced by an agent through MCP stays denied until the operator runs
-`mousa -store STORE access --source ID allow`. MCP has no allow option, on
-purpose: a client that can write a source cannot also release it.
+A source synced through the served store stays denied until the operator runs
+`mousa -store STORE access --source ID allow`. The service has no allow
+endpoint, on purpose: a client that can write a source cannot also release it.
 
 ## Notes
 
@@ -212,15 +210,11 @@ segment retired) with a reason of `source_denied`, `source_withdrawn` or
 `segment_retired`; no cited text is released. Notes follow the same per-source
 access rules as document evidence: a denied or withdrawn note source releases
 nothing, and later access changes do not redact note bytes already released.
-`sync` and `mousa_sync` refuse a source holding notes, and `remember` refuses
+`sync` refuses a source holding notes, and `remember` refuses
 a document source, including one whose items are all inactive.
 
 Notes share the source's static identity and access grant; there are no
-agent-specific sources or per-note grants yet. Over MCP, `mousa_remember`
-takes `source`, `text` and an optional `derived_from` array of
-`{trail_id, segment_ids?}` objects; the trusted `--caller` is the author, and
-the write needs the source's `--ingest-source` grant plus `mousa:write` over
-HTTP. Cited sources must also be configured with `--source`. Not supported:
+agent-specific sources or per-note grants yet. Not supported:
 editing or retracting a note, recalling across multiple sources in one query,
 a citation change cursor or standalone recheck, a daemon, and any change to
 lexical ranking.
@@ -237,9 +231,7 @@ mousa -store local.sqlite recheck --trail TRAIL_ID
 `changes` returns up to 256 entries in log order, with no passage text.
 Save `next_index` and pass it as the next `--since` for the same scope.
 If `more` is true, call again to finish the page sequence. Without a scope
-flag the CLI reads all allowed sources; MCP reads all configured and allowed
-sources. The MCP `mousa_changes` tool takes `since` and optionally `source`
-or `collection`.
+flag the CLI reads all allowed sources.
 
 An `updated` item entry names both the retired and newly current revision.
 A denied source contributes nothing; a withdrawn source that still has
@@ -271,7 +263,7 @@ Retention limits and erasure are not handled yet.
 `mousa -store STORE serve --config FILE [--listen 127.0.0.1:PORT]` owns the
 store and serves JSON request endpoints, an operator request stream, and an
 embedded dashboard over loopback HTTP only. It is a separate opt-in surface
-for local automation: the offline CLI and MCP keep working unchanged on stores
+for local automation: the offline CLI keeps working unchanged on stores
 that are not served.
 
 A served store must be created by this binary's current schema. Every command
@@ -427,54 +419,3 @@ same API against fixture passages.
 Automation can consume the verified history without the dashboard; see
 [examples/automation/README.md](../examples/automation/README.md) for a
 loopback-only revision forwarder.
-
-## Local MCP usage
-
-The same executable serves MCP `2025-11-25` over stdio, backed directly by the
-canonical Go/SQLite operations. Configure an MCP client's executable and
-arguments, for example:
-
-```json
-{
-  "mcpServers": {
-    "mousa": {
-      "command": "/absolute/path/mousa",
-      "args": [
-        "-store", "/absolute/path/evidence.sqlite",
-        "mcp", "--caller", "cli",
-        "--source", "inspection-notes",
-        "--ingest-source", "inspection-notes"
-      ]
-    }
-  }
-}
-```
-
-The client launches the process and performs initialization and tool discovery.
-The six tools are `mousa_sync`, `mousa_status`, `mousa_query`, `mousa_trail`,
-`mousa_remember`, and `mousa_changes`. MCP has no access tool and no
-allow option: a source synced through `mousa_sync` stays denied until the
-operator runs `mousa -store STORE access --source ID allow` natively (see
-[Access](#access)). `mousa_remember` writes one durable note to a configured
-ingest source (see [Notes](#notes)) — the trusted `--caller` becomes the note
-author, never a caller-supplied value; optional `derived_from` citations use
-the same `trail_id`/`segment_ids` shape as the CLI.
-Store, permitted sources and trusted caller are fixed at startup. Item ingestion
-is disabled unless that source also has `--ingest-source`.
-The default stdio mode has no listener, directory import, shell, access administration or withdrawal tool.
-
-
-Pass `{"trail_id":"..."}` to `mousa_trail`. Reads do not write; an unavailable
-ID returns `not_found` whether absent or not currently authorized.
-
-### Bounded project-history consumer
-
-[`examples/memory/memory.py`](../examples/memory/memory.py) uses native stdio MCP
-with an explicit history source and a bundled 28-document synthetic fixture. It
-releases attributed passages, not answers, and captures request/response
-receipts per invocation. `ingest` writes items through `mousa_sync`, but MCP has
-no allow option, so `ask` returns an empty passage list until
-the operator records `access --source memory allow` natively.
-
-The [frozen protocol, measured source and exact receipts](https://github.com/graydeon/mousa-benchmarks/tree/b1be28ac9f12134a7513c1e28fe884e7f657c988/results/2026-09-30-agent-memory)
-are pinned in the benchmarks repository. That run predates default deny.

@@ -38,6 +38,7 @@ const (
 	nativeMaxSmallBody     = 64 << 10
 	nativeMaxDocumentBody  = 2 << 20
 	nativeMaxQueryBudget   = 1 << 20
+	nativeMaxQueryBytes    = 4096
 	nativeMaxInFlight      = 8
 	nativeHandlerBound     = 30 * time.Second
 	nativeShutdownBound    = 10 * time.Second
@@ -738,12 +739,17 @@ func scopeIDs(scope nativeScope) (mousa.Scope, error) {
 	return translated, nil
 }
 
+type nativeQueryResult struct {
+	Trail    mousa.CallerTrail `json:"trail"`
+	Passages []mousa.Passage   `json:"passages"`
+}
+
 func (s *nativeService) handleQuery(ctx context.Context, principal *nativePrincipal, admission mousa.RequestAdmission, store *sqlite.Store, request nativeQuery) (any, mousa.RequestState, error) {
 	scope, err := scopeIDs(request.Scope)
 	if err != nil {
 		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
 	}
-	if request.Text == "" || len(request.Text) > mcpMaxQueryBytes {
+	if request.Text == "" || len(request.Text) > nativeMaxQueryBytes {
 		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
 	}
 	budget := request.BudgetBytes
@@ -764,7 +770,7 @@ func (s *nativeService) handleQuery(ctx context.Context, principal *nativePrinci
 		return nil, "", err
 	}
 	state, _ := mousa.RequestTrailState(queried.Trail)
-	return mcpQueryResult{Trail: queried.Trail.CallerView(), Passages: queried.Passages}, state, nil
+	return nativeQueryResult{Trail: queried.Trail.CallerView(), Passages: queried.Passages}, state, nil
 }
 
 func (s *nativeService) handleNote(ctx context.Context, principal *nativePrincipal, admission mousa.RequestAdmission, store *sqlite.Store, request nativeNote) (any, mousa.RequestState, error) {

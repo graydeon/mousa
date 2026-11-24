@@ -505,7 +505,7 @@ func noteStaleness(ctx context.Context, q queryer, note mousa.Note) ([]NoteStale
 }
 
 // noteLineage evaluates every citation against the caller's reach. A nil
-// grants map exposes the full durable lineage for offline and MCP reads. A
+// grants map exposes the full durable lineage for offline reads. A
 // served caller sees only what its own read grants could resolve: a missing
 // or unauthorized cited trail drops the citation and its stale details
 // together, so the response never names lineage the caller could not reach.

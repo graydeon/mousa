@@ -46,9 +46,4 @@ func TestChangesAndRecheckAfterWithdrawal(t *testing.T) {
 	if replay["id"] != noteID || replay["author"] != note["author"] || replay["created_at_usec"] != note["created_at_usec"] {
 		t.Fatalf("recheck changed note identity: %v vs %v", replay, note)
 	}
-	c := startMCPClient(t, run, "reader", false)
-	feed := c.call("mousa_changes", map[string]any{"since": uint64(before["next_index"].(float64))}, "")
-	if got := feed["changes"].([]any); len(got) != 1 || got[0].(map[string]any)["kind"] != "withdrawn" {
-		t.Fatalf("MCP change visibility differs: %v", feed)
-	}
 }

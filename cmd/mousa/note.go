@@ -87,7 +87,7 @@ func rememberCommand(ctx context.Context, storePath string, client *nativeClient
 	return emit(note)
 }
 
-// rememberNote is the single note write used by the CLI and the MCP tool. The
+// rememberNote is the single note write used by the CLI and the service. The
 // note's exact bytes are ingested as one internal note-policy item inside the
 // same transaction as the canonical record and its log leaf.
 func rememberNote(ctx context.Context, store *sqlite.Store, source mousa.Source, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool) (mousa.Note, error) {

@@ -78,7 +78,7 @@ func (store *Store) query(ctx context.Context, request mousa.QueryRequest, admis
 		return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", err)
 	}
 	// Served callers see only the note lineage their own read grants could
-	// resolve; direct and MCP reads keep the full durable citation record.
+	// resolve; direct reads keep the full durable citation record.
 	var noteGrants map[mousa.SourceID]bool
 	if admission != nil {
 		noteGrants = request.PermittedSources

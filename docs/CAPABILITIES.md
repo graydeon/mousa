@@ -5,8 +5,8 @@ see [development status](OVERVIEW.md#source-and-release-status).
 
 Mousa is pre-alpha. The supported executable is `cmd/mousa`, built from source with
 Go 1.25 or newer. The core packages are internal, not a stable SDK. Its CLI and
-MCP interfaces store and retrieve evidence; none generates answers or establishes
-factual truth.
+loopback HTTP service store and retrieve evidence; neither generates answers or
+establishes factual truth. Mousa ships no MCP server.
 
 ## Capability matrix
 
@@ -30,13 +30,11 @@ binary, until the scale probe passes at both sizes.
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence |
 | Source lifecycle (withdrawal) | Yes | `withdraw` | Withdrawn sources release no evidence; cross-source isolation |
-| Per-source access decisions | Yes | `access <dir>|--source <id> allow|deny`; `sync --allow`; default deny with no event | Append-only events, default deny, no-op repeats, MCP-synced sources denied until native allow; see [Access](USAGE.md#access) |
+| Per-source access decisions | Yes | `access <dir>|--source <id> allow|deny`; `sync --allow`; default deny with no event | Append-only events, default deny, no-op repeats, service-synced sources denied until native allow; see [Access](USAGE.md#access) |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>` | First-fit byte accounting, duplicate omission, and history reads. |
 | Canonical query trails | Yes | `query`; `trail` ID | Stable result digests, atomic leaf writes, corruption checks and caller-view masking. |
-| Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`, `notes import --source <id>`; MCP `mousa_remember` for configured ingest JSONL | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources, served lineage redaction for citations outside the caller's read grants |
+| Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`, `notes import --source <id>`; `POST /v1/notes` on a served store | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources, served lineage redaction for citations outside the caller's read grants |
 | Embedding inference, answer generation | No | No | Not implemented |
-| Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown |
-| OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries |
 | Loopback JSON request service | Yes | Opt-in `serve --config FILE`; client `-endpoint URL` with `MOUSA_TOKEN` | Durable admission/outcome per request including unauthorized and canceled attempts, typed errors with request IDs, verified operator history and detail, unknown-outcome transport failures; see [Local served store](USAGE.md#local-served-store-opt-in) |
 | Live stage stream and dashboard | Yes | `GET /v1/events`, `GET /` | Bounded frame ring with explicit gap on overflow/restart, `Last-Event-ID` resume without silent misses, operator-only, measured stage timings that are not archived; reconnects read verified history |
 | Public ingress, multi-tenant serving, remote automation relay | No | No | Not implemented; `serve` binds loopback only |
@@ -44,200 +42,6 @@ binary, until the scale probe passes at both sizes.
 
 The [Git documentation example](../examples/docs/README.md) is a separate Python CLI
 example. It returns source passages and does not generate an answer.
-
-## Local stdio MCP
-
-`mousa -store STORE mcp --caller cli --source inspection-notes
---ingest-source inspection-notes` serves one local client over stdin/stdout.
-Repeat `--source` for each permitted JSONL source, and repeat `--ingest-source`
-only for sources that may accept items or notes. Writes are disabled by default. Source
-IDs are exact, case-sensitive opaque identities in namespace `mousa-jsonl`,
-not paths to open. This interface cannot import directory sources.
-
-The store path, source allowlist and trusted caller ID come only from process
-arguments. Unknown sources, paths used as unconfigured source IDs, and tool
-fields such as `store`, `root` or `caller` are rejected before store mutation.
-An operator may configure an opaque source ID that looks like a path; it still
-does not grant filesystem access. Protect the executable invocation, store,
-WAL, backups and released output with local filesystem controls.
-
-Access is per source and applies to every caller, including MCP. MCP exposes no
-access tool and `mousa_sync` has no allow option, so an MCP-synced source stays
-denied until the operator runs `access ... allow` natively; see
-[Access](USAGE.md#access). MCP does not authenticate the startup identity.
-
-### Protocol and tools
-
-The supported protocol is [MCP `2025-11-25`](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle),
-implemented with the official [Go SDK v1.8.0](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0).
-Initialization advertises the tools capability. If the client requests another
-version, the server offers `2025-11-25`; a client that cannot use it should
-disconnect. `tools/list` exposes the input and output JSON Schemas. The default
-stdio mode exposes no prompts, resources, roots, sampling, tasks or remote transport.
-
-| Tool | Required arguments | Optional arguments | Success `result` |
-|---|---|---|---|
-| `mousa_sync` | `source`, `items` | `segment_policy`: `fixed-v1` (default) or `passage-v1` | Existing sync report: action lists, `total_items`, segment policy, store-size sample and elapsed seconds |
-| `mousa_status` | `source` | None | Existing status report: collection state, active items and observations |
-| `mousa_query` | Exactly one of `source`, `sources`, `collection`; `query`, `budget_bytes` | `mode`: `lexical` (default) | Caller-view trail and selected passages. Every requested member must be configured for the caller. |
-| `mousa_changes` | `since` | `source` or `collection` | Up to 256 authorized item, access, and withdrawal events; no passage text. |
-| `mousa_trail` | `trail_id` | None | Caller-view trail, without passage text. |
-| `mousa_remember` | `source`, `text` | `derived_from`: array of `{trail_id, segment_ids?}` | Canonical `mousa.note.v1` record: ID, content digest, author (trusted caller), time and stored lineage; exact retries return the first note |
-
-For example, call `mousa_sync` with:
-
-```json
-{
-  "source": "inspection-notes",
-  "items": [
-    {"id": "notes/review@draft", "text": "The harbor inspection is scheduled for Friday."},
-    {"id": "notes/withdrawn", "deleted": true}
-  ]
-}
-```
-
-`mousa_sync` records no access event, so the source is denied until the operator
-runs `mousa -store STORE access --source inspection-notes allow` natively. Then
-call `mousa_query` with:
-
-```json
-{"source":"inspection-notes","query":"harbor inspection","budget_bytes":4096}
-```
-
-Use the returned `result.trail.id` with `mousa_trail`. Items use the same strict
-record validation, normalization, immutable revision identities and atomic
-current-item activation as [JSONL input](#jsonl-input). There are no new
-packing rules. Evidence coordinates refer to
-normalized UTF-8 bytes; use the [same digest and range checks](#verify-a-selected-passages-location)
-as for CLI evidence. Treat every source text as untrusted data, not protocol,
-shell commands or instructions to the client.
-
-### Structured results and failure state
-
-Every completed known-tool call returns `structuredContent` with schema
-`mousa.mcp_result.v1`. A text content block contains the same serialized JSON
-for clients that do not consume structured content. Its object has:
-
-| Field | Meaning |
-|---|---|
-| `schema` | Always `mousa.mcp_result.v1`. |
-| `operation` | The invoked tool name. |
-| `source` | Configured source label, or an empty string for `mousa_trail` and when arguments failed decoding. |
-| `result` | Success payload described above; absent on a tool error. Its full schema is discoverable in that tool's `outputSchema`. |
-| `error` | Tool error object; absent on success. |
-
-`error` has `code`, a diagnostic `message` of at most 512 UTF-8 bytes,
-`completed_items`, and an optional one-based `failed_item` index. `completed_items`
-counts successfully applied item records, including no-op retries; their prefix
-remains committed. It is zero for errors outside item application. No partial
-success report is emitted on an ingestion error. Correct and replay the call:
-unchanged content remains a no-op and repeated tombstones report `absent`.
-
-Argument-envelope errors, unknown/unconfigured sources, disabled ingestion,
-and excessive item counts are checked before applying items. Item validation
-and size limits are checked in order, so a later invalid item does not undo
-earlier activations. Failure during one item's preparation may retain immutable
-history but does not activate that failed revision. This is not whole-batch
-atomicity. Omitted items are unchanged; deletion must be explicit.
-
-Tool errors set MCP `isError: true`. Boundary codes include
-`invalid_arguments`, `source_not_permitted`, `ingestion_not_permitted`,
-`invalid_item`, `resource_limit`, `busy` and `cancelled`; canonical storage errors
-retain their existing codes, with `operation_failed` for other failures.
-Query denial is a successful result with no passages. Trail reads are read-only
-and return `not_found` for absent and unauthorized IDs.
-Unknown tools/methods and malformed protocol parameters use SDK JSON-RPC errors.
-Invalid JSON or an oversized inbound frame terminates the stdio session with a
-bounded diagnostic on stderr, without a success message. Earlier completed
-requests/items remain durable; inspect status after reconnecting.
-
-### Limits, concurrency and shutdown
-
-| Bound | Maximum |
-|---|---|
-| Inbound JSON-RPC frame | 2 MiB |
-| Configured sources | 128 |
-| Item records per sync call | 128 |
-| Serialized JSON bytes per item | 1 MiB |
-| Decoded UTF-8 text per item | 256 KiB |
-| Item ID | 4,096 UTF-8 bytes; nonempty, no NUL |
-| Query text | 4,096 UTF-8 bytes; nonempty |
-| Released-text budget | Integer 1–65,536 bytes |
-| Lexical candidates | 100, preserving the existing query contract |
-| Concurrent tool calls admitted | 8; excess calls return `busy` |
-| Tool-call deadline, including time waiting for the store | 30 seconds |
-
-JSON Schema string lengths count characters; byte bounds above are additionally
-enforced at runtime. Frame overhead and JSON escaping also consume the framing
-and per-item bounds. A released-text budget is not a cap on protocol output,
-metadata, model tokens, or a complete model context window.
-
-The process owns one canonical store connection and serializes complete
-application calls, including each whole multi-item sync. Separate processes
-still do not form a supported concurrent source-wide synchronization protocol.
-Coordinate external ingestion and administrative changes; SQLite conflicts are
-errors, not an implicit retry mechanism.
-
-Cancellation is propagated into the current operation, including queued calls.
-Already completed item activations are not rolled back by cancellation.
-SQLite's existing one-second busy timeout remains unchanged; cancellation is
-not a promise of instantaneous interruption of its busy wait.
-[Stdio shutdown](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio)
-uses stdin closure/disconnect or SIGINT/SIGTERM, not a shutdown tool. The server
-cancels pending work, drains handlers and closes its owned store. Stdout contains
-only protocol messages; diagnostics go to stderr.
-
-The deterministic actual-client regression command is
-`CGO_ENABLED=0 go test ./cmd/mousa -run TestMCP -count=1 -v`. It launches the built
-executable with the official SDK client and temporary SQLite stores, validates
-discovered output schemas and logs client/server receipts. It is not a
-model-driven agent run or a comparative measurement.
-
-### Authenticated HTTP and deployment
-
-HTTP is a separate transport, not an extension. `mcp --http-config FILE` serves
-stateless JSON Streamable HTTP at `/mcp`. The same startup caller/source/store
-bindings and source-deny precedence apply. Each process accepts one configured
-OAuth subject; deploy separate processes, OS users and stores for separate
-accounts. There is no shared multi-tenant writable store or client-selected path.
-This is a dedicated-account, operator-hosted deployment, not a public pairing relay.
-
-The JSON configuration requires:
-
-| Field | Contract |
-| --- | --- |
-| `listen` | Numeric loopback address and port 1–65535; no LAN/public bind |
-| `resource` | Stable absolute HTTPS URL ending in `/mcp`; no credentials/query/fragment |
-| `issuer` | Exact HTTPS OAuth authorization-server issuer |
-| `subject` | Exact expected user subject; all other subjects are rejected |
-| `introspection_url` | Operator-configured HTTPS RFC 7662 token-introspection endpoint |
-| `client_id` | Confidential resource-server introspection client |
-| `client_secret_env` | Environment variable containing its secret; no secret in package/config |
-
-Start it with the same `-store`, `--caller`, `--source` and optional ingestion
-flags as stdio. Supply an established OAuth 2.1 authorization server
-with authorization-code/PKCE S256 and client registration appropriate for the
-host, plus an operator-managed HTTPS reverse proxy. Mousa is the resource server,
-not an OAuth authorization server. The proxy must preserve the configured public
-Host or exact loopback authority. Forwarded identity/host headers confer no trust.
-Untrusted Origins are rejected for MCP; public protected-resource metadata supports
-cross-origin authentication discovery. No unauthenticated tool listener is started.
-
-Every HTTP request introspects the bearer token without caching. The response
-must contain active, exact `iss`/`sub`, matching `aud` (string or array), future
-`exp`, acceptable `nbf` if present, and space-separated `scope`. Missing/invalid
-claims fail closed. `mousa:read` is required for all MCP requests; item ingestion
-and note writes also require `mousa:write` and startup source permission. This is not an API-key login
-fallback. Introspection uses HTTP Basic service authentication, a five-second
-timeout, bounded response, TLS verification and no redirects. Provider errors
-release no token/secret details. The configured IdP must support these claims.
-
-The unauthenticated metadata endpoint is
-`/.well-known/oauth-protected-resource/mcp`; 401 responses advertise it through
-`WWW-Authenticate`. Request bodies are limited to 2 MiB, headers to 16 KiB and
-admission to eight concurrent requests including token verification. Stateless
-requests retain no session identity/replay buffer. Shutdown drains handlers before
-closing the canonical store.
 
 ## Item identity and lifecycle
 
@@ -357,7 +161,7 @@ matching segments.
 
 ## Durable notes
 
-`remember --source <id>` and `mousa_remember` write one immutable
+`remember --source <id>` writes one immutable
 `mousa.note.v1` record per note: a canonical record carrying the note ID
 (record digest), content digest, author, creation time, source and typed
 lineage, plus one internal note-policy item holding the exact bytes. Every
@@ -371,8 +175,7 @@ Lineage is `derived_from`: an array of `{trail_id, segment_ids?}` objects.
 `trail_id` is required and must name a committed trail whose decision allowed
 retrieval; `segment_ids` omitted or empty means every segment that trail
 selected, and each listed segment must have been selected. Each cited source
-must currently allow access and not be withdrawn, and for MCP must be a
-configured source. A note without lineage is unsourced (`origin: "unsourced"`,
+must currently allow access and not be withdrawn. A note without lineage is unsourced (`origin: "unsourced"`,
 empty `derived_from`). A checked citation identifies what the trail released,
 not whether the note is true and not whether its citations are complete. Note
 text is untrusted content: never store secrets or transcripts.
@@ -393,10 +196,9 @@ imports as no-ops. If an imported citation's trail is absent, recall reports
 `citation_unverifiable`.
 
 Notes share their source's normal access grant; there are no agent-specific
-sources or per-note grants. The CLI author is the operator identity, the MCP
-author is the trusted `--caller`, and an MCP note write requires the source's
-`--ingest-source` grant (plus `mousa:write` over HTTP). Document and note
-sources stay disjoint: `sync` and `mousa_sync` refuse a source holding notes,
+sources or per-note grants. The CLI author is the operator identity; on a served store the
+author is the authenticated principal, which needs a write grant on the source.
+Document and note sources stay disjoint: `sync` refuses a source holding notes,
 and `remember` refuses a source holding document items, active or not.
 Not supported: editing or retracting a note,
 recalling across multiple sources, a citation change cursor or standalone
@@ -532,8 +334,7 @@ an empty candidate list.
 
 `mousa -store STORE trail TRAIL_ID` reads the full canonical record by `trail.id`
 without writing. This is an owner interface, not a way to retrieve historical text.
-MCP trail reads check current access to every originally allowed source. Missing
-and unauthorized IDs both return `not_found`. The caller view omits `as_of`,
+The caller view carried by a served query reply omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
 
@@ -576,10 +377,8 @@ bytes separately from the unchanged evidence-text budget.
 
 ## Authorized trail inspection and withdrawal
 
-Owner inspection uses `trail TRAIL_ID`. MCP uses `mousa_trail` with `trail_id`
-and configured read sources. Withdrawal does not remove data or mutate recorded
-trails; it prevents future retrieval, and unauthorized MCP history reads are
-masked as `not_found`.
+Owner inspection uses `trail TRAIL_ID`. Withdrawal does not remove data or
+mutate recorded trails; it prevents future retrieval.
 
 Per-source access is an append-only event log with default deny; see
 [Access](USAGE.md#access). It is an operator

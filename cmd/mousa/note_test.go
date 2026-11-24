@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"maps"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-// Durable note tests exercise the built CLI and real MCP clients: explicit
+// Durable note tests exercise the built CLI: explicit
 // source bootstrap, exact note bytes, query-trail lineage, lifecycle staleness,
 // rejection rollback, idempotent retry, exact export, and tamper detection.
 
@@ -446,105 +445,6 @@ func TestMemoryRememberRejects(t *testing.T) {
 	run.run(false, "remember", "--source", "memory", "Transactional note.")
 }
 
-func TestMemoryMCP(t *testing.T) {
-	run, _ := setup(t)
-	jsonlSync(t, run, "alpha", record("doc", "Cedar harbor plan approved."))
-
-	// Phase A: an agent remembers a fact derived from its own query trail.
-	client := startMCPClient(t, run, "agent-1", true)
-	run.run(false, "access", "--source", "beta", "--create", "allow")
-	query := client.call("mousa_query", mcpQuery("alpha", "harbor", 4096), "")
-	trailID := trailIDOf(query)
-	note := client.call("mousa_remember", map[string]any{
-		"source":       "beta",
-		"text":         "The harbor plan is approved.",
-		"derived_from": []any{map[string]any{"trail_id": trailID}},
-	}, "")
-	if note["author"] != "agent-1" || note["schema"] != "mousa.note.v1" {
-		t.Fatalf("MCP note must carry the trusted caller identity: %v", note)
-	}
-	citations := note["derived_from"].([]any)
-	if len(citations) != 1 || citations[0].(map[string]any)["trail_id"] != trailID {
-		t.Fatalf("MCP note lost its lineage: %v", note)
-	}
-	if len(citations[0].(map[string]any)["segment_ids"].([]any)) == 0 {
-		t.Fatalf("default citation did not expand to selected segments: %v", note)
-	}
-	noteID := note["id"].(string)
-
-	// A document write into the note source is refused.
-	client.call("mousa_sync", mcpItems("beta", map[string]any{"id": "doc", "text": "document"}), "conflict")
-
-	// Recall over MCP returns the note metadata on the evidence hit.
-	recall := client.call("mousa_query", mcpQuery("beta", "harbor plan", 4096), "")
-	if len(hits(recall)) != 1 {
-		t.Fatalf("MCP recall missed the note: %v", recall)
-	}
-	meta := noteHitMeta(t, hits(recall)[0].(map[string]any))
-	if meta["id"] != noteID || meta["author"] != "agent-1" || meta["origin"] != "derived" {
-		t.Fatalf("MCP note metadata wrong: %v", meta)
-	}
-	if len(staleReasons(meta)) != 0 {
-		t.Fatalf("fresh MCP note reported stale: %v", meta)
-	}
-
-	// Rejects: unknown source, unknown trail, malformed lineage.
-	client.call("mousa_remember", map[string]any{"source": "gamma", "text": "x"}, "source_not_permitted")
-	client.call("mousa_remember", map[string]any{
-		"source": "beta", "text": "x",
-		"derived_from": []any{map[string]any{"trail_id": strings.Repeat("b", 64)}},
-	}, "not_found")
-	client.call("mousa_remember", json.RawMessage(`{"source":"beta","text":"x","derived_from":[{"trail_id":`+fmt.Sprintf("%q", trailID)+`,"bogus":1}]}`), "invalid_arguments")
-	client.call("mousa_remember", json.RawMessage(`{"source":"beta","text":"x","text":"y"}`), "invalid_arguments")
-	client.call("mousa_remember", map[string]any{"source": "beta"}, "invalid_arguments")
-
-	// Phase B: a second agent retries the same text without lineage; the
-	// first writer's identity and lineage win, and a fresh process recalls
-	// the same note with the same identity.
-	client.close()
-	client = startMCPClient(t, run, "agent-2", true)
-	retry := client.call("mousa_remember", map[string]any{
-		"source": "beta",
-		"text":   "The harbor plan is approved.",
-	}, "")
-	if retry["id"] != noteID || retry["author"] != "agent-1" || retry["created_at_usec"] != note["created_at_usec"] {
-		t.Fatalf("first note did not win on retry: %v vs %v", retry, note)
-	}
-	retryLineage := retry["derived_from"].([]any)
-	if len(retryLineage) != 1 || retryLineage[0].(map[string]any)["trail_id"] != trailID {
-		t.Fatalf("retry dropped the stored lineage: %v", retry)
-	}
-	persisted := client.call("mousa_query", mcpQuery("beta", "harbor plan", 4096), "")
-	persistedHit := noteHitByID(t, persisted, noteID)
-	persistedMeta := noteHitMeta(t, persistedHit)
-	if persistedMeta["author"] != "agent-1" || persistedMeta["created_at_usec"] != note["created_at_usec"] || persistedHit["text"] != "The harbor plan is approved." {
-		t.Fatalf("restart changed note identity: %v vs %v", persistedMeta, note)
-	}
-
-	// Phase C: a third caller sees the same evidence after the operator
-	// withdraws the cited source, flagged with a withdrawal reason naming
-	// the trail. A non-ingestion client still cannot write notes.
-	client.close()
-	run.run(false, "withdraw", "--source", "alpha")
-	client = startMCPClient(t, run, "agent-3", false)
-	client.call("mousa_remember", map[string]any{"source": "beta", "text": "unauthorized"}, "ingestion_not_permitted")
-	withdrawn := client.call("mousa_query", mcpQuery("beta", "harbor plan", 4096), "")
-	withdrawnHit := noteHitByID(t, withdrawn, noteID)
-	if withdrawnHit["text"] != "The harbor plan is approved." {
-		t.Fatalf("withdrawal changed released note text: %v", withdrawnHit)
-	}
-	withdrawnMeta := noteHitMeta(t, withdrawnHit)
-	if withdrawnMeta["author"] != "agent-1" || withdrawnMeta["created_at_usec"] != note["created_at_usec"] {
-		t.Fatalf("withdrawal changed note identity: %v vs %v", withdrawnMeta, note)
-	}
-	withdrawnLineage := withdrawnMeta["derived_from"].([]any)
-	if len(withdrawnLineage) != 1 || withdrawnLineage[0].(map[string]any)["trail_id"] != trailID {
-		t.Fatalf("withdrawal changed note lineage: %v", withdrawnMeta)
-	}
-	staleEntry(t, withdrawnMeta, "source_withdrawn", trailID)
-	client.close()
-}
-
 func TestMemoryIntegrityTamper(t *testing.T) {
 	mutations := []struct {
 		name      string
@@ -565,15 +465,10 @@ func TestMemoryIntegrityTamper(t *testing.T) {
 			run.run(false, "access", "--source", "memory", "--create", "allow")
 			run.run(false, "remember", "--source", "memory", "--from", trailIDOf(query), "Seals at noon.")
 
-			// The store stays open while a second connection tampers; the
-			// very next read must fail, not serve the altered bytes.
-			client := startMCPClient(t, run, "cli", false, "--source", "memory")
+			// A second connection tampers; the very next read must fail,
+			// not serve the altered bytes.
 			rawExec(t, run.store, mutation.statement)
-			recall := client.call("mousa_query", mcpQuery("memory", "seals", 4096), "integrity")
-			if recall["message"] == nil {
-				t.Fatalf("tampered note read did not report integrity: %v", recall)
-			}
-			client.close()
+			run.run(true, "query", "--source", "memory", "seals")
 
 			// Both the targeted export and the explicit whole-store audit refuse it.
 			run.run(true, "notes", "export", "--source", "memory")

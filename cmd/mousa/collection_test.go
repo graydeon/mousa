@@ -77,24 +77,3 @@ func TestDeniedCorpusDoesNotShiftScores(t *testing.T) {
 		t.Fatalf("denied corpus changed score or result digest: before=%v after=%v", a, b)
 	}
 }
-
-func TestMCPCollectionScopeHonorsGrants(t *testing.T) {
-	run, _ := setup(t)
-	jsonlSync(t, run, "alpha", record("a", "harbor pilot")+"\n")
-	jsonlSync(t, run, "beta", record("b", "harbor tides")+"\n")
-	jsonlSync(t, run, "outside", record("o", "harbor pilot")+"\n")
-	run.run(false, "collection", "create", "fleet")
-	run.run(false, "collection", "add", "--source", "alpha", "fleet")
-	run.run(false, "collection", "add", "--source", "beta", "fleet")
-	c := startMCPClient(t, run, "reader", false)
-	collection := map[string]any{"collection": "fleet", "query": "harbor", "budget_bytes": 512}
-	sources := map[string]any{"sources": []string{"beta", "alpha"}, "query": "harbor", "budget_bytes": 512}
-	for _, args := range []map[string]any{collection, sources} {
-		result := c.call("mousa_query", args, "")
-		if len(hits(result)) != 2 || len(trailOf(result)["sources"].([]any)) != 2 {
-			t.Fatalf("expected both configured sources: %v", result)
-		}
-	}
-	run.run(false, "collection", "add", "--source", "outside", "fleet")
-	c.call("mousa_query", collection, "not_found")
-}

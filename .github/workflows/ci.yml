@@ -42,5 +42,3 @@ jobs:
           python3 -m unittest discover -s eval/milestone
           go build -o mousa ./cmd/mousa
           python3 eval/local/workflow_test.py --mousa ./mousa
-          python3 examples/memory/memory_test.py --mousa ./mousa
-          python3 examples/memory/chronology_test.py

@@ -19,8 +19,7 @@ Keep earlier schema versions, public signatures, canonical encodings and identit
 
 Reuse the supplied SQLite transaction for candidate, administrative and provenance reads. Calling a public method that opens another transaction can mix snapshots. Distinguish verified no history from damaged recorded state: a missing event named by an existing projection is corruption; an unknown identity requested directly from a historical reader can be not-found. Fail without manufacturing, repairing or committing partial records.
 
-Historical trail reads verify immutable evidence; MCP separately rechecks current
-access and masks absent or unauthorized IDs. Query writes one `mousa.trail.v1`
+Historical trail reads verify immutable evidence. Query writes one `mousa.trail.v1`
 record and its leaf before returning passages. Keep caller-view masking and the
 unavailable historical text boundary explicit.
 
