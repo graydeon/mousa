@@ -70,7 +70,7 @@ would return `trail.sources[0].outcome: deny` and no passages. See
 
 **Next:** [directory selection and resync](docs/USAGE.md#local-usage-cmdmousa),
 [JSONL input and administration](docs/USAGE.md#local-usage-cmdmousa), or
-[the served store](docs/USAGE.md#local-served-store-opt-in).
+[connect an agent to a served store](docs/USAGE.md#cli-over-the-endpoint).
 
 ## What works today?
 

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -33,33 +34,48 @@ const (
 func main() {
 	ctx := context.Background()
 	storePath := flag.String("store", "", "Mousa store file")
-	endpoint := flag.String("endpoint", "", "served store base URL instead of -store; credential comes from MOUSA_TOKEN")
+	endpoint := flag.String("endpoint", "", "served store base URL instead of -store")
 	flag.Parse()
 	args := flag.Args()
-	if (*storePath == "") == (*endpoint == "") || len(args) == 0 {
+	if len(args) == 0 || (*storePath != "" && *endpoint != "") {
 		usage()
 	}
 	command, rest := args[0], args[1:]
+	// With neither flag the client configuration names the served store, so
+	// an agent runs plain `mousa query`. An explicit -store never reads it.
+	var config clientConfig
+	if *storePath == "" && command != "agent" {
+		var configErr error
+		if config, configErr = loadClientConfig(); configErr != nil {
+			fmt.Fprintf(os.Stderr, "mousa: %v\n", configErr)
+			os.Exit(1)
+		}
+		if *endpoint == "" {
+			*endpoint = cmp.Or(os.Getenv("MOUSA_ENDPOINT"), config.Endpoint)
+		}
+		if *endpoint == "" {
+			usage()
+		}
+	}
 	if *endpoint != "" || command == "serve" {
 		var stop context.CancelFunc
 		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
 	}
-	// Exactly one of -store and -endpoint was checked. The endpoint client is
-	// built only for the commands that can use it; everything else stays a
-	// direct-store command and never falls back.
+	// The endpoint client is built only for the commands that can use it;
+	// everything else stays a direct-store command and never falls back.
 	var client *nativeClient
 	if *endpoint != "" {
 		switch command {
 		case "query", "remember", "sync":
 			var clientErr error
-			client, clientErr = newNativeClient(*endpoint)
+			client, clientErr = newNativeClient(*endpoint, config)
 			if clientErr != nil {
 				fmt.Fprintf(os.Stderr, "mousa: %v\n", clientErr)
 				os.Exit(1)
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "mousa: -endpoint supports only query, remember and sync --source\n")
+			fmt.Fprintf(os.Stderr, "mousa: a served store supports only query, remember and sync --source; use -store for %s\n", command)
 			os.Exit(2)
 		}
 	}
@@ -91,6 +107,8 @@ func main() {
 		err = withdrawCommand(ctx, *storePath, rest)
 	case "serve":
 		err = serveCommand(ctx, *storePath, rest)
+	case "agent":
+		err = agentCommand(rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mousa: unknown command %q\n", command)
 		usage()
@@ -108,7 +126,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
-       mousa -endpoint <url> query|remember|sync --source <id>
+       mousa [-endpoint <url>] query|remember|sync --source <id>
+       mousa agent add <name> --config <file> --source <id>
 
 commands:
   sync <dir>                  import or re-sync a UTF-8/Markdown directory (JSON result)
@@ -148,7 +167,16 @@ commands:
   serve --config <file> [--listen 127.0.0.1:PORT] [--open-monitor]
                             own the store and serve it on loopback HTTP;
                             query, remember and sync --source also run against
-                            a served store with -endpoint and MOUSA_TOKEN
+                            a served store named by -endpoint, MOUSA_ENDPOINT
+                            or the client configuration
+  agent add <name> --config <file> --source <id> [--token-file <path>]
+                            add a principal to the serve configuration and mint
+                            its token; --read/--write grant one direction only
+
+client configuration ($MOUSA_CONFIG, else <user config dir>/mousa/client.json):
+  {"endpoint": "http://127.0.0.1:8787", "token_file": "PATH"}
+  token comes from MOUSA_TOKEN, else token_file, else token_command (an argv
+  array whose output is the token); {harness} in either expands to MOUSA_HARNESS
 
 query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens

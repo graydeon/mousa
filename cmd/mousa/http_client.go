@@ -18,7 +18,8 @@ import (
 )
 
 // The native client is the CLI's transport to a served store. It accepts only
-// a loopback HTTP origin and takes its credential from the environment.
+// a loopback HTTP origin and takes its credential from the environment or
+// the client configuration.
 
 const (
 	nativeClientTimeout    = 60 * time.Second
@@ -32,9 +33,9 @@ type nativeClient struct {
 	http     *http.Client
 }
 
-// newNativeClient validates the loopback endpoint and reads MOUSA_TOKEN. The
+// newNativeClient validates the loopback endpoint and resolves the token. The
 // token is never a flag, argument, or part of the URL.
-func newNativeClient(endpoint string) (*nativeClient, error) {
+func newNativeClient(endpoint string, config clientConfig) (*nativeClient, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, errors.New("endpoint must be an http://127.0.0.1:port URL without credentials, path, query or fragment")
@@ -50,9 +51,9 @@ func newNativeClient(endpoint string) (*nativeClient, error) {
 	if err != nil || !address.IsLoopback() {
 		return nil, errors.New("endpoint host must be a loopback IP literal")
 	}
-	token := os.Getenv("MOUSA_TOKEN")
-	if token == "" {
-		return nil, errors.New("endpoint mode requires the MOUSA_TOKEN environment variable")
+	token, err := config.token()
+	if err != nil {
+		return nil, err
 	}
 	// Reported-only harness identity; the service marks it never-verified.
 	metadata := mousa.ClientMetadata{

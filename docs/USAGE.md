@@ -281,30 +281,27 @@ allow option:
 ./mousa -store STORE access --source memory --create allow
 ```
 
-The serve config names principals by SHA-256 verifier, so raw tokens never
-enter the config, the store, or the log:
+Add one principal per agent. `agent add` mints the token, records only its
+SHA-256 verifier in the serve config (creating the file if needed), and
+writes the token to a new private file:
 
-```json
-{
-  "principals": [
-    {"id": "writer", "token_sha256": "…64 lowercase hex…",
-     "read_sources": ["inspection-notes", "memory"], "write_sources": ["inspection-notes", "memory"]},
-    {"id": "reader", "token_sha256": "…", "read_sources": ["inspection-notes"]},
-    {"id": "monitor", "token_sha256": "…", "read_sources": [], "operator": true}
-  ]
-}
+```sh
+./mousa agent add codex --config PRINCIPALS.json --source memory --token-file ~/.config/mousa/tokens/codex
+./mousa agent add reader --config PRINCIPALS.json --read inspection-notes --token-file ~/.config/mousa/tokens/reader
+./mousa agent add monitor --config PRINCIPALS.json --read memory --operator --token-file ~/.config/mousa/tokens/monitor
 ```
 
-Keep write, read and monitor (operator) credentials separate; `operator: true`
-grants metadata-only monitor reads and never bypasses per-source read or write
-denial. Mint each token into the caller's environment rather than argv or a
-file — for an interactive shell `read -rs TOKEN` then export it — and record
-only its verifier: `printf '%s' "$TOKEN" | sha256sum`. A nonoperator principal
-gets a denied outcome for requests outside its grants and `403` on the monitor
-endpoints; the daemon never reveals whether another principal exists.
+`--source` grants read and write; `--read` and `--write` grant one direction.
+Without `--token-file` the token is printed once in the JSON result, for a
+secret manager. Raw tokens never enter the config, the store, or the log.
+`serve` reads the config at startup, so restart it after adding an agent.
 
-Save the verifiers to a private config file, then run the daemon in a
-separate terminal. It prints its bound loopback URL on startup.
+`operator` grants metadata-only monitor reads and never bypasses per-source
+read or write denial. A nonoperator principal gets a denied outcome for
+requests outside its grants and `403` on the monitor endpoints; the daemon
+never reveals whether another principal exists.
+
+Run the daemon in a separate terminal. It prints its bound loopback URL on startup.
 
 ```sh
 ./mousa -store STORE serve --listen 127.0.0.1:8787 --config PRINCIPALS.json
@@ -338,17 +335,43 @@ note evidence rather than revealed.
 
 ### CLI over the endpoint
 
-The same binary talks to a served store without holding it open:
+The same binary talks to a served store without holding it open. Write a
+client configuration once, at `mousa/client.json` under the user configuration
+directory (`~/.config` on Linux) or the path in `MOUSA_CONFIG`:
 
-```sh
-export MOUSA_TOKEN="$TOKEN"
-printf '%s\n' '{"id":"inspection","text":"The harbor inspection moved to Friday."}' |
-  ./mousa -endpoint http://127.0.0.1:8787 sync --source inspection-notes
-./mousa -endpoint http://127.0.0.1:8787 query --source inspection-notes 'harbor inspection'
-./mousa -endpoint http://127.0.0.1:8787 remember --source memory 'note text'
+```json
+{"endpoint": "http://127.0.0.1:8787", "token_file": "~/.config/mousa/tokens/{harness}"}
 ```
 
-`-endpoint` supports only `query`, `remember`, and `sync --source`; the sync
+After that an agent needs no flags and no token in its environment:
+
+```sh
+export MOUSA_HARNESS=codex MOUSA_MODEL=MODEL_ID
+./mousa remember --source memory 'note text'
+./mousa query --source memory 'note'
+printf '%s\n' '{"id":"inspection","text":"The harbor inspection moved to Friday."}' |
+  ./mousa sync --source inspection-notes
+```
+
+That is the whole agent integration: put those two commands in the agent's
+instructions. Mousa ships no MCP server.
+
+| Setting | Order of precedence |
+|---|---|
+| Endpoint | `-endpoint URL`, then `MOUSA_ENDPOINT`, then `endpoint` in the client configuration |
+| Token | `MOUSA_TOKEN`, then `token_file`, then `token_command` |
+
+`token_command` is an argv array whose standard output is the token, for a
+secret manager: `["pass", "show", "mousa/{harness}"]`. `{harness}` in
+`token_file` or `token_command` expands to `MOUSA_HARNESS`, so one
+configuration serves several agents, each with its own principal. Passing
+`-store` ignores the client configuration.
+
+An agent in a sandbox needs two things from it: a connection to the loopback
+endpoint, and read access to the client configuration and its token source.
+A sandbox that blocks either one must be configured to allow it.
+
+A served store supports only `query`, `remember`, and `sync --source`; the sync
 form posts each JSONL line on stdin as one request. The HTTP envelope carries
 the request ID; the CLI prints the result or a typed endpoint error with
 its request ID. If audit recording fails, `coverage_unavailable` indicates

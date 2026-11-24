@@ -31,6 +31,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	cliBinary = filepath.Join(directory, "mousa")
+	// Child CLIs must never read the developer's own client configuration or
+	// served-store settings.
+	os.Setenv("XDG_CONFIG_HOME", filepath.Join(directory, "config"))
+	for _, name := range []string{"MOUSA_CONFIG", "MOUSA_ENDPOINT", "MOUSA_TOKEN", "MOUSA_HARNESS"} {
+		os.Unsetenv(name)
+	}
 	cmd := exec.Command("go", "build", "-o", cliBinary, ".")
 	cmd.Dir = "."
 	code := 1

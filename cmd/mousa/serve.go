@@ -78,6 +78,12 @@ func loadNativeConfig(path string) ([]nativePrincipal, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseNativeConfig(data)
+}
+
+// parseNativeConfig validates serve configuration bytes; agent add runs the
+// same checks on what it is about to write.
+func parseNativeConfig(data []byte) ([]nativePrincipal, error) {
 	var config nativeConfig
 	if err := decodeNative(data, &config); err != nil {
 		return nil, errors.New("invalid serve configuration")
