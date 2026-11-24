@@ -329,6 +329,8 @@ func TestServeLiveStagesAndResume(t *testing.T) {
 		}
 	}
 	stopLiveService(t, openServer, openListener)
+	getNative(t, endpoint+"/v1/requests", "", http.StatusUnauthorized, "closed monitor history")
+	getNative(t, endpoint+"/v1/requests/"+askedReply.RequestID, "", http.StatusUnauthorized, "closed monitor detail")
 
 	// The stream attaches before the request; its preamble is a comment.
 	viewer, events := openStream(t, endpoint, operatorToken, "", http.StatusOK)
