@@ -589,6 +589,16 @@ func (s *nativeService) requestHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), nativeHandlerBound)
 	defer cancel()
+	// tail starts at the newest limit outcomes, so a viewer need not page
+	// through the whole history to show recent requests.
+	if query.Get("tail") != "" && query.Get("after") == "" {
+		tail, err := s.store.RequestHistoryTail(ctx, limit)
+		if err != nil {
+			fail(http.StatusInternalServerError, "internal")
+			return
+		}
+		after = tail
+	}
 	page, err := s.store.RequestHistory(ctx, after, limit)
 	if err != nil {
 		fail(http.StatusInternalServerError, "internal")

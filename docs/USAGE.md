@@ -318,7 +318,7 @@ separate terminal. It prints its bound loopback URL on startup.
 ./mousa -store STORE serve --listen 127.0.0.1:8787 --config PRINCIPALS.json
 ```
 
-Open the printed URL in your browser and attach with the monitor token.
+Open the printed URL in your browser. Enter the monitor token if the page asks for one.
 Use a caller token, not the monitor token, for the smoke commands.
 
 ### Requests and replies
@@ -394,8 +394,9 @@ without duplicates; an unknown or foreign cursor produces a `gap`, never
 silent misses. Stage timings are measurements, not archive: after a gap the
 dashboard shows measured stages only for newly observed requests.
 
-The dashboard at `/` is same-origin, holds the operator token only in page
-memory, and renders the live ledger plus verified per-request detail. It is a
+The dashboard at `/` is same-origin, holds any operator token only in page
+memory, and shows each pipeline stage lighting up as requests pass, the
+agents calling, and recent requests with their verified detail. It is a
 local surface — keep the daemon on loopback and do not publicize its address.
 
 ### Stop, verify, and back up

@@ -367,6 +367,11 @@ func TestServeRequestAudit(t *testing.T) {
 	getNative(t, endpoint+"/v1/requests/not-a-request", tokenA, http.StatusNotFound, "malformed request id")
 	getNative(t, endpoint+"/v1/requests?after=abc", tokenA, http.StatusBadRequest, "malformed after")
 	getNative(t, endpoint+"/v1/requests?limit=10000", tokenA, http.StatusBadRequest, "oversized limit")
+	// tail starts the page at the newest outcomes instead of the oldest.
+	_, tailBody := getNative(t, endpoint+"/v1/requests?tail=1&limit=1", tokenA, http.StatusOK, "history tail")
+	if got := strings.Count(string(tailBody), `"admission"`); got != 1 || !strings.Contains(string(tailBody), `"too_large"`) {
+		t.Fatalf("history tail = %s, want only the newest outcome", tailBody)
+	}
 
 	// 17: one request carries reported client metadata; "<" must survive.
 	metadataQuery, _ := postAudit(t, "metadata query", endpoint+"/v1/query", tokenA,

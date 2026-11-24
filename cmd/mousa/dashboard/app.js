@@ -1,681 +1,349 @@
-"use strict";
-
+// Mousa live view. Everything is rendered with textContent from metadata the
+// service sends; no request or note text ever reaches this page.
 (function () {
-	const ROW_LIMIT = 120;
-	const STAGE_LIMIT = 32;
-	const HISTORY_LIMIT = 64;
-	const HISTORY_PAGES = 8;
+	"use strict";
 
-	const tokenInput = document.getElementById("token");
-	const attachButton = document.getElementById("attach-button");
-	const connectionStatus = document.getElementById("connection-status");
-	const gapBanner = document.getElementById("gap-banner");
-	const requestList = document.getElementById("request-list");
-	const emptyNote = document.getElementById("empty-note");
-	const detailPanel = document.getElementById("request-detail");
-	const filterHarness = document.getElementById("filter-harness");
-	const filterOperation = document.getElementById("filter-operation");
-	const filterOutcome = document.getElementById("filter-outcome");
+	const STEP_MS = 140; // playback gap so a millisecond request is still visible
+	const RECENT = 40;
+	const SLOW_MS = 250;
+	const VERBS = { query: "searched", note: "saved a note", document: "updated a document" };
+	const ENDS = {
+		committed: "done", no_op: "already saved", denied: "refused", invalid: "bad request",
+		failed: "failed", canceled: "canceled", interrupted: "cut off",
+	};
 
-	// The operator token lives only in this closure; it is never stored,
-	// logged, or placed in a URL.
-	let bearer = "";
-	let controller = null;
-	let eventCursor = "";
-	let historyCursor = 0;
-	const rows = new Map();
-	const order = [];
-	const harnesses = new Set();
-	let reconnectTimer = 0;
-	let detailController = null;
-	let backfilling = false;
-	let backfillPending = false;
+	const $ = function (id) { return document.getElementById(id); };
+	const link = $("link"), linkText = $("link-text"), keyForm = $("key-form"), keyInput = $("key");
+	const alertBox = $("alert"), agentList = $("agents"), recentList = $("recent"), quiet = $("quiet"), detail = $("detail");
 
-	function el(tag, className, text) {
+	const nodes = {};   // stage -> { el, note, busy, times }
+	document.querySelectorAll(".node").forEach(function (el) {
+		nodes[el.dataset.stage] = { el: el, note: el.querySelector("i"), busy: 0, times: [] };
+	});
+	const requests = new Map(); // request id -> record
+	const agents = new Map();   // agent name -> record
+	let bearer = "", cursor = "", stream = null, retry = null;
+
+	function el(tag, cls, text) {
 		const node = document.createElement(tag);
-		if (className) {
-			node.className = className;
-		}
-		if (text !== undefined && text !== null) {
-			node.textContent = text;
-		}
+		if (cls) { node.className = cls; }
+		if (text !== undefined) { node.textContent = text; }
 		return node;
 	}
-
-	function setStatus(text, live) {
-		connectionStatus.textContent = text;
-		connectionStatus.dataset.live = live ? "true" : "false";
+	function ms(usec) {
+		const value = usec / 1000;
+		if (value < 0.1) { return "<0.1 ms"; }
+		return value >= 100 ? Math.round(value) + " ms" : value >= 10 ? value.toFixed(0) + " ms" : value.toFixed(1) + " ms";
+	}
+	function clock(usec) {
+		return new Date(usec / 1000).toLocaleTimeString([], { hour12: false });
+	}
+	function ago(usec) {
+		const seconds = Math.max(0, Math.round((Date.now() - usec / 1000) / 1000));
+		if (seconds < 60) { return "just now"; }
+		if (seconds < 3600) { return Math.round(seconds / 60) + " min ago"; }
+		if (seconds < 86400) { return Math.round(seconds / 3600) + " h ago"; }
+		return Math.round(seconds / 86400) + " d ago";
+	}
+	function headers(extra) {
+		const out = extra || {};
+		if (bearer) { out.Authorization = "Bearer " + bearer; }
+		return out;
+	}
+	function setLink(state, text) {
+		link.className = "link " + state;
+		linkText.textContent = text;
 	}
 
-	function mapState(state) {
-		switch (state) {
-		case "committed": return "committed";
-		case "no_op": return "no op";
-		case "denied": return "denied";
-		case "": return "in flight";
-		default: return "failed";
+	// --- pipeline nodes -------------------------------------------------
+	function nodeNote(node) {
+		if (!node.times.length) { return; }
+		const sorted = node.times.slice().sort(function (a, b) { return a - b; });
+		node.note.textContent = ms(sorted[Math.floor(sorted.length / 2)]);
+	}
+	function stageStart(stage) {
+		const node = nodes[stage];
+		if (!node) { return; }
+		node.busy++;
+		node.el.classList.remove("bad");
+		node.el.classList.add("on");
+	}
+	function stageEnd(stage, frame) {
+		const node = nodes[stage];
+		if (!node) { return; }
+		node.busy = Math.max(0, node.busy - 1);
+		if (node.busy === 0) { node.el.classList.remove("on", "slow"); }
+		if (frame.phase === "error") {
+			node.el.classList.add("bad");
+			node.note.textContent = stage === "access" ? "refused" : "failed";
+			return;
+		}
+		if (frame.duration_usec) {
+			node.times.push(frame.duration_usec);
+			if (node.times.length > 30) { node.times.shift(); }
+			if (frame.duration_usec / 1000 > SLOW_MS) { node.el.classList.add("slow"); }
+			nodeNote(node);
 		}
 	}
-
-	function reported(value) {
-		return value && value !== "" ? { value: value, tag: "reported" } : { value: "unknown", tag: "unknown" };
+	function resetNodes() {
+		Object.keys(nodes).forEach(function (stage) {
+			nodes[stage].busy = 0;
+			nodes[stage].el.classList.remove("on", "slow");
+		});
 	}
 
-	function emptyModel(requestID) {
-		return {
-			requestID: requestID,
-			operation: "",
-			authenticated: false,
-			principal: "",
-			client: { harness: "", agent: "", model: "", runID: "" },
-			receivedAtUsec: 0,
-			stages: [],
-			status: "in flight",
-			seq: 0,
-			errorCode: "",
+	// --- agents ---------------------------------------------------------
+	function agentName(admission) {
+		if (!admission.authenticated) { return "Unknown caller"; }
+		return (admission.client && admission.client.harness) || admission.principal;
+	}
+	function touchAgent(record) {
+		const name = record.who;
+		let agent = agents.get(name);
+		if (!agent) {
+			agent = { name: name, live: 0, li: el("li"), title: el("b", "", name), model: el("small"), seen: el("small") };
+			agent.li.append(agent.title, agent.model, agent.seen);
+			agents.set(name, agent);
+			agentList.appendChild(agent.li);
+		}
+		if (record.model) { agent.model.textContent = record.model; }
+		agent.last = Math.max(agent.last || 0, record.at);
+		return agent;
+	}
+	function paintAgents() {
+		agents.forEach(function (agent) {
+			agent.li.classList.toggle("on", agent.live > 0);
+			agent.seen.textContent = agent.live > 0 ? "working now" : ago(agent.last);
+		});
+	}
+
+	// --- recent list ----------------------------------------------------
+	function record(id, admission) {
+		let item = requests.get(id);
+		if (item) { return item; }
+		const client = admission.client || {};
+		item = {
+			id: id, op: admission.operation, who: agentName(admission), model: client.model || "",
+			agentTag: client.agent || "", run: client.run_id || "", key: admission.principal || "",
+			at: admission.received_at_usec || Date.now() * 1000, state: "", took: 0, stages: [], queue: [], timer: null, known: !!admission.authenticated,
 		};
+		item.li = el("li", "new");
+		item.button = el("button");
+		item.button.type = "button";
+		item.time = el("time", "", clock(item.at));
+		item.line = el("span", "who");
+		item.line.append(el("b", "", item.who), document.createTextNode(" " + (VERBS[item.op] || item.op)));
+		item.tookEl = el("span", "took");
+		item.end = el("span", "end wait", "working");
+		item.button.append(item.time, item.line, item.tookEl, item.end);
+		item.button.addEventListener("click", function () { showDetail(item); });
+		item.li.appendChild(item.button);
+		requests.set(id, item);
+		recentList.insertBefore(item.li, recentList.firstChild);
+		quiet.hidden = true;
+		while (recentList.children.length > RECENT) {
+			const last = recentList.lastChild;
+			requests.forEach(function (other, key) { if (other.li === last) { requests.delete(key); } });
+			last.remove();
+		}
+		return item;
+	}
+	function finish(item, state, tookUsec) {
+		touchAgent(item);
+		item.state = state;
+		if (tookUsec) { item.took = tookUsec; item.tookEl.textContent = ms(tookUsec); }
+		const good = state === "committed" || state === "no_op";
+		item.end.className = "end" + (good ? "" : " bad");
+		item.end.textContent = ENDS[state] || state;
+		paintAgents();
 	}
 
-	function modelFor(requestID) {
-		let model = rows.get(requestID);
-		if (!model) {
-			model = emptyModel(requestID);
-			rows.set(requestID, model);
-			order.push(requestID);
-			while (order.length > ROW_LIMIT) {
-				const removed = order.shift();
-				const old = rows.get(removed);
-				if (old && old.node && old.node.parentNode) {
-					old.node.parentNode.remove();
-				}
-				rows.delete(removed);
-			}
+	// --- live frames ----------------------------------------------------
+	// Frames for one request are replayed STEP_MS apart, in order, so each
+	// stage is seen lighting up even when the real work took microseconds.
+	function onFrame(frame) {
+		const admission = {
+			authenticated: frame.authenticated, principal: frame.principal, client: frame.client,
+			operation: frame.operation, received_at_usec: frame.at_usec,
+		};
+		const item = record(frame.request_id, admission);
+		if (frame.authenticated && !item.known) {
+			// The first frames precede the credential check; name the caller
+			// once the service has.
+			const client = frame.client || {};
+			item.known = true;
+			item.who = agentName(admission);
+			item.model = client.model || "";
+			item.agentTag = client.agent || "";
+			item.run = client.run_id || "";
+			item.key = frame.principal || "";
+			item.line.firstChild.textContent = item.who;
 		}
-		return model;
+		if (frame.phase === "skip" || frame.phase === "retry") { return; }
+		item.queue.push(frame);
+		pump(item);
 	}
-
-	function applyIdentity(model, source) {
-		if (source.operation) {
-			model.operation = source.operation;
-		}
-		if (source.authenticated !== undefined) {
-			model.authenticated = !!source.authenticated;
-		}
-		if (source.principal) {
-			model.principal = source.principal;
-		}
-		const client = source.client || {};
-		if (client.harness !== undefined && client.harness !== "") {
-			model.client.harness = client.harness;
-		}
-		if (client.agent !== undefined && client.agent !== "") {
-			model.client.agent = client.agent;
-		}
-		if (client.model !== undefined && client.model !== "") {
-			model.client.model = client.model;
-		}
-		if (client.run_id !== undefined && client.run_id !== "") {
-			model.client.runID = client.run_id;
-		}
-		if (source.received_at_usec && !model.receivedAtUsec) {
-			model.receivedAtUsec = source.received_at_usec;
-		}
+	function pump(item) {
+		if (item.timer || !item.queue.length) { return; }
+		const frame = item.queue[0];
+		item.timer = setTimeout(function () {
+			item.timer = null;
+			item.queue.shift();
+			play(item, frame);
+			pump(item);
+		}, frame.phase === "start" ? STEP_MS : 0);
 	}
-
-	function matchesFilters(model) {
-		const harness = filterHarness.value;
-		if (harness && model.client.harness !== harness) {
-			return false;
+	function play(item, frame) {
+		if (frame.stage === "admission" && frame.phase === "finish") {
+			item.live = true;
+			touchAgent(item).live++;
+			paintAgents();
 		}
-		const operation = filterOperation.value;
-		if (operation && model.operation !== operation) {
-			return false;
-		}
-		const outcome = filterOutcome.value;
-		if (outcome && model.status !== outcome) {
-			return false;
-		}
-		return true;
-	}
-
-	function syncHarnessFilter() {
-		for (const model of rows.values()) {
-			if (model.client.harness) {
-				harnesses.add(model.client.harness);
-			}
-		}
-		const current = filterHarness.value;
-		while (filterHarness.options.length > 1) {
-			filterHarness.remove(1);
-		}
-		const sorted = Array.from(harnesses).sort();
-		for (const name of sorted) {
-			const option = document.createElement("option");
-			option.value = name;
-			option.textContent = name;
-			filterHarness.appendChild(option);
-		}
-		filterHarness.value = current;
-	}
-
-	function formatUsec(usec) {
-		if (!usec) {
-			return "";
-		}
-		const date = new Date(Math.floor(usec / 1000));
-		return date.toISOString().replace("T", " ").replace("Z", "Z");
-	}
-
-	function renderRow(model) {
-		let node = model.node;
-		let button;
-		if (!node) {
-			node = document.createElement("li");
-			button = document.createElement("button");
-			button.type = "button";
-			button.className = "row-button";
-			button.dataset.requestId = model.requestID;
-			button.addEventListener("click", function () {
-				openDetail(model.requestID, button);
-			});
-			node.appendChild(button);
-			model.node = node;
-			requestList.appendChild(node);
-		}
-		button = node.firstChild;
-		button.textContent = "";
-		button.setAttribute("aria-pressed", "false");
-
-		const identity = el("span", "cell-id");
-		const who = model.principal || "anonymous";
-		identity.appendChild(el("span", "who", who + (model.authenticated ? " ·authenticated" : " ·unauthenticated")));
-		const fields = [
-			["harness", model.client.harness],
-			["agent", model.client.agent],
-			["model", model.client.model],
-			["run", model.client.runID],
-		];
-		for (const pair of fields) {
-			const meta = el("span", "meta");
-			const seen = reported(pair[1]);
-			meta.appendChild(document.createTextNode(pair[0] + " "));
-			meta.appendChild(el("b", "", seen.value));
-			meta.appendChild(document.createTextNode(" " + seen.tag));
-			identity.appendChild(meta);
-			identity.appendChild(document.createTextNode(" "));
-		}
-
-		const request = el("span", "cell-request");
-		request.appendChild(el("code", "", model.requestID));
-		request.appendChild(el("span", "op", model.operation || "request"));
-		if (model.receivedAtUsec) {
-			request.appendChild(document.createTextNode(" "));
-			request.appendChild(el("span", "at", formatUsec(model.receivedAtUsec)));
-		}
-
-		const stages = el("span", "cell-stages");
-		const list = document.createElement("ul");
-		for (const stage of model.stages) {
-			const item = document.createElement("li");
-			let cls = "stage";
-			if (stage.phase === "skip") {
-				cls += " skip";
-			} else if (stage.phase === "retry") {
-				cls += " retry";
-			}
-			item.className = cls;
-			const name = el("b", "", stage.stage);
-			item.appendChild(name);
-			let suffix = "";
-			if (stage.phase === "finish" && stage.duration_usec) {
-				suffix = " " + stage.duration_usec + "µs";
-			} else if (stage.phase === "terminal" && stage.state) {
-				suffix = " " + stage.state;
-			} else if (stage.phase !== "start") {
-				suffix = " " + stage.phase;
-			}
-			item.appendChild(document.createTextNode(suffix));
-			list.appendChild(item);
-		}
-		stages.appendChild(list);
-
-		const record = el("span", "cell-record");
-		const status = el("span", "status " + model.status.replace(" ", "-"), model.status);
-		if (model.status === "in flight") {
-			status.className = "status flight";
-		}
-		record.appendChild(status);
-		if (model.seq) {
-			record.appendChild(el("span", "seq", "seq " + model.seq));
-		}
-		if (model.errorCode) {
-			record.appendChild(el("span", "seq", model.errorCode));
-		}
-
-		button.appendChild(identity);
-		button.appendChild(request);
-		button.appendChild(stages);
-		button.appendChild(record);
-		node.hidden = !matchesFilters(model);
-		emptyNote.hidden = rows.size !== 0;
-	}
-
-	function refreshAll() {
-		for (const model of rows.values()) {
-			renderRow(model);
-		}
-		emptyNote.hidden = rows.size !== 0;
-	}
-
-	function handleStageFrame(frame, eventID) {
-		if (eventID) {
-			eventCursor = eventID;
-		}
-		if (!frame.request_id) {
+		if (frame.phase === "start") { stageStart(frame.stage); return; }
+		if (frame.phase === "terminal") {
+			finish(item, frame.state, frame.at_usec - item.at);
 			return;
 		}
-		const model = modelFor(frame.request_id);
-		applyIdentity(model, frame);
-		if (frame.stage === "outcome" && frame.phase === "terminal") {
-			model.status = mapState(frame.state);
-		} else {
-			model.stages.push({ stage: frame.stage, phase: frame.phase, duration_usec: frame.duration_usec || 0, state: frame.state || "" });
-			if (model.stages.length > STAGE_LIMIT) {
-				model.stages.shift();
-			}
-		}
-		if (model.client.harness) {
-			harnesses.add(model.client.harness);
-		}
-		renderRow(model);
-		syncHarnessFilter();
-	}
-
-	function applyHistoryEntry(entry) {
-		const admission = entry.admission || {};
-		const outcome = entry.outcome || {};
-		const requestID = outcome.request_id || admission.request_id;
-		if (!requestID) {
-			return;
-		}
-		const model = modelFor(requestID);
-		applyIdentity(model, admission);
-		model.status = mapState(outcome.state);
-		model.seq = outcome.seq || 0;
-		model.errorCode = outcome.error_code || "";
-		if (model.client.harness) {
-			harnesses.add(model.client.harness);
-		}
-		renderRow(model);
-	}
-
-	function handleGap() {
-		gapBanner.hidden = false;
-		if (controller) {
-			backfillHistory(controller);
+		stageEnd(frame.stage, frame);
+		if (frame.duration_usec) { item.stages.push([frame.stage, frame.duration_usec]); }
+		if (frame.stage === "response" && item.live) {
+			item.live = false;
+			const agent = touchAgent(item);
+			agent.live = Math.max(0, agent.live - 1);
+			paintAgents();
 		}
 	}
+	function onGap() {
+		resetNodes();
+		agents.forEach(function (agent) { agent.live = 0; });
+		loadRecent();
+	}
 
-	// Single flight per stream: a second request while a page is in flight is
-	// folded into one more bounded batch; batches yield between them so live
-	// frames keep flowing. The history cursor advances to next_after only
-	// after a whole page has been applied in order.
-	async function backfillHistory(mine) {
-		if (backfilling) {
-			backfillPending = true;
-			return;
-		}
-		backfilling = true;
+	async function loadRecent() {
 		try {
-			for (;;) {
-				backfillPending = false;
-				let more = true;
-				for (let page = 0; page < HISTORY_PAGES && more; page++) {
-					const response = await fetch("/v1/requests?after=" + historyCursor + "&limit=" + HISTORY_LIMIT, {
-						headers: { Authorization: "Bearer " + bearer },
-						cache: "no-store",
-						signal: mine.signal,
-					});
-					if (mine !== controller || !response.ok) {
-						return;
-					}
-					const envelope = await response.json();
-					if (mine !== controller) {
-						return;
-					}
-					const result = envelope.result || envelope;
-					const entries = result.requests || [];
-					for (const entry of entries) {
-						applyHistoryEntry(entry);
-					}
-					historyCursor = result.next_after || historyCursor;
-					more = result.more === true;
-				}
-				syncHarnessFilter();
-				if (!more && !backfillPending) {
-					return;
-				}
-				await new Promise(function (resolve) {
-					setTimeout(resolve, 0);
-				});
-				if (mine !== controller) {
-					return;
-				}
-			}
-		} catch (err) {
-			// Aborted or failed page fetches end the batch; the durable
-			// record is re-read on the next gap or reconnect.
-		} finally {
-			backfilling = false;
-			if (backfillPending && controller) {
-				const current = controller;
-				setTimeout(function () {
-					if (controller === current) {
-						backfillHistory(current);
-					}
-				}, 0);
-			}
-		}
-	}
-
-	function dispatchBlock(block) {
-		let id = "";
-		let kind = "message";
-		const data = [];
-		for (const line of block.split("\n")) {
-			if (line === "" || line.startsWith(":")) {
-				continue;
-			}
-			const cut = line.indexOf(":");
-			const field = cut < 0 ? line : line.slice(0, cut);
-			let value = cut < 0 ? "" : line.slice(cut + 1);
-			if (value.startsWith(" ")) {
-				value = value.slice(1);
-			}
-			if (field === "id") {
-				id = value;
-			} else if (field === "event") {
-				kind = value;
-			} else if (field === "data") {
-				data.push(value);
-			}
-		}
-		const payload = data.join("\n");
-		if (kind === "stage" && payload) {
-			try {
-				handleStageFrame(JSON.parse(payload), id);
-			} catch (err) {
-				// Malformed frames are dropped; the durable record stays authoritative.
-			}
-		} else if (kind === "gap") {
-			if (id) {
-				eventCursor = id;
-			}
-			handleGap();
-		}
+			const response = await fetch("/v1/requests?tail=1&limit=" + RECENT, { headers: headers(), cache: "no-store" });
+			if (!response.ok) { return; }
+			const page = (await response.json()).result;
+			page.requests.forEach(function (entry) {
+				const item = record(entry.admission.request_id, entry.admission);
+				item.li.classList.remove("new");
+				finish(item, entry.outcome.state, entry.outcome.finished_at_usec - entry.admission.received_at_usec);
+			});
+		} catch (err) { /* the stream status already says the service is away */ }
 	}
 
 	async function openStream() {
-		controller = new AbortController();
-		const mine = controller;
-		setStatus("Connecting…", false);
-		const headers = {
-			Authorization: "Bearer " + bearer,
-			Accept: "text/event-stream",
-		};
-		if (eventCursor) {
-			headers["Last-Event-ID"] = eventCursor;
-		}
+		clearTimeout(retry);
+		if (stream) { stream.abort(); }
+		const mine = stream = new AbortController();
 		let response;
 		try {
 			response = await fetch("/v1/events", {
-				method: "GET",
-				headers: headers,
-				signal: mine.signal,
-				cache: "no-store",
+				headers: headers(cursor ? { Accept: "text/event-stream", "Last-Event-ID": cursor } : { Accept: "text/event-stream" }),
+				signal: mine.signal, cache: "no-store",
 			});
 		} catch (err) {
-			if (mine.signal.aborted) {
-				return;
-			}
-			setStatus("Disconnected — stream unreachable", false);
-			scheduleReconnect();
+			if (!mine.signal.aborted) { again(); }
 			return;
 		}
-		if (!response.ok) {
-			setStatus("Disconnected — refused " + response.status, false);
-			if (response.status === 401 || response.status === 403) {
-				// Leave a clean attach state so a fresh credential can be
-				// entered; a rejected credential is never retried or kept.
-				controller = null;
-				bearer = "";
-				return;
-			}
-			scheduleReconnect();
+		if (response.status === 401 || response.status === 403) {
+			setLink("down", bearer ? "Wrong token" : "Token needed");
+			bearer = "";
+			keyForm.hidden = false;
 			return;
 		}
-		setStatus("Connected — live stage stream", true);
-		attachButton.textContent = "Detach";
-		attachButton.setAttribute("aria-pressed", "true");
-		// Seed the ledger from the durable record; live frames extend it.
-		backfillHistory(mine);
+		if (!response.ok) { again(); return; }
+		keyForm.hidden = true;
+		setLink("up", "Live");
+		loadRecent();
 		const reader = response.body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
 		try {
 			for (;;) {
 				const chunk = await reader.read();
-				if (chunk.done) {
-					break;
-				}
+				if (chunk.done) { break; }
 				buffer += decoder.decode(chunk.value, { stream: true });
 				let cut;
 				while ((cut = buffer.indexOf("\n\n")) >= 0) {
-					const block = buffer.slice(0, cut);
+					onEvent(buffer.slice(0, cut));
 					buffer = buffer.slice(cut + 2);
-					if (block.trim() !== "") {
-						dispatchBlock(block);
-					}
 				}
 			}
-		} catch (err) {
-			// Fall through to reconnect handling below.
-		}
-		if (mine.signal.aborted) {
-			return;
-		}
-		setStatus("Disconnected — stream ended", false);
-		scheduleReconnect();
+		} catch (err) { /* fall through to reconnect */ }
+		if (!mine.signal.aborted) { again(); }
+	}
+	function onEvent(block) {
+		let kind = "", id = "", data = "";
+		block.split("\n").forEach(function (line) {
+			if (line.startsWith("event: ")) { kind = line.slice(7); }
+			else if (line.startsWith("id: ")) { id = line.slice(4); }
+			else if (line.startsWith("data: ")) { data = line.slice(6); }
+		});
+		if (id) { cursor = id; }
+		if (kind === "gap") { onGap(); return; }
+		if (kind !== "stage" || !data) { return; }
+		try { onFrame(JSON.parse(data)); } catch (err) { /* ignore a malformed frame */ }
+	}
+	function again() {
+		setLink("down", "Reconnecting");
+		resetNodes();
+		retry = setTimeout(openStream, 2000);
 	}
 
-	function scheduleReconnect() {
-		if (bearer === "" || reconnectTimer) {
-			return;
-		}
-		attachButton.textContent = "Attach";
-		attachButton.setAttribute("aria-pressed", "false");
-		reconnectTimer = setTimeout(function () {
-			reconnectTimer = 0;
-			openStream();
-		}, 1500);
+	// --- detail ---------------------------------------------------------
+	function row(list, name, value) {
+		if (!value) { return; }
+		list.append(el("dt", "", name), el("dd", "", value));
+	}
+	function showDetail(item) {
+		detail.textContent = "";
+		const close = el("button", "close", "Close");
+		close.type = "button";
+		close.addEventListener("click", function () { detail.hidden = true; });
+		const list = el("dl");
+		detail.append(close, el("h2", "", item.who + " " + (VERBS[item.op] || item.op)), list);
+		row(list, "When", new Date(item.at / 1000).toLocaleString());
+		row(list, "Result", ENDS[item.state] || "working");
+		row(list, "Took", item.took ? ms(item.took) : "");
+		row(list, "Model", item.model);
+		row(list, "Task", item.agentTag);
+		row(list, "Run", item.run);
+		row(list, "Key", item.key);
+		item.stages.forEach(function (stage) {
+			const node = nodes[stage[0]];
+			if (node) { row(list, node.el.querySelector("b").textContent, ms(stage[1])); }
+		});
+		detail.hidden = false;
+		fetch("/v1/requests/" + encodeURIComponent(item.id), { headers: headers(), cache: "no-store" })
+			.then(function (response) { return response.ok ? response.json() : null; })
+			.then(function (envelope) {
+				const evidence = envelope && envelope.result && envelope.result.evidence;
+				if (!evidence || detail.hidden) { return; }
+				row(list, "Source", evidence.source);
+				row(list, "Item", evidence.item_id);
+				row(list, "Record", evidence.kind.replace("_", " ") + " " + evidence.id.slice(0, 12));
+			})
+			.catch(function () { /* the summary above stands on its own */ });
 	}
 
-	function disconnect() {
-		if (reconnectTimer) {
-			clearTimeout(reconnectTimer);
-			reconnectTimer = 0;
-		}
-		if (controller) {
-			controller.abort();
-			controller = null;
-		}
-		if (detailController) {
-			detailController.abort();
-			detailController = null;
-		}
-		setStatus("Disconnected", false);
-		attachButton.textContent = "Attach";
-		attachButton.setAttribute("aria-pressed", "false");
+	// --- service health -------------------------------------------------
+	async function health() {
+		try {
+			const response = await fetch("/healthz", { cache: "no-store" });
+			alertBox.hidden = response.ok;
+			if (!response.ok) { alertBox.textContent = "Mousa stopped recording requests. Restart the service."; }
+		} catch (err) { /* the stream status covers an unreachable service */ }
 	}
 
-	attachButton.addEventListener("click", function () {
-		if (controller || reconnectTimer) {
-			bearer = "";
-			disconnect();
-			return;
-		}
-		bearer = tokenInput.value.trim();
-		tokenInput.value = "";
-		if (bearer === "") {
-			setStatus("Disconnected — enter an operator token", false);
-			return;
-		}
+	keyForm.addEventListener("submit", function (event) {
+		event.preventDefault();
+		bearer = keyInput.value.trim();
+		keyInput.value = "";
 		openStream();
 	});
-
-	function openDetail(requestID, button) {
-		button.setAttribute("aria-pressed", "true");
-		detailPanel.textContent = "";
-		detailPanel.appendChild(el("p", "detail-empty", "Loading verified record…"));
-		if (detailController) {
-			detailController.abort();
-		}
-		const mine = detailController = new AbortController();
-		fetch("/v1/requests/" + encodeURIComponent(requestID), {
-			headers: { Authorization: "Bearer " + bearer },
-			cache: "no-store",
-			signal: mine.signal,
-		}).then(function (response) {
-			if (!response.ok) {
-				throw new Error("status " + response.status);
-			}
-			return response.json();
-		}).then(function (envelope) {
-			if (mine.signal.aborted) {
-				return;
-			}
-			const entry = (envelope.result || envelope);
-			renderDetail(requestID, entry);
-		}).catch(function () {
-			if (mine.signal.aborted) {
-				return;
-			}
-			detailPanel.textContent = "";
-			detailPanel.appendChild(el("p", "detail-empty", "Verified record unavailable for this request."));
-		});
-	}
-
-	function detailRow(list, label, build) {
-		list.appendChild(el("dt", "", label));
-		const value = document.createElement("dd");
-		build(value);
-		list.appendChild(value);
-	}
-
-	function renderDetail(requestID, entry) {
-		detailPanel.textContent = "";
-		detailPanel.appendChild(el("h2", "", "Verified record"));
-		const list = document.createElement("dl");
-		const admission = entry.admission || {};
-		const outcome = entry.outcome || {};
-		const evidence = entry.evidence;
-
-		detailRow(list, "request", function (dd) {
-			dd.appendChild(el("code", "", requestID));
-		});
-		detailRow(list, "operation", function (dd) {
-			dd.textContent = admission.operation || "unknown";
-		});
-		detailRow(list, "identity", function (dd) {
-			const who = admission.principal || "anonymous";
-			dd.textContent = who + (admission.authenticated ? " ·authenticated" : " ·unauthenticated");
-		});
-		detailRow(list, "outcome", function (dd) {
-			dd.textContent = mapState(outcome.state) +
-				(outcome.seq ? " ·seq " + outcome.seq : "") +
-				(outcome.error_code ? " ·" + outcome.error_code : "");
-		});
-		if (outcome.finished_at_usec) {
-			detailRow(list, "finished", function (dd) {
-				dd.textContent = formatUsec(outcome.finished_at_usec);
-			});
-		}
-		if (evidence) {
-			detailRow(list, "evidence", function (dd) {
-				dd.textContent = evidence.kind || "";
-				if (evidence.id) {
-					dd.appendChild(document.createTextNode(" "));
-					dd.appendChild(el("code", "", evidence.id));
-				}
-			});
-			if (evidence.source_id) {
-				detailRow(list, "source id", function (dd) {
-					dd.appendChild(el("code", "", evidence.source_id));
-				});
-			}
-			if (evidence.source) {
-				detailRow(list, "source", function (dd) {
-					dd.textContent = evidence.source;
-				});
-			}
-			if (evidence.item_id) {
-				detailRow(list, "item", function (dd) {
-					dd.appendChild(el("code", "", evidence.item_id));
-				});
-			}
-			if (evidence.current) {
-				detailRow(list, "current", function (dd) {
-					dd.appendChild(el("code", "", evidence.current));
-				});
-			}
-			if (evidence.previous) {
-				detailRow(list, "previous", function (dd) {
-					dd.appendChild(el("code", "", evidence.previous));
-				});
-			}
-			if (evidence.note_author) {
-				detailRow(list, "note author", function (dd) {
-					dd.textContent = evidence.note_author;
-				});
-			}
-			if (evidence.cited_trails && evidence.cited_trails.length) {
-				detailRow(list, "cited trails", function (dd) {
-					for (const trail of evidence.cited_trails) {
-						dd.appendChild(el("code", "", trail));
-						dd.appendChild(document.createTextNode(" "));
-					}
-				});
-			}
-			if (evidence.sources && evidence.sources.length) {
-				detailRow(list, "sources", function (dd) {
-					for (const source of evidence.sources) {
-						dd.appendChild(el("code", "", source));
-						dd.appendChild(document.createTextNode(" "));
-					}
-				});
-			}
-		}
-		const model = rows.get(requestID);
-		if (model && model.stages.length) {
-			detailRow(list, "measured stages", function (dd) {
-				const seen = document.createElement("ul");
-				for (const stage of model.stages) {
-					const item = document.createElement("li");
-					item.textContent = stage.stage + " " + stage.phase +
-						(stage.duration_usec ? " " + stage.duration_usec + "µs" : "");
-					seen.appendChild(item);
-				}
-				dd.appendChild(seen);
-				dd.appendChild(el("p", "meta", "Stage timings are live observations, not part of the durable record."));
-			});
-		}
-		detailPanel.appendChild(list);
-	}
-
-	filterHarness.addEventListener("change", refreshAll);
-	filterOperation.addEventListener("change", refreshAll);
-	filterOutcome.addEventListener("change", refreshAll);
-	// Try without a credential first: a service started with --open-monitor
-	// streams at once; otherwise the refusal leaves the token field in use.
+	setInterval(paintAgents, 30000);
+	setInterval(health, 15000);
+	health();
 	openStream();
 })();

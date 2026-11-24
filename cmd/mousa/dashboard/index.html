@@ -3,62 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mousa — Live ledger</title>
+<title>Mousa</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header class="masthead">
-	<p class="eyebrow">Mousa</p>
-	<h1>Live ledger</h1>
-	<p class="tagline">Measured stages and verified records for every served request.</p>
+<header class="top">
+	<h1>Mousa</h1>
+	<p id="link" class="link" role="status"><span class="lamp"></span><span id="link-text">Connecting</span></p>
+	<form id="key-form" class="key" hidden>
+		<input id="key" type="password" autocomplete="off" spellcheck="false" aria-label="Token" placeholder="Token">
+		<button type="submit">Open</button>
+	</form>
 </header>
 
-<section class="attach" aria-label="Connection">
-	<label for="token">Operator token</label>
-	<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="operator token">
-	<button id="attach-button" type="button">Attach</button>
-	<p id="connection-status" role="status">Disconnected</p>
+<p id="alert" class="alert" hidden></p>
+
+<section class="flow" aria-label="Pipeline">
+	<div class="node shared" data-stage="receive"><b>Arrive</b><i></i></div>
+	<div class="node shared" data-stage="admission"><b>Log</b><i></i></div>
+	<div class="node shared" data-stage="access"><b>Permit</b><i></i></div>
+
+	<p class="lane" data-lane="query"><b>Search</b></p>
+	<div class="node" data-stage="retrieval"><b>Find</b><i></i></div>
+	<div class="node" data-stage="rank"><b>Rank</b><i></i></div>
+	<div class="node" data-stage="pack"><b>Pack</b><i></i></div>
+
+	<p class="lane" data-lane="note"><b>Remember</b></p>
+	<div class="node" data-stage="citations"><b>Cite</b><i></i></div>
+	<div class="node" data-stage="note"><b>Write</b><i></i></div>
+
+	<p class="lane" data-lane="document"><b>Document</b></p>
+	<div class="node" data-stage="represent"><b>Split</b><i></i></div>
+	<div class="node" data-stage="index"><b>Index</b><i></i></div>
+
+	<div class="node shared tail" data-stage="commit"><b>Save</b><i></i></div>
+	<div class="node shared tail" data-stage="response"><b>Reply</b><i></i></div>
 </section>
 
-<p id="gap-banner" class="gap-banner" hidden>Stage gap — live frames were lost; replaying the durable record.</p>
-
-<section class="filters" aria-label="Filters">
-	<label for="filter-harness">Harness
-		<select id="filter-harness">
-			<option value="">all</option>
-		</select>
-	</label>
-	<label for="filter-operation">Operation
-		<select id="filter-operation">
-			<option value="">all</option>
-			<option value="query">query</option>
-			<option value="note">note</option>
-			<option value="document">document</option>
-		</select>
-	</label>
-	<label for="filter-outcome">Outcome
-		<select id="filter-outcome">
-			<option value="">all</option>
-			<option value="in flight">in flight</option>
-			<option value="committed">committed</option>
-			<option value="no op">no op</option>
-			<option value="denied">denied</option>
-			<option value="failed">failed</option>
-		</select>
-	</label>
+<section class="agents" aria-label="Agents">
+	<h2>Agents</h2>
+	<ul id="agents"></ul>
 </section>
 
-<main class="ledger" aria-label="Requests">
-	<div class="lane-head" aria-hidden="true">
-		<span>identity</span><span>request</span><span>measured stages</span><span>verified record</span>
-	</div>
-	<p id="empty-note" class="empty">No traffic yet — attach an operator token and served requests appear here.</p>
-	<ol id="request-list" class="request-list"></ol>
-</main>
+<section class="recent" aria-label="Recent requests">
+	<h2>Recent</h2>
+	<p id="quiet" class="quiet">Nothing yet.</p>
+	<ol id="recent"></ol>
+</section>
 
-<aside id="request-detail" class="detail" aria-label="Request detail" aria-live="polite">
-	<p class="detail-empty">Select a request to inspect its verified record.</p>
-</aside>
+<aside id="detail" class="detail" aria-live="polite" hidden></aside>
 
 <script src="/app.js"></script>
 </body>

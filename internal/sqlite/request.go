@@ -378,6 +378,18 @@ func (store *Store) RequestHistory(ctx context.Context, after uint64, limit int)
 	return page, nil
 }
 
+// RequestHistoryTail returns the history cursor that precedes the newest limit
+// request outcomes, or zero when the store holds no more than that.
+func (store *Store) RequestHistoryTail(ctx context.Context, limit int) (uint64, error) {
+	var after uint64
+	err := store.db.QueryRowContext(ctx, `SELECT coalesce((SELECT seq FROM log
+		WHERE source_id IS NULL AND kind = 'request_outcome' ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)`, limit).Scan(&after)
+	if err != nil {
+		return 0, classify("read request history tail", err)
+	}
+	return after, nil
+}
+
 // RequestDetail verifies one completed request and resolves its evidence.
 // Missing and still in-flight requests read as not found.
 func (store *Store) RequestDetail(ctx context.Context, requestID string) (RequestHistoryDetail, error) {
