@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mousa — Live ledger</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="masthead">
+	<p class="eyebrow">Mousa</p>
+	<h1>Live ledger</h1>
+	<p class="tagline">Measured stages and verified records for every served request.</p>
+</header>
+
+<section class="attach" aria-label="Connection">
+	<label for="token">Operator token</label>
+	<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="operator token">
+	<button id="attach-button" type="button">Attach</button>
+	<p id="connection-status" role="status">Disconnected</p>
+</section>
+
+<p id="gap-banner" class="gap-banner" hidden>Stage gap — live frames were lost; replaying the durable record.</p>
+
+<section class="filters" aria-label="Filters">
+	<label for="filter-harness">Harness
+		<select id="filter-harness">
+			<option value="">all</option>
+		</select>
+	</label>
+	<label for="filter-operation">Operation
+		<select id="filter-operation">
+			<option value="">all</option>
+			<option value="query">query</option>
+			<option value="note">note</option>
+			<option value="document">document</option>
+		</select>
+	</label>
+	<label for="filter-outcome">Outcome
+		<select id="filter-outcome">
+			<option value="">all</option>
+			<option value="in flight">in flight</option>
+			<option value="committed">committed</option>
+			<option value="no op">no op</option>
+			<option value="denied">denied</option>
+			<option value="failed">failed</option>
+		</select>
+	</label>
+</section>
+
+<main class="ledger" aria-label="Requests">
+	<div class="lane-head" aria-hidden="true">
+		<span>identity</span><span>request</span><span>measured stages</span><span>verified record</span>
+	</div>
+	<p id="empty-note" class="empty">No traffic yet — attach an operator token and served requests appear here.</p>
+	<ol id="request-list" class="request-list"></ol>
+</main>
+
+<aside id="request-detail" class="detail" aria-label="Request detail" aria-live="polite">
+	<p class="detail-empty">Select a request to inspect its verified record.</p>
+</aside>
+
+<script src="/app.js"></script>
+</body>
+</html>

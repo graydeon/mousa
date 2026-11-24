@@ -30,8 +30,12 @@ const (
 )
 
 // RequireDocumentSource refuses document writes on a source that holds notes.
-// An absent or empty source is still a document source.
+// An absent or empty source is still a document source. Inside a document
+// batch it joins the scoped write transaction.
 func (store *Store) RequireDocumentSource(ctx context.Context, id mousa.SourceID) error {
+	if store.writeConn != nil {
+		return requireDocumentSource(ctx, store.writeConn, id)
+	}
 	return requireDocumentSource(ctx, store.db, id)
 }
 
@@ -259,48 +263,128 @@ func resolveNoteCitations(ctx context.Context, conn *sql.Conn, citations []mousa
 // the canonical record, its citation lookup rows, and its log leaf are written
 // and read back before commit. An identical retry returns the stored note.
 func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error) (mousa.Note, error) {
+	note, _, err := store.remember(ctx, sourceID, author, text, citations, permittedSources, apply, nil)
+	return note, err
+}
+
+// RememberAdmitted writes a note under a served request admission: the
+// authenticated principal authors the note, a denied destination maps to
+// access denied, and the request outcome commits with the note itself in the
+// same transaction. An identical existing note records a no-op that links the
+// original record while its author stays untouched; the returned flag reports
+// whether the note was created by this request.
+func (store *Store) RememberAdmitted(ctx context.Context, sourceID mousa.SourceID, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, admission mousa.RequestAdmission, apply func(*Store, string, int64) error) (mousa.Note, bool, error) {
+	return store.remember(ctx, sourceID, admission.Principal, text, citations, permittedSources, apply, &admission)
+}
+
+func (store *Store) remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error, admission *mousa.RequestAdmission) (mousa.Note, bool, error) {
 	if err := store.requireWritable("remember note"); err != nil {
-		return mousa.Note{}, err
+		return mousa.Note{}, false, err
 	}
 	var result mousa.Note
+	created := false
 	err := store.writeImmediate(ctx, "remember note", func(conn *sql.Conn) error {
-		if err := requireNoteDestination(ctx, conn, sourceID); err != nil {
+		if admission != nil {
+			finishAccess := store.StartStage(mousa.StageAccess)
+			accessErr := requireAllowedSource(ctx, conn, sourceID)
+			if accessErr == nil {
+				accessErr = requireNoteItems(ctx, conn, sourceID)
+			}
+			finishAccess(accessErr)
+			if accessErr != nil {
+				return accessErr
+			}
+		} else if err := requireNoteDestination(ctx, conn, sourceID); err != nil {
 			return err
 		}
+		var finishCitations func(error)
+		if len(citations) == 0 {
+			store.ObserveMarker(mousa.StageCitations, mousa.StagePhaseSkip, 0)
+			finishCitations = func(error) {}
+		} else {
+			finishCitations = store.StartStage(mousa.StageCitations)
+		}
 		resolved, err := resolveNoteCitations(ctx, conn, citations, permittedSources)
+		finishCitations(err)
 		if err != nil {
 			return err
 		}
 		contentDigest := mousa.SHA256(sha256.Sum256(text))
 		itemID := mousa.NoteItemID(contentDigest)
+		finishNote := store.StartStage(mousa.StageNote)
 		existing, _, err := getNote(ctx, conn, sourceID, itemID)
 		switch {
 		case err == nil:
+			if admission != nil {
+				// A replay returns the original canonical note; deny it
+				// when any originally cited trail lies outside the
+				// caller's read grants so the reply cannot reveal
+				// lineage the caller cannot resolve. The denial carries
+				// no note record or identifiers.
+				for _, citation := range existing.DerivedFrom {
+					trail, _, err := readTrailRecord(ctx, conn, citation.TrailID)
+					if err != nil {
+						finishNote(err)
+						return err
+					}
+					if err := checkTrailAccess(ctx, conn, trail, permittedSources); err != nil {
+						finishNote(err)
+						return err
+					}
+				}
+				if err := finishRequest(ctx, conn, *admission, mousa.RequestStateNoOp, "", mousa.RequestEvidence{NoteID: &existing.ID}); err != nil {
+					finishNote(err)
+					return err
+				}
+			}
 			result = existing
+			finishNote(nil)
 			return nil
 		case IsCode(err, CodeNotFound):
 		default:
+			finishNote(err)
 			return err
 		}
 		note, err := mousa.NewNote(sourceID, author, contentDigest, time.Now().UnixMicro(), resolved)
 		if err != nil {
-			return wrap(CodeInvalidRecord, "remember note", err)
+			err = wrap(CodeInvalidRecord, "remember note", err)
+			finishNote(err)
+			return err
 		}
 		if err := store.writeNote(ctx, conn, note, func(scoped *Store) error {
 			return apply(scoped, note.ItemID, note.CreatedAtUsec)
 		}); err != nil {
+			finishNote(err)
 			return err
 		}
+		if admission != nil {
+			if err := finishRequest(ctx, conn, *admission, mousa.RequestStateCommitted, "", mousa.RequestEvidence{NoteID: &note.ID}); err != nil {
+				finishNote(err)
+				return err
+			}
+		}
 		result = note
+		created = true
+		finishNote(nil)
 		return nil
 	})
 	if err != nil {
-		return mousa.Note{}, err
+		return mousa.Note{}, false, err
 	}
-	return result, nil
+	return result, created, nil
 }
 
 func requireNoteDestination(ctx context.Context, q queryer, sourceID mousa.SourceID) error {
+	if err := requireNoteAccess(ctx, q, sourceID); err != nil {
+		return err
+	}
+	return requireNoteItems(ctx, q, sourceID)
+}
+
+// requireNoteAccess keeps the offline conflict-coded destination check so
+// direct callers keep their existing error; admitted requests use the typed
+// access-denied variant.
+func requireNoteAccess(ctx context.Context, q queryer, sourceID mousa.SourceID) error {
 	decision, err := currentSourceDecision(ctx, q, sourceID)
 	if err != nil {
 		return err
@@ -308,8 +392,12 @@ func requireNoteDestination(ctx context.Context, q queryer, sourceID mousa.Sourc
 	if decision.Access != mousa.SourceAccessAllow || decision.WithdrawalID != nil {
 		return wrap(CodeConflict, "write note", errors.New("destination source must allow access and not be withdrawn"))
 	}
+	return nil
+}
+
+func requireNoteItems(ctx context.Context, q queryer, sourceID mousa.SourceID) error {
 	var documents bool
-	err = q.QueryRowContext(ctx, `SELECT EXISTS(
+	err := q.QueryRowContext(ctx, `SELECT EXISTS(
 		SELECT 1 FROM local_items li WHERE li.source_id = ? AND NOT EXISTS (
 			SELECT 1 FROM notes n WHERE n.source_id = li.source_id AND n.item_id = li.item_id
 		))`, sourceID[:]).Scan(&documents)
@@ -412,26 +500,53 @@ func (store *Store) ImportNotes(ctx context.Context, sourceID mousa.SourceID, no
 // noteStaleness evaluates every citation's current source and segment state.
 // The note stays immutable; the reasons describe what changed underneath it.
 func noteStaleness(ctx context.Context, q queryer, note mousa.Note) ([]NoteStale, error) {
+	_, stale, err := noteLineage(ctx, q, note, nil)
+	return stale, err
+}
+
+// noteLineage evaluates every citation against the caller's reach. A nil
+// grants map exposes the full durable lineage for offline and MCP reads. A
+// served caller sees only what its own read grants could resolve: a missing
+// or unauthorized cited trail drops the citation and its stale details
+// together, so the response never names lineage the caller could not reach.
+func noteLineage(ctx context.Context, q queryer, note mousa.Note, grants map[mousa.SourceID]bool) ([]mousa.NoteCitation, []NoteStale, error) {
+	citations := note.DerivedFrom
 	stale := []NoteStale{}
+	if grants != nil {
+		citations = []mousa.NoteCitation{}
+	}
 	for _, citation := range note.DerivedFrom {
 		trail, _, err := readTrailRecord(ctx, q, citation.TrailID)
 		if IsCode(err, CodeNotFound) {
-			stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteCitationUnverifiable})
+			if grants == nil {
+				stale = append(stale, NoteStale{TrailID: citation.TrailID, Reason: noteCitationUnverifiable})
+			}
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if grants != nil {
+			if err := checkTrailAccess(ctx, q, trail, grants); err != nil {
+				if IsCode(err, CodeNotFound) {
+					continue
+				}
+				return nil, nil, err
+			}
 		}
 		if err := checkTrailReferences(ctx, q, trail); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		reasons, err := citationStaleness(ctx, q, trail, citation.SegmentIDs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		stale = append(stale, reasons...)
+		if grants != nil {
+			citations = append(citations, citation)
+		}
 	}
-	return stale, nil
+	return citations, stale, nil
 }
 
 func citationStaleness(ctx context.Context, q queryer, trail mousa.Trail, segments []mousa.SegmentID) ([]NoteStale, error) {
@@ -481,12 +596,12 @@ func citationStaleness(ctx context.Context, q queryer, trail mousa.Trail, segmen
 	return stale, nil
 }
 
-func queryNoteEvidence(ctx context.Context, q queryer, source mousa.SourceID, item string) (*mousa.NoteEvidence, error) {
+func queryNoteEvidence(ctx context.Context, q queryer, source mousa.SourceID, item string, grants map[mousa.SourceID]bool) (*mousa.NoteEvidence, error) {
 	note, _, err := getNote(ctx, q, source, item)
 	if err != nil {
 		return nil, lexicalStructuralError("read note passage", err)
 	}
-	stale, err := noteStaleness(ctx, q, note)
+	citations, stale, err := noteLineage(ctx, q, note, grants)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +611,7 @@ func queryNoteEvidence(ctx context.Context, q queryer, source mousa.SourceID, it
 	}
 	return &mousa.NoteEvidence{
 		ID: note.ID, Author: note.Author, CreatedAtUsec: note.CreatedAtUsec,
-		DerivedFrom: note.DerivedFrom, Origin: origin, Stale: stale,
+		DerivedFrom: citations, Origin: origin, Stale: stale,
 	}, nil
 }
 

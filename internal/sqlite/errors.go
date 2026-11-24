@@ -13,6 +13,7 @@ type Code string
 const (
 	CodeInvalidRecord      Code = "invalid_record"
 	CodeInvalidQuery       Code = "invalid_query"
+	CodeAccessDenied       Code = "access_denied"
 	CodeResourceLimit      Code = "resource_limit"
 	CodeNotFound           Code = "not_found"
 	CodeConflict           Code = "conflict"

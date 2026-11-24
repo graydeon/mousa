@@ -29,6 +29,18 @@ var errQueryHeadMoved = errors.New("query snapshot source head moved")
 // Query reads a snapshot and records its trail before releasing passages. A
 // source changing during the gap between read and write forces a fresh read.
 func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mousa.QueryResult, error) {
+	return store.query(ctx, request, nil)
+}
+
+// QueryAdmitted runs a query under a served request admission. The caller and
+// request id come from the admission, never the request body, and the stored
+// trail binds the outcome in the transaction that commits it.
+func (store *Store) QueryAdmitted(ctx context.Context, request mousa.QueryRequest, admission mousa.RequestAdmission) (mousa.QueryResult, error) {
+	request.Caller, request.RequestID = admission.Principal, admission.RequestID
+	return store.query(ctx, request, &admission)
+}
+
+func (store *Store) query(ctx context.Context, request mousa.QueryRequest, admission *mousa.RequestAdmission) (mousa.QueryResult, error) {
 	if err := store.requireWritable("query"); err != nil {
 		return mousa.QueryResult{}, err
 	}
@@ -65,20 +77,32 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 	if err := req.Validate(); err != nil {
 		return mousa.QueryResult{}, wrap(CodeInvalidQuery, "query", err)
 	}
-	for range 2 {
-		result, err := store.queryReadThenWrite(ctx, req, request.PermittedSources)
+	// Served callers see only the note lineage their own read grants could
+	// resolve; direct and MCP reads keep the full durable citation record.
+	var noteGrants map[mousa.SourceID]bool
+	if admission != nil {
+		noteGrants = request.PermittedSources
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		result, err := store.queryReadThenWrite(ctx, req, request.PermittedSources, noteGrants, admission)
 		if !errors.Is(err, errQueryHeadMoved) {
 			return result, err
 		}
+		// A moved head retries the whole read; the marker carries the next
+		// attempt number so retries are distinguishable from first runs.
+		store.ObserveMarker(mousa.StageRetrieval, mousa.StagePhaseRetry, attempt+1)
 	}
 	var result mousa.QueryResult
 	err := store.writeImmediate(ctx, "query and append trail", func(conn *sql.Conn) error {
 		var err error
-		result, err = store.querySnapshot(ctx, conn, req, request.PermittedSources)
+		result, err = store.querySnapshot(ctx, conn, req, request.PermittedSources, noteGrants)
 		if err != nil {
 			return err
 		}
-		return putTrail(ctx, conn, result.Trail)
+		if err := putTrail(ctx, conn, result.Trail); err != nil {
+			return err
+		}
+		return finishTrailOutcome(ctx, conn, admission, result.Trail)
 	})
 	if err != nil {
 		return mousa.QueryResult{}, err
@@ -86,8 +110,8 @@ func (store *Store) Query(ctx context.Context, request mousa.QueryRequest) (mous
 	return result, nil
 }
 
-func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
-	result, err := store.readQuerySnapshot(ctx, req, grants)
+func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailRequest, grants, noteGrants map[mousa.SourceID]bool, admission *mousa.RequestAdmission) (mousa.QueryResult, error) {
+	result, err := store.readQuerySnapshot(ctx, req, grants, noteGrants)
 	if err != nil {
 		return mousa.QueryResult{}, err
 	}
@@ -113,7 +137,10 @@ func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailReque
 				return errQueryHeadMoved
 			}
 		}
-		return putTrail(ctx, conn, result.Trail)
+		if err := putTrail(ctx, conn, result.Trail); err != nil {
+			return err
+		}
+		return finishTrailOutcome(ctx, conn, admission, result.Trail)
 	})
 	if err != nil {
 		return mousa.QueryResult{}, err
@@ -121,13 +148,26 @@ func (store *Store) queryReadThenWrite(ctx context.Context, req mousa.TrailReque
 	return result, nil
 }
 
-func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+// finishTrailOutcome binds a stored query trail to its request outcome in the
+// same write transaction. A scope whose named sources all resolve denied is a
+// denied outcome that keeps the trail; every other stored trail commits.
+func finishTrailOutcome(ctx context.Context, conn *sql.Conn, admission *mousa.RequestAdmission, trail mousa.Trail) error {
+	if admission == nil {
+		return nil
+	}
+	state, code := mousa.RequestTrailState(trail)
+	return finishRequest(ctx, conn, *admission, state, code, mousa.RequestEvidence{TrailID: &trail.ID})
+}
+
+func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailRequest, grants, noteGrants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+	finishQueue := store.StartStage(mousa.StageQueue)
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	finishQueue(err)
 	if err != nil {
 		return mousa.QueryResult{}, classify("begin query snapshot", err)
 	}
 	defer tx.Rollback()
-	result, err := store.querySnapshot(ctx, tx, req, grants)
+	result, err := store.querySnapshot(ctx, tx, req, grants, noteGrants)
 	if err != nil {
 		return mousa.QueryResult{}, err
 	}
@@ -137,23 +177,30 @@ func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailReques
 	return result, nil
 }
 
-func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.TrailRequest, grants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.TrailRequest, grants, noteGrants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
+	// The access stage covers scope resolution, grant checks, and each
+	// source's verified access decision — the reads that gate evidence.
+	finishAccess := store.StartStage(mousa.StageAccess)
 	if req.Scope.Kind == "collection" {
 		sources, err := collectionSources(ctx, q, req.Scope.Name)
 		if err != nil {
+			finishAccess(err)
 			return mousa.QueryResult{}, err
 		}
 		req.Scope.Sources = sources
 	}
 	if err := requireSourceGrants(req.Scope.Sources, grants); err != nil {
+		finishAccess(err)
 		return mousa.QueryResult{}, err
 	}
 	trail := mousa.Trail{Request: req, Sources: make([]mousa.SourceDecision, 0, len(req.Scope.Sources))}
 	if err := q.QueryRowContext(ctx, logIndexSQL).Scan(&trail.AsOf); err != nil {
+		finishAccess(err)
 		return mousa.QueryResult{}, classify("query log index", err)
 	}
 	storeID, err := getStoreID(ctx, q)
 	if err != nil {
+		finishAccess(err)
 		return mousa.QueryResult{}, err
 	}
 	trail.StoreID = storeID.String()
@@ -162,11 +209,13 @@ func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.Trai
 	for _, id := range req.Scope.Sources {
 		decision, err := currentSourceDecision(ctx, q, id)
 		if err != nil {
+			finishAccess(err)
 			return mousa.QueryResult{}, err
 		}
 		if decision.Outcome == "allow" {
 			head, err := sourceHeadAt(ctx, q, id, trail.AsOf)
 			if err != nil {
+				finishAccess(err)
 				return mousa.QueryResult{}, err
 			}
 			decision.Head = &head
@@ -174,15 +223,22 @@ func (store *Store) querySnapshot(ctx context.Context, q queryer, req mousa.Trai
 			allowedSet[id] = true
 		}
 		if err := checkTrailSource(ctx, q, trail.AsOf, decision); err != nil {
+			finishAccess(err)
 			return mousa.QueryResult{}, err
 		}
 		trail.Sources = append(trail.Sources, decision)
 	}
+	finishAccess(nil)
 	passages := []mousa.Passage{}
 	if len(allowed) != 0 {
-		passages, err = store.retrieveForTrail(ctx, q, &trail, allowed, allowedSet)
+		passages, err = store.retrieveForTrail(ctx, q, &trail, allowed, allowedSet, noteGrants)
 		if err != nil {
 			return mousa.QueryResult{}, err
+		}
+	} else {
+		// A scope with no allowed source never reaches retrieval.
+		for _, stage := range []mousa.Stage{mousa.StageRetrieval, mousa.StageRank, mousa.StagePack} {
+			store.ObserveMarker(stage, mousa.StagePhaseSkip, 0)
 		}
 	}
 	sealed, err := mousa.NewTrail(trail)
@@ -240,7 +296,7 @@ type queryCandidate struct {
 	text      string
 }
 
-func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mousa.Trail, allowed []mousa.SourceID, allowedSet map[mousa.SourceID]bool) ([]mousa.Passage, error) {
+func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mousa.Trail, allowed []mousa.SourceID, allowedSet, noteGrants map[mousa.SourceID]bool) ([]mousa.Passage, error) {
 	req := trail.Request
 	getProposals := store.propose
 	if getProposals == nil {
@@ -251,9 +307,11 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		retrieval.Fusion = "rrf-k60-v1"
 	}
 	candidates := make(map[mousa.SegmentID]*queryCandidate)
+	finishRetrieval := store.StartStage(mousa.StageRetrieval)
 	for i, text := range req.Texts {
 		quoted, err := mousa.PrepareLexicalTerms(text, false)
 		if err != nil {
+			finishRetrieval(err)
 			return nil, wrap(CodeInvalidQuery, "prepare lexical query", err)
 		}
 		branch := mousa.Branch{Kind: "lexical", Scoring: mousa.ScopedBM25, TermPolicy: "original", Text: i}
@@ -263,11 +321,14 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		}
 		proposals, err := getProposals(ctx, q, strings.Join(quoted, " OR "), allowed, req.Limit)
 		if err != nil {
+			finishRetrieval(err)
 			return nil, err
 		}
 		branch.Proposed = len(proposals)
 		if len(proposals) > req.Limit {
-			return nil, integrity("query proposals", "proposer exceeded the candidate limit")
+			err := integrity("query proposals", "proposer exceeded the candidate limit")
+			finishRetrieval(err)
+			return nil, err
 		}
 		for _, proposed := range proposals {
 			row, exists := candidates[proposed.SegmentID]
@@ -278,6 +339,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 					branch.DroppedUnknown++
 					continue
 				case err != nil:
+					finishRetrieval(err)
 					return nil, err
 				case row == nil:
 					branch.DroppedNotAllowed++
@@ -286,7 +348,9 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 				candidates[proposed.SegmentID] = row
 			}
 			if proposed.Sources != nil && !slices.Equal(proposed.Sources, row.candidate.SourceIDs) {
-				return nil, integrity("verify query scope", "proposal shard disagrees with canonical ancestry")
+				err := integrity("verify query scope", "proposal shard disagrees with canonical ancestry")
+				finishRetrieval(err)
+				return nil, err
 			}
 			if proposed.ContentSHA256 != row.candidate.ContentSHA256 {
 				row.candidate.Rejected = []string{"content_mismatch"}
@@ -297,13 +361,18 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		}
 		retrieval.Branches = append(retrieval.Branches, branch)
 	}
+	finishRetrieval(nil)
 	rows := make([]mousa.Candidate, 0, len(candidates))
 	for _, row := range candidates {
 		rows = append(rows, row.candidate)
 	}
-	if err := mousa.RankCandidates(rows, len(req.Texts)); err != nil {
+	finishRank := store.StartStage(mousa.StageRank)
+	err := mousa.RankCandidates(rows, len(req.Texts))
+	finishRank(err)
+	if err != nil {
 		return nil, wrap(CodeIntegrity, "rank candidates", err)
 	}
+	finishPack := store.StartStage(mousa.StagePack)
 	packing := mousa.ApplyFirstFit(rows, req.Budget.Limit)
 	trail.Candidates, trail.Packing, trail.Retrieval = rows, &packing, retrieval
 	passages := []mousa.Passage{}
@@ -312,13 +381,15 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 			continue
 		}
 		row := candidates[candidate.SegmentID]
-		passage, err := queryPassage(ctx, q, row)
+		passage, err := queryPassage(ctx, q, row, noteGrants)
 		if err != nil {
+			finishPack(err)
 			return nil, err
 		}
 		passage.Rank = candidate.Rank
 		passages = append(passages, passage)
 	}
+	finishPack(nil)
 	return passages, nil
 }
 
@@ -379,7 +450,7 @@ func evidenceSourceIDs(paths []mousa.EvidencePath) []mousa.SourceID {
 
 func compareSourceIDs(a, b mousa.SourceID) int { return bytes.Compare(a[:], b[:]) }
 
-func queryPassage(ctx context.Context, q queryer, row *queryCandidate) (mousa.Passage, error) {
+func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrants map[mousa.SourceID]bool) (mousa.Passage, error) {
 	candidate := row.candidate
 	id := candidate.SourceIDs[0]
 	var path mousa.EvidencePath
@@ -421,7 +492,7 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate) (mousa.Pa
 		return mousa.Passage{}, wrap(CodeIntegrity, "read query passage policy", err)
 	}
 	if passage.SegmentPolicy == mousa.TextSegmentNoteV1 {
-		passage.Note, err = queryNoteEvidence(ctx, q, id, item)
+		passage.Note, err = queryNoteEvidence(ctx, q, id, item, noteGrants)
 		if err != nil {
 			return mousa.Passage{}, err
 		}

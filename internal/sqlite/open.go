@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	modernsqlite "modernc.org/sqlite"
+
+	"github.com/graydeon/mousa/internal/mousa"
 )
 
 // Store owns one physical SQLite connection.
@@ -20,6 +22,9 @@ type Store struct {
 	// Scoped copies of Store let item writers join the owning transaction.
 	writeConn *sql.Conn
 	noteWrite bool
+	// observe reports stage observations for one served request; nil for
+	// direct store use.
+	observe func(mousa.StageObservation)
 }
 
 // Open opens or creates a writable canonical record store.

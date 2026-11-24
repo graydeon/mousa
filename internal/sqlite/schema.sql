@@ -243,6 +243,19 @@ CREATE TABLE note_citations (
     PRIMARY KEY (note_id, citation_ordinal, segment_ordinal)
 ) STRICT;
 
+-- Served-request admissions and their single terminal outcomes. Both record
+-- ids are SHA-256 of the request id; an outcome references its admission.
+CREATE TABLE request_admissions (
+    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32)),
+    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0)
+) STRICT;
+
+CREATE TABLE request_outcomes (
+    id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 32 AND id != zeroblob(32))
+        REFERENCES request_admissions(id) ON DELETE RESTRICT,
+    record_json BLOB NOT NULL CHECK (typeof(record_json) = 'blob' AND length(record_json) > 0)
+) STRICT;
+
 -- The random identity given to this store when it was created. Exactly one row.
 CREATE TABLE store_identity (
     id BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16)
@@ -266,12 +279,15 @@ CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 -- record_id.
 CREATE TABLE log (
     seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind TEXT NOT NULL COLLATE BINARY CHECK (kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note', 'trail')),
+    kind TEXT NOT NULL COLLATE BINARY,
     record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
     source_id BLOB CHECK (source_id IS NULL OR (length(source_id) = 32 AND source_id != zeroblob(32))) REFERENCES sources(id) ON DELETE RESTRICT,
     leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),
     UNIQUE (kind, record_id),
-    CHECK ((kind = 'trail') = (source_id IS NULL))
+    CHECK (CASE WHEN source_id IS NULL
+        THEN kind IN ('trail', 'request_admission', 'request_outcome')
+        ELSE kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note')
+    END)
 ) STRICT;
 
 CREATE INDEX log_source_kind_seq_idx ON log(source_id, kind, seq);

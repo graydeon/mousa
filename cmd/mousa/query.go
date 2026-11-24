@@ -8,16 +8,17 @@ import (
 )
 
 // queryCommand names its source with a directory argument or --source, and
-// always takes the query text as the remaining argument.
-func queryCommand(ctx context.Context, storePath string, args []string) error {
+// always takes the query text as the remaining argument. With an endpoint
+// client the scope stays external and travels in the request body.
+func queryCommand(ctx context.Context, storePath string, client *nativeClient, args []string) error {
 	flags := newCommandFlags("query")
-	var sources []mousa.SourceID
+	var externalSources []string
 	flags.Func("source", "external source ID (repeatable)", func(value string) error {
-		source, err := streamSource(value)
-		if err == nil {
-			sources = append(sources, source.ID)
+		if _, err := streamSource(value); err != nil {
+			return err
 		}
-		return err
+		externalSources = append(externalSources, value)
+		return nil
 	})
 	collection := flags.String("collection", "", "named collection instead of explicit sources")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
@@ -34,6 +35,17 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 	positional := flags.Args()
 	if len(positional) == 0 {
 		return usageError{"query requires a source and query text"}
+	}
+	if client != nil {
+		return runEndpointQuery(ctx, client, externalSources, *collection, *budget, positional)
+	}
+	var sources []mousa.SourceID
+	for _, external := range externalSources {
+		source, err := streamSource(external)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, source.ID)
 	}
 	scope := mousa.Scope{Collection: *collection}
 	switch {
@@ -69,4 +81,31 @@ func queryCommand(ctx context.Context, storePath string, args []string) error {
 		return err
 	}
 	return emit(result)
+}
+
+// runEndpointQuery sends the query to the served store. Directory scopes have
+// no external identifier and stay offline.
+func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources []string, collection string, budget uint64, positional []string) error {
+	scope := nativeScope{Collection: collection}
+	switch {
+	case collection != "" || len(externalSources) != 0:
+		if len(positional) != 1 || (collection != "" && len(externalSources) != 0) {
+			return usageError{"choose --source IDs or --collection"}
+		}
+		if len(externalSources) == 1 {
+			scope.Source = externalSources[0]
+		} else {
+			scope.Sources = externalSources
+		}
+	default:
+		return usageError{"endpoint query requires --source or --collection; directory scopes stay offline"}
+	}
+	result, err := client.post(ctx, "/v1/query", nativeQuery{
+		nativeLabels: nativeLabels{Client: client.metadata},
+		Scope:        scope, Text: positional[len(positional)-1], BudgetBytes: budget,
+	})
+	if err != nil {
+		return err
+	}
+	return emitRawResult(result)
 }

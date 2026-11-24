@@ -266,6 +266,160 @@ secure erasure: canonical records keep digests rather than old text, but copies
 can remain in free pages, WAL files, backups and previously released output.
 Retention limits and erasure are not handled yet.
 
+## Local served store (opt-in)
+
+`mousa -store STORE serve --config FILE [--listen 127.0.0.1:PORT]` owns the
+store and serves JSON request endpoints, an operator request stream, and an
+embedded dashboard over loopback HTTP only. It is a separate opt-in surface
+for local automation: the offline CLI and MCP keep working unchanged on stores
+that are not served.
+
+A served store must be created by this binary's current schema. Every command
+refuses a store written by an earlier Mousa schema **without modifying it** —
+there is no migration. To roll back, keep using the prior binary against the
+prior store; to serve, create a fresh store and re-sync it from its sources.
+
+### Sources and credentials
+
+Grant external sources offline before starting the daemon; `serve` has no
+allow option:
+
+```sh
+./mousa -store STORE access --source inspection-notes --create allow
+./mousa -store STORE access --source memory --create allow
+```
+
+The serve config names principals by SHA-256 verifier, so raw tokens never
+enter the config, the store, or the log:
+
+```json
+{
+  "principals": [
+    {"id": "writer", "token_sha256": "…64 lowercase hex…",
+     "read_sources": ["inspection-notes", "memory"], "write_sources": ["inspection-notes", "memory"]},
+    {"id": "reader", "token_sha256": "…", "read_sources": ["inspection-notes"]},
+    {"id": "monitor", "token_sha256": "…", "read_sources": [], "operator": true}
+  ]
+}
+```
+
+Keep write, read and monitor (operator) credentials separate; `operator: true`
+grants metadata-only monitor reads and never bypasses per-source read or write
+denial. Mint each token into the caller's environment rather than argv or a
+file — for an interactive shell `read -rs TOKEN` then export it — and record
+only its verifier: `printf '%s' "$TOKEN" | sha256sum`. A nonoperator principal
+gets a denied outcome for requests outside its grants and `403` on the monitor
+endpoints; the daemon never reveals whether another principal exists.
+
+Save the verifiers to a private config file, then run the daemon in a
+separate terminal. It prints its bound loopback URL on startup.
+
+```sh
+./mousa -store STORE serve --listen 127.0.0.1:8787 --config PRINCIPALS.json
+```
+
+Open the printed URL in your browser and attach with the monitor token.
+Use a caller token, not the monitor token, for the smoke commands.
+
+### Requests and replies
+
+`POST /v1/query`, `POST /v1/notes` and `POST /v1/documents` accept one JSON
+object each with typed fields:
+
+- `/v1/query`: `{"scope":{"source"|"sources"|"collection"},"text","budget_bytes"}`
+- `/v1/notes`: `{"scope":{"source"},"text","citations":[{"trail_id","segment_ids"}]}`
+- `/v1/documents`: `{"source","record":{"id","text"|"deleted"},"segment_policy"}`
+
+Any request may add a `client` object (`harness`, `agent`, `model`, `run_id`).
+These are caller-reported labels recorded for the audit trail — never place
+secrets or sensitive metadata in them. Every reply carries the request's own
+ID in `request_id` (and the `X-Mousa-Request-ID` header), and errors are typed
+(`unauthorized`, `forbidden`, `invalid_request`, `source_denied`, `too_large`,
+`busy`, `conflict`, `not_found`, `canceled`, `internal`,
+`coverage_unavailable`).
+
+A note whose `citations` name trails the caller cannot read is denied, and a
+replay of note text whose original citations are inaccessible is denied the
+same way — a caller authorized for the note's source sees the shared text but
+cited trails and stale reasons outside its read grants are omitted from the
+note evidence rather than revealed.
+
+### CLI over the endpoint
+
+The same binary talks to a served store without holding it open:
+
+```sh
+export MOUSA_TOKEN="$TOKEN"
+printf '%s\n' '{"id":"inspection","text":"The harbor inspection moved to Friday."}' |
+  ./mousa -endpoint http://127.0.0.1:8787 sync --source inspection-notes
+./mousa -endpoint http://127.0.0.1:8787 query --source inspection-notes 'harbor inspection'
+./mousa -endpoint http://127.0.0.1:8787 remember --source memory 'note text'
+```
+
+`-endpoint` supports only `query`, `remember`, and `sync --source`; the sync
+form posts each JSONL line on stdin as one request. The HTTP envelope carries
+the request ID; the CLI prints the result or a typed endpoint error with
+its request ID. If audit recording fails, `coverage_unavailable` indicates
+that the daemon cannot attest complete coverage. A transport failure means
+the outcome is **unknown** — the request may or may not have landed, so
+the client never retries silently. Check
+`GET /v1/requests/{request_id}` (operator) when in doubt.
+
+### Audit history and live stages
+
+Every served request is admitted to the durable audit loop before work —
+unauthenticated, malformed, oversized, busy and canceled attempts included —
+and normally finished with one terminal outcome (`committed`, `no_op`,
+`denied`, `invalid`, `failed`, `canceled`, `interrupted`). Monitor endpoints (`/v1/requests`,
+`/v1/events`), `healthz`, dashboard assets and unknown routes are deliberately
+**not** audited. `GET /v1/requests?after=SEQ&limit=N` pages the verified
+history with `next_after`/`more`; `GET /v1/requests/{request_id}` returns one
+entry's verified admission, outcome and evidence reference. Both are
+operator-only and carry metadata across all sources, never request or note
+bodies.
+
+`GET /v1/events` streams live stage observations (`receive` through
+`response`) as SSE for up to 8 concurrent operator viewers, identified
+`{epoch}:{seq}` per service run. The ring is a bounded buffer of recent
+frames, not a permanent record: on overflow or restart the stream emits an
+explicit `gap` event and the client must re-read the durable history via
+`/v1/requests` — terminal records there are the authoritative record a viewer
+reconnects against. Reconnecting with `Last-Event-ID` resumes retained frames
+without duplicates; an unknown or foreign cursor produces a `gap`, never
+silent misses. Stage timings are measurements, not archive: after a gap the
+dashboard shows measured stages only for newly observed requests.
+
+The dashboard at `/` is same-origin, holds the operator token only in page
+memory, and renders the live ledger plus verified per-request detail. It is a
+local surface — keep the daemon on loopback and do not publicize its address.
+
+### Stop, verify, and back up
+
+Stop the daemon with terminal Ctrl-C (SIGINT/SIGTERM); it cancels and drains
+in-flight requests. On restart, admissions left without outcomes are marked
+interrupted. After stopping run
+`mousa -store STORE verify` (and `verify --log` for sequence coverage) exactly
+as for an offline store.
+
+For backups use SQLite's online Backup API or the `.backup` command of the
+`sqlite3` interpreter into an entirely new path, never a raw copy of the
+database or WAL file:
+
+```sh
+sqlite3 STORE ".backup 'STORE.snap'"
+./mousa -store STORE.snap verify
+sqlite3 STORE.snap ".backup 'STORE.restored'"
+./mousa -store STORE.restored verify
+```
+
+Use the restored path only after verification passes. The
+[SQLite backup checklist](../examples/backup/README.md) exercises the
+same API against fixture passages.
+
+Automation can consume the verified history without the dashboard; see
+[examples/automation/README.md](../examples/automation/README.md) for a
+loopback-only revision forwarder.
+
 ## Local MCP usage
 
 The same executable serves MCP `2025-11-25` over stdio, backed directly by the

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -80,6 +81,17 @@ func (store *Store) setSourceAccess(ctx context.Context, sourceID mousa.SourceID
 		return mousa.AccessEvent{}, false, err
 	}
 	return current, changed, nil
+}
+
+func requireAllowedSource(ctx context.Context, q queryer, sourceID mousa.SourceID) error {
+	decision, err := currentSourceDecision(ctx, q, sourceID)
+	if err != nil {
+		return err
+	}
+	if decision.Access != mousa.SourceAccessAllow || decision.WithdrawalID != nil {
+		return wrap(CodeAccessDenied, "require allowed source", errors.New("source access is denied or the source is withdrawn"))
+	}
+	return nil
 }
 
 // currentAccessEvent reads every access-event leaf of the source in log order, checks each

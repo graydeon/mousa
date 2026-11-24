@@ -164,6 +164,56 @@ func decodeItemString(raw []byte) (string, error) {
 	return value, nil
 }
 
+// scanItemStream walks one bounded JSONL item stream and visits each valid,
+// non-duplicate record in line order. The stream, record, and record-count
+// limits and the recordError line attribution are identical for the offline
+// store writer and the served endpoint client.
+func scanItemStream(ctx context.Context, input io.Reader, visit func(line int, raw []byte, record itemRecord) error) error {
+	limited := &io.LimitedReader{R: input, N: maxItemStreamBytes + 1}
+	scanner := bufio.NewScanner(limited)
+	// Allow a maximum-sized record followed by CRLF, then check record size.
+	scanner.Buffer(make([]byte, 0, 64<<10), maxItemRecordBytes+2)
+	line := 0
+	seen := make(map[string]int)
+	for scanner.Scan() {
+		line++
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if limited.N == 0 {
+			return recordError{Line: line, Err: fmt.Errorf("input exceeds %d bytes", maxItemStreamBytes)}
+		}
+		raw := scanner.Bytes()
+		if len(raw) > maxItemRecordBytes {
+			return recordError{Line: line, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			continue
+		}
+		if len(seen) == maxItemRecords {
+			return recordError{Line: line, Err: fmt.Errorf("input exceeds %d records", maxItemRecords)}
+		}
+		record, err := decodeItemRecord(raw)
+		if err != nil {
+			return recordError{Line: line, Err: err}
+		}
+		if first, duplicate := seen[record.ID]; duplicate {
+			return recordError{Line: line, Err: fmt.Errorf("item %q was already named on line %d", record.ID, first)}
+		}
+		seen[record.ID] = line
+		if err := visit(line, raw, record); err != nil {
+			return err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return recordError{Line: line + 1, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
+		}
+		return recordError{Line: line + 1, Err: err}
+	}
+	return nil
+}
+
 func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input io.Reader, segmentPolicy string, allow bool) error {
 	started := time.Now()
 	source, err := streamSource(externalSourceID)
@@ -180,11 +230,6 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 	}
 	result := syncResult{Source: externalSourceID, Input: inputJSONL, SegmentPolicy: segmentPolicy}
 	lineOf := make(map[string]int)
-	limited := &io.LimitedReader{R: input, N: maxItemStreamBytes + 1}
-	scanner := bufio.NewScanner(limited)
-	// Allow a maximum-sized record followed by CRLF, then check record size.
-	scanner.Buffer(make([]byte, 0, 64<<10), maxItemRecordBytes+2)
-	line := 0
 	pending := make([]itemInput, 0, syncBatchItems)
 	flush := func() error {
 		batch := pending
@@ -196,53 +241,18 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 		}
 		return nil
 	}
-	scan := func() error {
-		for scanner.Scan() {
-			line++
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if limited.N == 0 {
-				return recordError{Line: line, Err: fmt.Errorf("input exceeds %d bytes", maxItemStreamBytes)}
-			}
-			raw := scanner.Bytes()
-			if len(raw) > maxItemRecordBytes {
-				return recordError{Line: line, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
-			}
-			if len(bytes.TrimSpace(raw)) == 0 {
-				continue
-			}
-			if len(lineOf) == maxItemRecords {
-				return recordError{Line: line, Err: fmt.Errorf("input exceeds %d records", maxItemRecords)}
-			}
-			record, err := decodeItemRecord(raw)
-			if err != nil {
-				return recordError{Line: line, Err: err}
-			}
-			if first, duplicate := lineOf[record.ID]; duplicate {
-				return recordError{Line: line, Err: fmt.Errorf("item %q was already named on line %d", record.ID, first)}
-			}
-			lineOf[record.ID] = line
-			item := itemInput{ID: record.ID, Deleted: record.Deleted}
-			if record.Text != nil {
-				item.Content = []byte(*record.Text)
-			}
-			pending = append(pending, item)
-			if len(pending) == syncBatchItems {
-				if err := flush(); err != nil {
-					return err
-				}
-			}
+	scanErr := scanItemStream(ctx, input, func(line int, raw []byte, record itemRecord) error {
+		lineOf[record.ID] = line
+		item := itemInput{ID: record.ID, Deleted: record.Deleted}
+		if record.Text != nil {
+			item.Content = []byte(*record.Text)
 		}
-		if err := scanner.Err(); err != nil {
-			if errors.Is(err, bufio.ErrTooLong) {
-				return recordError{Line: line + 1, Err: fmt.Errorf("record exceeds %d bytes", maxItemRecordBytes)}
-			}
-			return recordError{Line: line + 1, Err: err}
+		pending = append(pending, item)
+		if len(pending) == syncBatchItems {
+			return flush()
 		}
 		return nil
-	}
-	scanErr := scan()
+	})
 	if err := flush(); err != nil {
 		return err
 	}
@@ -258,6 +268,38 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 	if info, err := os.Stat(storePath); err == nil {
 		result.StoreBytes = info.Size()
 	}
+	result.ElapsedSecs = time.Since(started).Seconds()
+	return emit(result)
+}
+
+// runSyncEndpoint streams the same records to the served store, one request
+// per row and no retry of an unknown outcome. A failure after a committed
+// prefix says exactly how many rows the service confirmed.
+func runSyncEndpoint(ctx context.Context, client *nativeClient, externalSourceID string, input io.Reader, segmentPolicy string) error {
+	started := time.Now()
+	result := syncResult{Source: externalSourceID, Input: inputJSONL, SegmentPolicy: segmentPolicy}
+	committed := 0
+	scanErr := scanItemStream(ctx, input, func(line int, raw []byte, record itemRecord) error {
+		response, err := client.post(ctx, "/v1/documents", nativeDocument{
+			nativeLabels: nativeLabels{Client: client.metadata},
+			Source:       externalSourceID, Record: json.RawMessage(raw), SegmentPolicy: segmentPolicy,
+		})
+		if err != nil {
+			return recordError{Line: line, Err: err}
+		}
+		var applied nativeDocumentResult
+		if err := json.Unmarshal(response, &applied); err != nil {
+			return recordError{Line: line, Err: fmt.Errorf("endpoint document reply is unreadable: %w", err)}
+		}
+		result.record(applied.Action, record.ID)
+		committed++
+		return nil
+	})
+	if scanErr != nil {
+		fmt.Fprintf(os.Stderr, "committed prefix: %d row(s)\n", committed)
+		return scanErr
+	}
+	result.TotalItems = committed
 	result.ElapsedSecs = time.Since(started).Seconds()
 	return emit(result)
 }

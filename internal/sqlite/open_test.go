@@ -54,7 +54,7 @@ func TestOpenCreatesCanonicalSchema(t *testing.T) {
 	}
 	want := []string{
 		"access_events", "artifacts", "collection_sources", "collections", "ingest_gaps", "ingest_receipts", "item_changes", "lexical_scopes", "local_items", "log", "note_citations",
-		"notes", "observations", "representation_inputs", "representations", "segment_lexical_fts",
+		"notes", "observations", "representation_inputs", "representations", "request_admissions", "request_outcomes", "segment_lexical_fts",
 		"segment_lexical_fts_config", "segment_lexical_fts_content", "segment_lexical_fts_data",
 		"segment_lexical_fts_docsize", "segment_lexical_fts_idx", "segment_lexical_rows", "segments",
 		"source_ingest_state", "source_withdrawals", "sources", "store_identity", "trail_segments", "trail_sources", "trails",

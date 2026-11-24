@@ -26,7 +26,11 @@ func appendLog(ctx context.Context, conn *sql.Conn, kind string, recordID, sourc
 
 // logRecordSQL selects each leaf with the stored bytes and source of the record it names.
 const logRecordSQL = `SELECT l.seq, l.kind, l.record_id, l.source_id, l.leaf_hash,
-  coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json),
+  CASE l.kind
+    WHEN 'request_admission' THEN (SELECT record_json FROM request_admissions WHERE id = l.record_id)
+    WHEN 'request_outcome' THEN (SELECT record_json FROM request_outcomes WHERE id = l.record_id)
+    ELSE coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json)
+  END,
   coalesce(r.source_id, a.source_id, i.source_id, w.source_id, n.source_id)
 FROM log l
 LEFT JOIN ingest_receipts r ON l.kind = 'ingest_receipt' AND r.observation_id = l.record_id
@@ -99,6 +103,31 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 				return nil, err
 			}
 			if err := applyVerifiedItemChange(itemHeads, change); err != nil {
+				return nil, err
+			}
+		}
+		if kind == mousa.LogKindRequestAdmission {
+			admission, err := mousa.DecodeRequestAdmission(record)
+			if err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
+			}
+			if !bytes.Equal(requestRecordID(admission.RequestID), recordID) {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: admission leaf id disagrees with its request", seq))
+			}
+		}
+		if kind == mousa.LogKindRequestOutcome {
+			outcome, err := mousa.DecodeRequestOutcome(record)
+			if err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
+			}
+			if outcome.Seq != uint64(seq) || !bytes.Equal(requestRecordID(outcome.RequestID), recordID) {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: outcome leaf disagrees with its request or sequence", seq))
+			}
+			admission, err := checkRequestOutcomeAdmission(ctx, tx, outcome)
+			if err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
+			}
+			if _, err := requestEvidenceSummary(ctx, tx, admission, outcome, seq); err != nil {
 				return nil, err
 			}
 		}

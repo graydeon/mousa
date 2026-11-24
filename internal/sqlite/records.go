@@ -539,8 +539,12 @@ func (store *Store) writeImmediateAttempts(ctx context.Context, op string, attem
 	if store.writeConn != nil {
 		return write(store.writeConn)
 	}
+	// The queue stage measures writer acquisition: connection wait plus the
+	// BEGIN IMMEDIATE retry loop. Only observed request stores report it.
+	finishQueue := store.StartStage(mousa.StageQueue)
 	conn, err := store.db.Conn(ctx)
 	if err != nil {
+		finishQueue(err)
 		return classify(op, err)
 	}
 	defer conn.Close()
@@ -552,17 +556,22 @@ func (store *Store) writeImmediateAttempts(ctx context.Context, op string, attem
 			break
 		}
 		if ctx.Err() != nil {
+			finishQueue(ctx.Err())
 			return classify(op, ctx.Err())
 		}
 		if attempt == attempts || !sqlitePrimaryCodeIs(err, 5) { // SQLITE_BUSY
+			finishQueue(err)
 			return classify(op, err)
 		}
+		store.ObserveMarker(mousa.StageQueue, mousa.StagePhaseRetry, attempt+1)
 		select {
 		case <-ctx.Done():
+			finishQueue(ctx.Err())
 			return classify(op, ctx.Err())
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
+	finishQueue(nil)
 	committed := false
 	defer func() {
 		if !committed {
@@ -575,9 +584,12 @@ func (store *Store) writeImmediateAttempts(ctx context.Context, op string, attem
 	if err := write(conn); err != nil {
 		return err
 	}
+	finishCommit := store.StartStage(mousa.StageCommit)
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		finishCommit(err)
 		return classify(op, err)
 	}
+	finishCommit(nil)
 	committed = true
 	return nil
 }

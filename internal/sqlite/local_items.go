@@ -393,3 +393,82 @@ func (store *Store) LocalSourceCounts(ctx context.Context, sourceID mousa.Source
 	}
 	return active, observations, nil
 }
+
+// ApplyRequestDocument applies one document item under a served request
+// admission. Verified access and document-kind checks run inside the write
+// transaction; a chargeable change resolves the item-change leaf written after
+// the admission's snapshot into outcome evidence, otherwise the request is a
+// no-op. An outcome write error rolls the item change back with it.
+func (store *Store) ApplyRequestDocument(ctx context.Context, admission mousa.RequestAdmission, source mousa.SourceID, item string, apply func(*Store) (bool, error)) error {
+	return store.writeImmediateAttempts(ctx, "apply request document", syncWriteAttempts, func(conn *sql.Conn) error {
+		var tail uint64
+		if err := conn.QueryRowContext(ctx, logIndexSQL).Scan(&tail); err != nil {
+			return classify("apply request document", err)
+		}
+		scoped := *store
+		scoped.writeConn = conn
+		finishAccess := store.StartStage(mousa.StageAccess)
+		accessErr := requireAllowedSource(ctx, conn, source)
+		if accessErr == nil {
+			accessErr = requireDocumentSource(ctx, conn, source)
+		}
+		finishAccess(accessErr)
+		if accessErr != nil {
+			return accessErr
+		}
+		finishIngest := store.StartStage(mousa.StageIngest)
+		changed, err := apply(&scoped)
+		finishIngest(err)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return finishRequest(ctx, conn, admission, mousa.RequestStateNoOp, "", mousa.RequestEvidence{})
+		}
+		change, err := itemChangeAfter(ctx, conn, tail, source, item)
+		if err != nil {
+			return err
+		}
+		return finishRequest(ctx, conn, admission, mousa.RequestStateCommitted, "", mousa.RequestEvidence{ItemChangeID: &change.ID})
+	})
+}
+
+// itemChangeAfter verifies the item-change leaves appended after a sequence
+// and returns the single one covering this source and item.
+func itemChangeAfter(ctx context.Context, conn *sql.Conn, after uint64, source mousa.SourceID, itemID string) (mousa.ItemChange, error) {
+	rows, err := conn.QueryContext(ctx, logRecordSQL+` WHERE l.kind = 'item_change' AND l.seq > ? ORDER BY l.seq`, after)
+	if err != nil {
+		return mousa.ItemChange{}, classify("read item change evidence", err)
+	}
+	defer rows.Close()
+	var found *mousa.ItemChange
+	for rows.Next() {
+		var seq int64
+		var kind string
+		var recordID, leafSource, leaf, record, recordSource []byte
+		if err := rows.Scan(&seq, &kind, &recordID, &leafSource, &leaf, &record, &recordSource); err != nil {
+			return mousa.ItemChange{}, classify("read item change evidence", err)
+		}
+		if err := checkLeaf(kind, leafSource, leaf, record, recordSource); err != nil {
+			return mousa.ItemChange{}, wrap(CodeIntegrity, "read item change evidence", err)
+		}
+		change, err := readItemChange(uint64(seq), recordID, leafSource, record)
+		if err != nil {
+			return mousa.ItemChange{}, err
+		}
+		if change.SourceID != source || change.ItemID != itemID {
+			continue
+		}
+		if found != nil {
+			return mousa.ItemChange{}, integrity("read item change evidence", "document operation wrote more than one change for its item")
+		}
+		found = &change
+	}
+	if err := rows.Err(); err != nil {
+		return mousa.ItemChange{}, classify("read item change evidence", err)
+	}
+	if found == nil {
+		return mousa.ItemChange{}, integrity("read item change evidence", "document operation produced no item change")
+	}
+	return *found, nil
+}

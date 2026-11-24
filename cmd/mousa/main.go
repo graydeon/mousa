@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -30,21 +32,45 @@ const (
 
 func main() {
 	ctx := context.Background()
-	storePath := flag.String("store", "", "Mousa store file (required)")
+	storePath := flag.String("store", "", "Mousa store file")
+	endpoint := flag.String("endpoint", "", "served store base URL instead of -store; credential comes from MOUSA_TOKEN")
 	flag.Parse()
 	args := flag.Args()
-	if *storePath == "" || len(args) == 0 {
+	if (*storePath == "") == (*endpoint == "") || len(args) == 0 {
 		usage()
 	}
 	command, rest := args[0], args[1:]
+	if *endpoint != "" || command == "serve" {
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
+	// Exactly one of -store and -endpoint was checked. The endpoint client is
+	// built only for the commands that can use it; everything else stays a
+	// direct-store command and never falls back.
+	var client *nativeClient
+	if *endpoint != "" {
+		switch command {
+		case "query", "remember", "sync":
+			var clientErr error
+			client, clientErr = newNativeClient(*endpoint)
+			if clientErr != nil {
+				fmt.Fprintf(os.Stderr, "mousa: %v\n", clientErr)
+				os.Exit(1)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "mousa: -endpoint supports only query, remember and sync --source\n")
+			os.Exit(2)
+		}
+	}
 	var err error
 	switch command {
 	case "sync":
-		err = syncCommand(ctx, *storePath, rest)
+		err = syncCommand(ctx, *storePath, client, rest)
 	case "status":
 		err = statusCommand(ctx, *storePath, rest)
 	case "query":
-		err = queryCommand(ctx, *storePath, rest)
+		err = queryCommand(ctx, *storePath, client, rest)
 	case "trail":
 		err = trailCommand(ctx, *storePath, rest)
 	case "verify":
@@ -58,13 +84,15 @@ func main() {
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
-		err = rememberCommand(ctx, *storePath, rest)
+		err = rememberCommand(ctx, *storePath, client, rest)
 	case "notes":
 		err = notesCommand(ctx, *storePath, rest)
 	case "withdraw":
 		err = withdrawCommand(ctx, *storePath, rest)
 	case "mcp":
 		err = mcpCommand(ctx, *storePath, rest)
+	case "serve":
+		err = serveCommand(ctx, *storePath, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mousa: unknown command %q\n", command)
 		usage()
@@ -82,6 +110,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
+       mousa -endpoint <url> query|remember|sync --source <id>
 
 commands:
   sync <dir>                  import or re-sync a UTF-8/Markdown directory (JSON result)
@@ -124,6 +153,10 @@ commands:
                             repeat --source; --ingest-source <id> permits ingestion/import
                             MCP has no allow option; MCP-synced sources stay denied
                             until access <dir>|--source <id> allow
+  serve --config <file> [--listen 127.0.0.1:PORT]
+                            own the store and serve it on loopback HTTP;
+                            query, remember and sync --source also run against
+                            a served store with -endpoint and MOUSA_TOKEN
 
 query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
@@ -164,8 +197,9 @@ func newCommandFlags(name string) *flag.FlagSet {
 }
 
 // syncCommand selects the input form: a directory root, or an explicit
-// external source ID with JSONL item records on stdin.
-func syncCommand(ctx context.Context, storePath string, args []string) error {
+// external source ID with JSONL item records on stdin. With an endpoint
+// client only the --source form is available and --allow stays offline.
+func syncCommand(ctx context.Context, storePath string, client *nativeClient, args []string) error {
 	flags := newCommandFlags("sync")
 	sourceID := flags.String("source", "", "external source ID; reads JSONL item records from stdin instead of a directory")
 	segmentPolicy := flags.String("segment-policy", mousa.TextSegmentFixedV1, "ingestion segmentation: fixed-v1 or passage-v1")
@@ -179,6 +213,23 @@ func syncCommand(ctx context.Context, storePath string, args []string) error {
 	}
 	rest := flags.Args()
 	switch {
+	case client != nil:
+		if *sourceID == "" || len(rest) != 0 {
+			return usageError{"endpoint sync requires --source <external-id> with JSONL records on stdin; directory sync stays offline"}
+		}
+		if *allow {
+			return usageError{"--allow cannot be used with -endpoint; grant sources with offline access commands"}
+		}
+		directoryOption := false
+		flags.Visit(func(option *flag.Flag) {
+			if option.Name != "source" && option.Name != "segment-policy" && option.Name != "allow" {
+				directoryOption = true
+			}
+		})
+		if directoryOption {
+			return usageError{"directory selection flags cannot be used with --source"}
+		}
+		return runSyncEndpoint(ctx, client, *sourceID, os.Stdin, *segmentPolicy)
 	case *sourceID == "" && len(rest) == 1:
 		return runSyncDirectory(ctx, storePath, rest[0], *options, *segmentPolicy, *allow)
 	case *sourceID != "" && len(rest) == 0:
@@ -305,7 +356,10 @@ func applyItemBatch(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 // Canonical history may be prepared independently; index activation is atomic.
 func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64, segmentPolicy string) (string, error) {
 	if input.Deleted {
-		return store.DeleteLocalItem(ctx, source.ID, input.ID)
+		finishIndex := store.StartStage(mousa.StageIndex)
+		action, err := store.DeleteLocalItem(ctx, source.ID, input.ID)
+		finishIndex(err)
+		return action, err
 	}
 	digest := mousa.SHA256(sha256.Sum256(input.Content))
 	current, err := store.GetLocalItem(ctx, source.ID, input.ID)
@@ -313,6 +367,9 @@ func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, in
 		return "", err
 	}
 	if err == nil && current.Active && current.SegmentationPolicy == segmentPolicy && current.Artifact.ContentSHA256 == digest && current.Artifact.ByteLength == uint64(len(input.Content)) {
+		// An unchanged item performs no representation or index work.
+		store.ObserveMarker(mousa.StageRepresent, mousa.StagePhaseSkip, 0)
+		store.ObserveMarker(mousa.StageIndex, mousa.StagePhaseSkip, 0)
 		return actionUnchanged, nil
 	}
 	return ingestRevision(ctx, store, source, input, digest, sequence, segmentPolicy)
@@ -342,11 +399,14 @@ func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 		Schema: mousa.ArtifactSchema, ID: artifactID, ObservationID: observationID, ArtifactKey: segmentKeyPrefix,
 		MediaType: mousa.UTF8TextMediaType, ContentSHA256: digest, ByteLength: uint64(len(input.Content)),
 	}
+	finishRepresent := store.StartStage(mousa.StageRepresent)
 	representation, normalized, err := mousa.NormalizeUTF8TextWithPolicy(artifact, input.Content, segmentPolicy)
 	if err != nil {
+		finishRepresent(err)
 		return "", err
 	}
 	segments, err := mousa.SegmentUTF8Text(representation, normalized)
+	finishRepresent(err)
 	if err != nil {
 		return "", err
 	}
@@ -367,7 +427,10 @@ func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 			return "", err
 		}
 	}
-	return store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized)
+	finishIndex := store.StartStage(mousa.StageIndex)
+	action, err := store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized)
+	finishIndex(err)
+	return action, err
 }
 
 // The result is machine-readable and reports every action. One struct serves

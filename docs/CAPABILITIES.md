@@ -33,10 +33,13 @@ binary, until the scale probe passes at both sizes.
 | Per-source access decisions | Yes | `access <dir>|--source <id> allow|deny`; `sync --allow`; default deny with no event | Append-only events, default deny, no-op repeats, MCP-synced sources denied until native allow; see [Access](USAGE.md#access) |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>` | First-fit byte accounting, duplicate omission, and history reads. |
 | Canonical query trails | Yes | `query`; `trail` ID | Stable result digests, atomic leaf writes, corruption checks and caller-view masking. |
-| Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`, `notes import --source <id>`; MCP `mousa_remember` for configured ingest JSONL | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources |
+| Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`, `notes import --source <id>`; MCP `mousa_remember` for configured ingest JSONL | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources, served lineage redaction for citations outside the caller's read grants |
 | Embedding inference, answer generation | No | No | Not implemented |
 | Local stdio MCP | Yes | `mcp --caller <id> --source <id>` | Real SDK client/executable round trips, persistence, configured boundaries, committed prefix, framing, cancellation and shutdown |
 | OAuth-protected Streamable HTTP | Yes | Opt-in `mcp --http-config FILE` | Local TLS introspection fixture covers subject, audience, issuer, expiry, scopes, revocation and host/origin boundaries |
+| Loopback JSON request service | Yes | Opt-in `serve --config FILE`; client `-endpoint URL` with `MOUSA_TOKEN` | Durable admission/outcome per request including unauthorized and canceled attempts, typed errors with request IDs, verified operator history and detail, unknown-outcome transport failures; see [Local served store](USAGE.md#local-served-store-opt-in) |
+| Live stage stream and dashboard | Yes | `GET /v1/events`, `GET /` | Bounded frame ring with explicit gap on overflow/restart, `Last-Event-ID` resume without silent misses, operator-only, measured stage timings that are not archived; reconnects read verified history |
+| Public ingress, multi-tenant serving, remote automation relay | No | No | Not implemented; `serve` binds loopback only |
 | Stable SDK, general connectors, public pairing relay | No supported interface | No | Not implemented as supported interfaces |
 
 The [Git documentation example](../examples/docs/README.md) is a separate Python CLI
@@ -409,7 +412,7 @@ says to create a new store and re-sync it from its sources. A SQLite file that i
 not a Mousa store and a store from a newer binary are refused the same way. A
 refused store is not modified.
 
-Schema 4 refuses old stores without modifying them. Export notes with the old
+Schema 7 refuses older stores without modifying them. Export notes with the old
 binary before creating a new store, then import them under the same source ID.
 Re-sync document sources.
 

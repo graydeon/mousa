@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
@@ -17,8 +18,8 @@ import (
 
 // rememberCommand stores one durable note on an explicit stream source. The
 // text is the single positional argument, or the exact stdin bytes when the
-// argument is omitted.
-func rememberCommand(ctx context.Context, storePath string, args []string) error {
+// argument is omitted. With an endpoint client the note goes to the served store.
+func rememberCommand(ctx context.Context, storePath string, client *nativeClient, args []string) error {
 	flags := newCommandFlags("remember")
 	sourceID := flags.String("source", "", "external source ID for the note (required)")
 	var fromArgs []string
@@ -60,6 +61,19 @@ func rememberCommand(ctx context.Context, storePath string, args []string) error
 			return usageError{err.Error()}
 		}
 		citations = append(citations, citation)
+	}
+	if client != nil {
+		if !utf8.Valid(text) {
+			return errors.New("note text must be valid UTF-8")
+		}
+		result, err := client.post(ctx, "/v1/notes", nativeNote{
+			nativeLabels: nativeLabels{Client: client.metadata},
+			Scope:        nativeScope{Source: *sourceID}, Text: string(text), Citations: citations,
+		})
+		if err != nil {
+			return err
+		}
+		return emitRawResult(result)
 	}
 	store, err := sqlite.Open(ctx, storePath)
 	if err != nil {
