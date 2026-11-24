@@ -159,7 +159,11 @@ aside { position: sticky; top: 1rem; }
 	.page { grid-template-columns: minmax(0, 1fr); padding: 0.75rem; }
 	aside { position: static; }
 	.stats { margin-left: 0; width: 100%; justify-content: space-between; gap: 0.75rem; }
-	.log th:nth-child(1), .log td:nth-child(1), .log th:nth-child(3), .log td:nth-child(3) { display: none; }
+	.log th:nth-child(1), .log td:nth-child(1), .log th:nth-child(3), .log td:nth-child(3),
+	.log th:nth-child(6), .log td:nth-child(6) { display: none; }
+	.log th:nth-child(2) { width: 6.5rem; padding-left: 1rem; }
+	.log td:nth-child(2) { padding-left: 1rem; }
+	.log th:nth-child(5) { width: 6rem; }
 	.lane { grid-template-columns: 1fr; gap: 0.3rem; }
 	.lane > span { text-align: left; }
 }
