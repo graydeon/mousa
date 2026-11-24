@@ -23,7 +23,8 @@
 	const $ = function (id) { return document.getElementById(id); };
 	const link = $("link"), linkText = $("link-text"), keyForm = $("key-form"), keyInput = $("key");
 	const alertBox = $("alert"), agentList = $("agents"), log = $("log"), quiet = $("quiet");
-	const pick = $("pick"), follow = $("follow"), busy = $("busy");
+	const pick = $("pick"), busy = $("busy");
+	const detail = $("detail"), detailTitle = $("detail-title"), detailBody = $("detail-body");
 
 	function el(tag, cls, text) {
 		const node = document.createElement(tag);
@@ -104,7 +105,7 @@
 	// --- requests -------------------------------------------------------
 	const requests = new Map();
 	const agents = new Map();
-	let bearer = "", cursor = "", stream = null, retry = null, pinned = null, shown = null;
+	let bearer = "", cursor = "", stream = null, retry = null, shown = null, opened = null;
 
 	function headers(extra) {
 		const out = extra || {};
@@ -140,7 +141,9 @@
 		item.cells[4].className = "wait";
 		item.cells[4].textContent = "Working";
 		identify(item, admission);
-		item.tr.addEventListener("click", function () { pinned = item; follow.hidden = false; show(item); });
+		item.tr.tabIndex = 0;
+		item.tr.addEventListener("click", function () { open(item); });
+		item.tr.addEventListener("keydown", function (event) { if (event.key === "Enter") { open(item); } });
 		requests.set(id, item);
 		// Keep rows newest first whether they arrive live or from history.
 		let before = log.firstChild;
@@ -177,10 +180,11 @@
 		touchAgent(item);
 		paintStats();
 		wantContent(item);
-		// Following live means the newest request, even when an older one
+		// The side panel follows the newest request, even when an older one
 		// finishes its replay later.
 		const newest = log.firstChild.item;
-		if (!pinned) { show(newest.state ? newest : item); } else if (shown === item) { show(item); }
+		show(newest.state ? newest : item);
+		repaint(item);
 	}
 
 	// --- content: what was asked and what came back -----------------------
@@ -203,8 +207,9 @@
 					const result = (await response.json()).result;
 					item.content = result.content || {};
 					item.evidence = result.evidence || null;
+					item.outcome = result.outcome || null;
 					paintRow(item);
-					if (shown === item) { show(item); }
+					repaint(item);
 				}
 			} catch (err) { /* the row keeps its summary */ }
 		}
@@ -252,32 +257,39 @@
 		paintAgents();
 	}
 
-	// --- inspector ------------------------------------------------------
-	function show(item) {
-		if (shown) { shown.tr.classList.remove("picked"); }
-		shown = item;
-		item.tr.classList.add("picked");
-		pick.textContent = "";
+	// --- one request: side panel (newest) and popup (the one clicked) ------
+	// The popup shows everything recorded for the request; the side panel
+	// shows the short form of the same thing.
+	function render(target, item, full) {
+		target.textContent = "";
 		const content = item.content || {};
-		if (content.query) { pick.append(el("h3", "", "Asked"), el("p", "said", content.query)); }
-		if (content.note) { pick.append(el("h3", "", "Saved"), el("p", "said", content.note)); }
+		const words = el("div", "words"), facts = el("div", "facts");
+		if (content.query) { words.append(el("h3", "", "Asked"), el("p", "said", content.query)); }
+		if (content.note) { words.append(el("h3", "", "Saved"), el("p", "said", content.note)); }
 		if (item.op === "query" && item.content) {
 			const returned = content.returned || [];
-			pick.appendChild(el("h3", "", returned.length ? "Returned" : "Returned nothing"));
-			returned.forEach(function (text) { pick.appendChild(el("p", "got", text)); });
+			words.appendChild(el("h3", "", returned.length ? "Returned " + returned.length : "Returned nothing"));
+			returned.forEach(function (text, index) {
+				const passage = el("p", "got", text);
+				if (full) { passage.dataset.rank = index + 1; }
+				words.appendChild(passage);
+			});
 		}
-		pick.appendChild(el("h3", "", "Request"));
-		const facts = el("dl");
+		const evidence = item.evidence || {}, outcome = item.outcome || {};
+		const record = evidence.id || "";
+		const list = el("dl");
 		[
 			["Agent", item.who], ["Model", item.model], ["Task", item.task], ["Run", item.run], ["Key", item.key],
 			["Did", VERBS[item.op] || item.op], ["Result", item.state ? resultText(item) : "Working"],
+			["Error", full && outcome.error_code],
 			["When", new Date(item.at / 1000).toLocaleString()], ["Took", item.took ? ms(item.took) : ""],
-			["Source", item.evidence && item.evidence.source], ["Item", item.evidence && item.evidence.item_id],
-			["Record", item.evidence && item.evidence.id.slice(0, 16)],
+			["Source", evidence.source || (full && (evidence.sources || []).join("\n"))], ["Item", evidence.item_id],
+			[evidence.kind === "trail" ? "Trail" : "Record", full ? record : record.slice(0, 16)],
+			["Request", full && item.id], ["Log entry", full && outcome.seq],
 		].forEach(function (fact) {
-			if (fact[1]) { facts.append(el("dt", "", fact[0]), el("dd", "", fact[1])); }
+			if (fact[1]) { list.append(el("dt", "", fact[0]), el("dd", "", String(fact[1]))); }
 		});
-		pick.appendChild(facts);
+		facts.append(el("h3", "", "Request"), list);
 		if (item.stages.length) {
 			const longest = Math.max.apply(null, item.stages.map(function (stage) { return stage[1]; }));
 			const times = el("div", "times");
@@ -287,14 +299,35 @@
 				rail.appendChild(fill);
 				times.append(el("span", "", NAMES[stage[0]]), rail, el("span", "took", ms(stage[1])));
 			});
-			pick.append(el("h3", "", "Stages"), times);
+			facts.append(el("h3", "", "Stages"), times);
 		}
+		if (words.firstChild) { target.appendChild(words); }
+		target.appendChild(facts);
 	}
-	follow.addEventListener("click", function () {
-		pinned = null;
-		follow.hidden = true;
-		if (log.firstChild) { show(log.firstChild.item); }
+	function show(item) {
+		shown = item;
+		render(pick, item, false);
+	}
+	function open(item) {
+		if (opened) { opened.tr.classList.remove("picked"); }
+		opened = item;
+		item.tr.classList.add("picked");
+		detailTitle.textContent = (VERBS[item.op] || item.op) + " · " + item.who + " · " + clock(item.at);
+		render(detailBody, item, true);
+		wantContent(item);
+		if (!detail.open) { detail.showModal(); }
+	}
+	function repaint(item) {
+		if (shown === item) { show(item); }
+		if (opened === item && detail.open) { render(detailBody, item, true); }
+	}
+	detail.addEventListener("close", function () {
+		if (opened) { opened.tr.classList.remove("picked"); }
+		opened = null;
 	});
+	// A click on the dimmed page outside the box closes it.
+	detail.addEventListener("click", function (event) { if (event.target === detail) { detail.close(); } });
+	$("detail-close").addEventListener("click", function () { detail.close(); });
 
 	// --- live frames ----------------------------------------------------
 	// One request's frames replay in order, STEP_MS apart, so each stage is
@@ -346,7 +379,7 @@
 				agent.live = Math.max(0, agent.live - 1);
 				paintAgents();
 			}
-			if (shown === item) { show(item); }
+			repaint(item);
 		}
 	}
 

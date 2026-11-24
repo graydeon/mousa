@@ -413,7 +413,9 @@ dashboard shows measured stages only for newly observed requests.
 
 The dashboard at `/` is same-origin, holds any operator token only in page
 memory, and shows each pipeline stage lighting up as requests pass, the
-agents calling, and recent requests with their verified detail. It is a
+agents calling, and recent requests with their verified detail. Clicking a
+request opens everything recorded for it, including each returned passage in
+full when the monitor is open. It is a
 local surface — keep the daemon on loopback and do not publicize its address.
 
 ### Stop, verify, and back up

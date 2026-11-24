@@ -49,11 +49,16 @@
 		</section>
 
 		<section class="panel inspector" aria-label="Request" aria-live="polite">
-			<header><h2>Request</h2><button id="follow" type="button" hidden>Follow live</button></header>
+			<header><h2>Latest request</h2></header>
 			<div id="pick" class="pick"><p class="hint">Nothing yet.</p></div>
 		</section>
 	</aside>
 </div>
+
+<dialog id="detail" class="detail" aria-labelledby="detail-title">
+	<header><h2 id="detail-title"></h2><button id="detail-close" type="button">Close</button></header>
+	<div id="detail-body" class="pick"></div>
+</dialog>
 
 <script src="/app.js"></script>
 </body>
