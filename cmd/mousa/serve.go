@@ -631,7 +631,20 @@ func (s *nativeService) requestDetail(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusInternalServerError, "internal")
 		return
 	}
-	_ = s.writeReply(w, http.StatusOK, requestID, detail, nil)
+	if !s.openMonitor {
+		_ = s.writeReply(w, http.StatusOK, requestID, detail, nil)
+		return
+	}
+	// An open monitor shows viewers what was asked and what came back.
+	content, err := s.store.RequestContent(ctx, id)
+	if err != nil {
+		fail(http.StatusInternalServerError, "internal")
+		return
+	}
+	_ = s.writeReply(w, http.StatusOK, requestID, struct {
+		sqlite.RequestHistoryDetail
+		Content sqlite.RequestContent `json:"content"`
+	}{detail, content}, nil)
 }
 
 // Request bodies are typed at the boundary. There is deliberately no caller,
@@ -852,7 +865,7 @@ func serveCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("serve")
 	listen := flags.String("listen", "127.0.0.1:8787", "loopback host:port to bind; 0 selects a port")
 	configPath := flags.String("config", "", "principal configuration file (required)")
-	openMonitor := flags.Bool("open-monitor", false, "serve the dashboard's request metadata and stage stream without an operator credential")
+	openMonitor := flags.Bool("open-monitor", false, "serve the dashboard, stage stream and each request's text and returned passages without a credential")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}

@@ -308,6 +308,26 @@ func TestServeLiveStagesAndResume(t *testing.T) {
 	if openQuery.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("open monitor query without credential: status = %d, want 401", openQuery.StatusCode)
 	}
+	// An open monitor also shows what was asked and what came back.
+	asked := postLive(t.Context(), openEndpoint+"/v1/query", memberToken, []byte(`{"scope":{"source":"docs"},"text":"walruses"}`))
+	if asked.err != nil || asked.status != http.StatusOK {
+		t.Fatalf("open monitor member query: %+v", asked)
+	}
+	var askedReply nativeReply
+	if err := json.Unmarshal(asked.body, &askedReply); err != nil {
+		t.Fatalf("open monitor query reply: %v", err)
+	}
+	detailResponse, err := http.Get(openEndpoint + "/v1/requests/" + askedReply.RequestID)
+	if err != nil {
+		t.Fatalf("open monitor detail: %v", err)
+	}
+	detailBody, _ := io.ReadAll(detailResponse.Body)
+	detailResponse.Body.Close()
+	for _, want := range []string{`"query":"walruses"`, "Walruses stage live request evidence."} {
+		if !strings.Contains(string(detailBody), want) {
+			t.Fatalf("open monitor detail = %s, want %s", detailBody, want)
+		}
+	}
 	stopLiveService(t, openServer, openListener)
 
 	// The stream attaches before the request; its preamble is a comment.

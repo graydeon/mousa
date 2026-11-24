@@ -380,8 +380,10 @@ bodies.
 
 `serve --open-monitor` serves these monitor reads, the stage stream and the
 dashboard without a credential, for a private deployment where everyone who
-can reach the listener may see request metadata. Query, note and document
-endpoints still require their bearer credential.
+can reach the listener may see every request. In this mode a request's
+detail also carries its query text with the passages returned, or its note
+text, across all sources. Query, note and document endpoints still require
+their bearer credential.
 
 `GET /v1/events` streams live stage observations (`receive` through
 `response`) as SSE for up to 8 concurrent operator viewers, identified

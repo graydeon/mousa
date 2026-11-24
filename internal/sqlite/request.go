@@ -2,10 +2,13 @@ package sqlite
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -420,6 +423,67 @@ func (store *Store) RequestDetail(ctx context.Context, requestID string) (Reques
 		RequestHistoryEntry: RequestHistoryEntry{Admission: admission, Outcome: outcome},
 		Evidence:            summary,
 	}, nil
+}
+
+// RequestContent is what one served request asked for and what it was given:
+// a query's text with the passages released to the caller, or a note's text.
+type RequestContent struct {
+	Query    string   `json:"query,omitempty"`
+	Returned []string `json:"returned,omitempty"`
+	Note     string   `json:"note,omitempty"`
+}
+
+// RequestContent reads the content behind one completed request's evidence.
+// It crosses every source grant, so only a deployment that has opened its
+// monitor to all viewers serves it. A passage whose segment has since been
+// retired from the index is left out.
+func (store *Store) RequestContent(ctx context.Context, requestID string) (RequestContent, error) {
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return RequestContent{}, classify("begin request content", err)
+	}
+	defer tx.Rollback()
+	outcome, _, err := readRequestOutcome(ctx, tx, requestID)
+	if err != nil {
+		return RequestContent{}, err
+	}
+	var content RequestContent
+	switch evidence := outcome.Evidence; {
+	case evidence.TrailID != nil:
+		trail, _, err := readTrailRecord(ctx, tx, *evidence.TrailID)
+		if err != nil {
+			return RequestContent{}, err
+		}
+		content.Query = strings.Join(trail.Request.Texts, "\n")
+		packed := slices.DeleteFunc(slices.Clone(trail.Candidates), func(c mousa.Candidate) bool { return c.Packed != "full" })
+		slices.SortFunc(packed, func(a, b mousa.Candidate) int { return cmp.Compare(a.Rank, b.Rank) })
+		for _, candidate := range packed {
+			segment, err := getSegment(ctx, tx, candidate.SegmentID)
+			if err != nil {
+				continue
+			}
+			text, err := indexedSegmentText(ctx, tx, segment)
+			if err != nil {
+				continue
+			}
+			content.Returned = append(content.Returned, text)
+		}
+	case evidence.NoteID != nil:
+		var rawSource []byte
+		var itemID string
+		if err := tx.QueryRowContext(ctx, `SELECT source_id, item_id FROM notes WHERE id = ?`, evidence.NoteID[:]).Scan(&rawSource, &itemID); err != nil {
+			return RequestContent{}, readError("request content note", err)
+		}
+		if len(rawSource) != len(mousa.SourceID{}) {
+			return RequestContent{}, integrity("request content", "note projection is damaged")
+		}
+		_, text, err := getNote(ctx, tx, mousa.SourceID(rawSource), itemID)
+		if err != nil {
+			return RequestContent{}, err
+		}
+		content.Note = text
+	}
+	return content, nil
 }
 
 // requestEvidenceSummary verifies an outcome's evidence against the canonical

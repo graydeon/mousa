@@ -7,51 +7,53 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header class="top">
+<header class="bar">
 	<h1>Mousa</h1>
 	<p id="link" class="link" role="status"><span class="lamp"></span><span id="link-text">Connecting</span></p>
 	<form id="key-form" class="key" hidden>
 		<input id="key" type="password" autocomplete="off" spellcheck="false" aria-label="Token" placeholder="Token">
 		<button type="submit">Open</button>
 	</form>
+	<dl class="stats" aria-label="Last 100 requests">
+		<div><dt>Searches</dt><dd id="stat-query">0</dd></div>
+		<div><dt>Notes</dt><dd id="stat-note">0</dd></div>
+		<div><dt>Documents</dt><dd id="stat-document">0</dd></div>
+		<div><dt>Refused</dt><dd id="stat-refused">0</dd></div>
+		<div><dt>Typical</dt><dd id="stat-typical">–</dd></div>
+	</dl>
 </header>
 
 <p id="alert" class="alert" hidden></p>
 
-<section class="flow" aria-label="Pipeline">
-	<div class="node shared" data-stage="receive"><b>Arrive</b><i></i></div>
-	<div class="node shared" data-stage="admission"><b>Log</b><i></i></div>
-	<div class="node shared" data-stage="access"><b>Permit</b><i></i></div>
+<div class="page">
+	<main>
+		<section class="panel" aria-label="Pipeline">
+			<header><h2>Pipeline</h2><p id="busy" class="hint">Idle</p></header>
+			<div id="flow" class="flow"></div>
+		</section>
 
-	<p class="lane" data-lane="query"><b>Search</b></p>
-	<div class="node" data-stage="retrieval"><b>Find</b><i></i></div>
-	<div class="node" data-stage="rank"><b>Rank</b><i></i></div>
-	<div class="node" data-stage="pack"><b>Pack</b><i></i></div>
+		<section class="panel" aria-label="Requests">
+			<header><h2>Requests</h2></header>
+			<table class="log">
+				<thead><tr><th>Time</th><th>Agent</th><th>Did</th><th>Text</th><th>Result</th><th class="num">Took</th></tr></thead>
+				<tbody id="log"></tbody>
+			</table>
+			<p id="quiet" class="hint pad">Nothing yet.</p>
+		</section>
+	</main>
 
-	<p class="lane" data-lane="note"><b>Remember</b></p>
-	<div class="node" data-stage="citations"><b>Cite</b><i></i></div>
-	<div class="node" data-stage="note"><b>Write</b><i></i></div>
+	<aside>
+		<section class="panel" aria-label="Agents">
+			<header><h2>Agents</h2></header>
+			<ul id="agents" class="agents"></ul>
+		</section>
 
-	<p class="lane" data-lane="document"><b>Document</b></p>
-	<div class="node" data-stage="represent"><b>Split</b><i></i></div>
-	<div class="node" data-stage="index"><b>Index</b><i></i></div>
-
-	<div class="node shared tail" data-stage="commit"><b>Save</b><i></i></div>
-	<div class="node shared tail" data-stage="response"><b>Reply</b><i></i></div>
-</section>
-
-<section class="agents" aria-label="Agents">
-	<h2>Agents</h2>
-	<ul id="agents"></ul>
-</section>
-
-<section class="recent" aria-label="Recent requests">
-	<h2>Recent</h2>
-	<p id="quiet" class="quiet">Nothing yet.</p>
-	<ol id="recent"></ol>
-</section>
-
-<aside id="detail" class="detail" aria-live="polite" hidden></aside>
+		<section class="panel inspector" aria-label="Request" aria-live="polite">
+			<header><h2>Request</h2><button id="follow" type="button" hidden>Follow live</button></header>
+			<div id="pick" class="pick"><p class="hint">Nothing yet.</p></div>
+		</section>
+	</aside>
+</div>
 
 <script src="/app.js"></script>
 </body>
