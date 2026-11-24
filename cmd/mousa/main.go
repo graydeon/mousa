@@ -153,7 +153,7 @@ commands:
                             repeat --source; --ingest-source <id> permits ingestion/import
                             MCP has no allow option; MCP-synced sources stay denied
                             until access <dir>|--source <id> allow
-  serve --config <file> [--listen 127.0.0.1:PORT]
+  serve --config <file> [--listen 127.0.0.1:PORT] [--open-monitor]
                             own the store and serve it on loopback HTTP;
                             query, remember and sync --source also run against
                             a served store with -endpoint and MOUSA_TOKEN

@@ -292,6 +292,24 @@ func TestServeLiveStagesAndResume(t *testing.T) {
 	openStream(t, endpoint, "", "", http.StatusUnauthorized)
 	openStream(t, endpoint, rand.Text(), "", http.StatusUnauthorized)
 
+	// An open monitor serves the metadata-only monitor reads without a
+	// credential; request endpoints still authenticate.
+	open := newNativeService(store, principals)
+	open.openMonitor = true
+	openServer, openListener := startLiveService(t, open, "127.0.0.1:0")
+	openEndpoint := "http://" + openListener.Addr().String()
+	openViewer, _ := openStream(t, openEndpoint, "", "", http.StatusOK)
+	openViewer.Body.Close()
+	openQuery, err := http.Post(openEndpoint+"/v1/query", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("open monitor query: %v", err)
+	}
+	openQuery.Body.Close()
+	if openQuery.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("open monitor query without credential: status = %d, want 401", openQuery.StatusCode)
+	}
+	stopLiveService(t, openServer, openListener)
+
 	// The stream attaches before the request; its preamble is a comment.
 	viewer, events := openStream(t, endpoint, operatorToken, "", http.StatusOK)
 	preamble := nextEvent(t, events, "connected comment")

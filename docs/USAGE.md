@@ -378,6 +378,11 @@ entry's verified admission, outcome and evidence reference. Both are
 operator-only and carry metadata across all sources, never request or note
 bodies.
 
+`serve --open-monitor` serves these monitor reads, the stage stream and the
+dashboard without a credential, for a private deployment where everyone who
+can reach the listener may see request metadata. Query, note and document
+endpoints still require their bearer credential.
+
 `GET /v1/events` streams live stage observations (`receive` through
 `response`) as SSE for up to 8 concurrent operator viewers, identified
 `{epoch}:{seq}` per service run. The ring is a bounded buffer of recent

@@ -675,4 +675,7 @@
 	filterHarness.addEventListener("change", refreshAll);
 	filterOperation.addEventListener("change", refreshAll);
 	filterOutcome.addEventListener("change", refreshAll);
+	// Try without a credential first: a service started with --open-monitor
+	// streams at once; otherwise the refusal leaves the token field in use.
+	openStream();
 })();

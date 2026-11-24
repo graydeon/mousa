@@ -157,7 +157,10 @@ type nativeService struct {
 	// unhealthy latches when an admission or terminal outcome could not be
 	// persisted; /healthz reports it until restart resolves the coverage.
 	unhealthy atomic.Bool
-	hub       *stageHub
+	// openMonitor serves the metadata-only monitor reads without a
+	// credential. Request endpoints always authenticate.
+	openMonitor bool
+	hub         *stageHub
 	// stageBoundary is a test-only hook invoked after each stage frame is
 	// appended to the ring.
 	stageBoundary func(stageFrame)
@@ -539,6 +542,9 @@ func (s *nativeService) healthz(w http.ResponseWriter, r *http.Request) {
 // operatorOnly enforces the operator credential on monitor endpoints. It
 // writes the refusal reply itself; a false return means the reply is sent.
 func (s *nativeService) operatorOnly(w http.ResponseWriter, r *http.Request) bool {
+	if s.openMonitor {
+		return true
+	}
 	requestID := w.Header().Get("X-Mousa-Request-ID")
 	principal, failure := s.authenticate(r)
 	if failure != nil {
@@ -836,6 +842,7 @@ func serveCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("serve")
 	listen := flags.String("listen", "127.0.0.1:8787", "loopback host:port to bind; 0 selects a port")
 	configPath := flags.String("config", "", "principal configuration file (required)")
+	openMonitor := flags.Bool("open-monitor", false, "serve the dashboard's request metadata and stage stream without an operator credential")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -869,6 +876,7 @@ func serveCommand(ctx context.Context, storePath string, args []string) error {
 		return errors.Join(err, store.Close())
 	}
 	service := newNativeService(store, principals)
+	service.openMonitor = *openMonitor
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return errors.Join(err, store.Close())
