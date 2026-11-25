@@ -138,14 +138,15 @@ type Retrieval struct {
 }
 
 type Branch struct {
-	DroppedNotAllowed int      `json:"dropped_not_allowed"`
-	DroppedUnknown    int      `json:"dropped_unknown"`
-	Kind              string   `json:"kind"`
-	Proposed          int      `json:"proposed"`
-	Scoring           string   `json:"scoring"`
-	TermPolicy        string   `json:"term_policy"`
-	Terms             []string `json:"terms"`
-	Text              int      `json:"text"`
+	DroppedNotAllowed int        `json:"dropped_not_allowed"`
+	DroppedUnknown    int        `json:"dropped_unknown"`
+	Kind              string     `json:"kind"`
+	Proposed          int        `json:"proposed"`
+	Scoring           string     `json:"scoring"`
+	SharedBM25        *BM25Stats `json:"shared_bm25,omitempty"`
+	TermPolicy        string     `json:"term_policy"`
+	Terms             []string   `json:"terms"`
+	Text              int        `json:"text"`
 }
 
 type Candidate struct {
@@ -175,10 +176,11 @@ type TrailExtract struct {
 }
 
 type TrailScore struct {
-	Branch    int    `json:"branch"`
-	Level     string `json:"level"`
-	Rank      int    `json:"rank"`
-	ValueBits string `json:"value_bits"`
+	BM25      *BM25Match `json:"bm25,omitempty"`
+	Branch    int        `json:"branch"`
+	Level     string     `json:"level"`
+	Rank      int        `json:"rank"`
+	ValueBits string     `json:"value_bits"`
 }
 
 type Packing struct {
@@ -471,21 +473,46 @@ func (source SourceDecision) validate(asOf uint64) error {
 
 func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 	branches := trail.Retrieval.Branches
+	if len(branches) != len(trail.Request.Texts) {
+		return errors.New("retrieval branches or fusion disagree with query texts")
+	}
+	shared := branches[0].Scoring == SharedBM25
+	if shared && len(allowed) < 2 {
+		return errors.New("shared BM25 requires multiple allowed sources")
+	}
 	fusion := ""
 	if len(branches) > 1 {
 		fusion = "rrf-k60-v1"
 	}
-	if len(branches) != len(trail.Request.Texts) || trail.Retrieval.Fusion != fusion {
+	if shared {
+		fusion = SharedBM25
+		if len(branches) > 1 {
+			fusion = SharedBM25RRF
+		}
+	}
+	if trail.Retrieval.Fusion != fusion {
 		return errors.New("retrieval branches or fusion disagree with query texts")
 	}
 	var proposed [4]int
+	var idfs [4][]float64
 	for i, branch := range branches {
-		if branch.Kind != "lexical" || branch.Text != i || (branch.Scoring != "fts5-bm25" && branch.Scoring != ScopedBM25) ||
+		if branch.Kind != "lexical" || branch.Text != i || (branch.Scoring != "fts5-bm25" && branch.Scoring != ScopedBM25 && branch.Scoring != SharedBM25) ||
+			(branch.Scoring == SharedBM25) != shared || (branch.Scoring == SharedBM25) != (branch.SharedBM25 != nil) ||
 			(branch.TermPolicy != "original" && branch.TermPolicy != "dedup") || branch.Terms == nil ||
 			branch.Proposed < 0 || branch.Proposed > trail.Request.Limit || branch.DroppedUnknown < 0 ||
 			branch.DroppedNotAllowed < 0 || branch.DroppedUnknown > branch.Proposed ||
 			branch.DroppedNotAllowed > branch.Proposed-branch.DroppedUnknown {
 			return errors.New("invalid lexical branch")
+		}
+		if shared {
+			if len(branch.SharedBM25.Frequencies) != len(branch.Terms) {
+				return errors.New("invalid shared BM25 statistics")
+			}
+			idf, err := branch.SharedBM25.IDF()
+			if err != nil {
+				return errors.New("invalid shared BM25 statistics")
+			}
+			idfs[i] = idf
 		}
 		for _, term := range branch.Terms {
 			if term == "" || !trailText(term) {
@@ -522,6 +549,20 @@ func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 			if score.Branch < 0 || score.Branch >= len(branches) || score.Level != "block" ||
 				(j > 0 && score.Branch <= candidate.Scores[j-1].Branch) {
 				return errors.New("invalid or repeated candidate score")
+			}
+			if shared {
+				if score.BM25 == nil {
+					return errors.New("shared BM25 score has no match evidence")
+				}
+				expected, err := branches[score.Branch].SharedBM25.Score(idfs[score.Branch], *score.BM25)
+				bits, parseErr := strconv.ParseUint(score.ValueBits, 16, 64)
+				recorded := math.Float64frombits(bits)
+				if err != nil || parseErr != nil || math.IsNaN(recorded) || math.IsInf(recorded, 0) ||
+					math.Abs(expected-recorded) > 1e-9*max(1, math.Abs(recorded)) {
+					return errors.New("candidate score disagrees with shared BM25 evidence")
+				}
+			} else if score.BM25 != nil {
+				return errors.New("legacy score cannot carry shared BM25 evidence")
 			}
 			proposed[score.Branch]--
 		}

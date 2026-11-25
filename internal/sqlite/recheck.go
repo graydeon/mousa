@@ -135,11 +135,21 @@ func (store *Store) recheckTrail(ctx context.Context, id mousa.SourceTrailID, gr
 			}
 			result.Released = &released
 		}
-		if len(segments) == 0 {
-			return "empty", []NoteStale{}, nil
+		stale := []NoteStale{}
+		if trail.Retrieval != nil && len(trail.Retrieval.Branches) != 0 && trail.Retrieval.Branches[0].SharedBM25 != nil {
+			changed, err := sharedBM25Changed(ctx, q, trail)
+			if err != nil {
+				return "", nil, err
+			}
+			if changed {
+				stale = append(stale, NoteStale{TrailID: trail.ID, Reason: "bm25_statistics_changed"})
+			}
 		}
-		stale, err := citationStaleness(ctx, q, trail, segments)
-		return "fresh", stale, err
+		if len(segments) == 0 {
+			return "empty", stale, nil
+		}
+		cited, err := citationStaleness(ctx, q, trail, segments)
+		return "fresh", append(stale, cited...), err
 	})
 }
 

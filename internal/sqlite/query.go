@@ -15,13 +15,16 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
-type proposer func(ctx context.Context, q queryer, text string, sources []mousa.SourceID, limit int) ([]proposal, error)
+type proposer func(ctx context.Context, q queryer, quoted []string, sources []mousa.SourceID, limit int) ([]proposal, *mousa.BM25Stats, error)
 
 type proposal struct {
 	SegmentID     mousa.SegmentID
 	ContentSHA256 mousa.SHA256
 	Score         float64
 	Sources       []mousa.SourceID
+	text          string
+	length        uint64
+	Match         *mousa.BM25Match
 }
 
 var errQueryHeadMoved = errors.New("query snapshot source head moved")
@@ -320,10 +323,18 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 			// The splitter does not retain quote characters.
 			branch.Terms = append(branch.Terms, term[1:len(term)-1])
 		}
-		proposals, err := getProposals(ctx, q, strings.Join(quoted, " OR "), allowed, req.Limit)
+		proposals, stats, err := getProposals(ctx, q, quoted, allowed, req.Limit)
 		if err != nil {
 			finishRetrieval(err)
 			return nil, err
+		}
+		if stats != nil {
+			branch.Scoring = mousa.SharedBM25
+			branch.SharedBM25 = stats
+			retrieval.Fusion = mousa.SharedBM25
+			if len(req.Texts) > 1 {
+				retrieval.Fusion = mousa.SharedBM25RRF
+			}
 		}
 		branch.Proposed = len(proposals)
 		if len(proposals) > req.Limit {
@@ -357,7 +368,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 				row.candidate.Rejected = []string{"content_mismatch"}
 			}
 			row.candidate.Scores = append(row.candidate.Scores, mousa.TrailScore{
-				Branch: i, Level: "block", ValueBits: fmt.Sprintf("%016x", math.Float64bits(proposed.Score)),
+				Branch: i, Level: "block", BM25: proposed.Match, ValueBits: fmt.Sprintf("%016x", math.Float64bits(proposed.Score)),
 			})
 		}
 		retrieval.Branches = append(retrieval.Branches, branch)

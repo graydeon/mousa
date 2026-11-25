@@ -66,11 +66,11 @@ func TestQueryFaultyProposalsDoNotReleaseEvidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s.propose = func(_ context.Context, _ queryer, _ string, sources []mousa.SourceID, _ int) ([]proposal, error) {
+			s.propose = func(_ context.Context, _ queryer, _ []string, sources []mousa.SourceID, _ int) ([]proposal, *mousa.BM25Stats, error) {
 				if !slices.Equal(sources, []mousa.SourceID{a}) {
 					t.Fatalf("proposer got %v, want only %v", sources, a)
 				}
-				return []proposal{tt.fault, {SegmentID: good.ID, ContentSHA256: good.ContentSHA256, Score: -2}}, nil
+				return []proposal{tt.fault, {SegmentID: good.ID, ContentSHA256: good.ContentSHA256, Score: -2}}, nil, nil
 			}
 			result, err := s.Query(t.Context(), auditRequest(a))
 			if err != nil {
@@ -211,11 +211,11 @@ func TestQueryRetriesWhenAllowIsRevokedBeforeTrailWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer writer.Close()
-	s.propose = func(ctx context.Context, q queryer, text string, sources []mousa.SourceID, limit int) ([]proposal, error) {
+	s.propose = func(ctx context.Context, q queryer, quoted []string, sources []mousa.SourceID, limit int) ([]proposal, *mousa.BM25Stats, error) {
 		if _, changed, err := writer.SetSourceAccess(ctx, a, mousa.SourceAccessDeny, "test"); err != nil || !changed {
 			t.Fatalf("revoke during read snapshot: changed=%t err=%v", changed, err)
 		}
-		return proposeLexical(ctx, q, text, sources, limit)
+		return proposeLexical(ctx, q, quoted, sources, limit)
 	}
 	result, err := s.Query(ctx, auditRequest(a))
 	if err != nil || len(result.Passages) != 0 || result.Trail.Sources[0].Outcome != "deny" {

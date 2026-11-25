@@ -71,7 +71,7 @@ func ensureLexicalScope(ctx context.Context, conn *sql.Conn, sources []mousa.Sou
 	if err != nil {
 		return lexicalScope{}, err
 	}
-	_, err = conn.ExecContext(ctx, `CREATE VIRTUAL TABLE `+scope.table()+` USING fts5(text, tokenize='unicode61 remove_diacritics 2')`)
+	_, err = conn.ExecContext(ctx, `CREATE VIRTUAL TABLE `+scope.table()+` USING fts5(text, tokenize='`+lexicalTokenizer+`')`)
 	if err != nil {
 		return lexicalScope{}, classify("create lexical scope index", err)
 	}
@@ -115,19 +115,23 @@ func lexicalScopes(ctx context.Context, q queryer, filter []mousa.SourceID) ([]l
 	return scopes, classify("finish lexical scopes", rows.Err())
 }
 
-func proposeLexical(ctx context.Context, q queryer, expression string, sources []mousa.SourceID, limit int) ([]proposal, error) {
+func proposeLexical(ctx context.Context, q queryer, quoted []string, sources []mousa.SourceID, limit int) ([]proposal, *mousa.BM25Stats, error) {
+	expression := strings.Join(quoted, " OR ")
 	if err := validateLexicalQuery(expression, limit); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	scopes, err := lexicalScopes(ctx, q, sources)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if len(scopes) > 1 {
+		return sharedProposals(ctx, q, scopes, quoted, limit)
 	}
 	var proposals []proposal
 	for _, scope := range scopes {
-		rows, err := scopedProposals(ctx, q, scope, expression, limit)
+		rows, err := scopedProposals(ctx, q, scope, expression, limit, false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		proposals = append(proposals, rows...)
 		slices.SortFunc(proposals, func(a, b proposal) int {
@@ -135,41 +139,69 @@ func proposeLexical(ctx context.Context, q queryer, expression string, sources [
 		})
 		proposals = proposals[:min(len(proposals), limit)]
 	}
-	return proposals, nil
+	return proposals, nil, nil
 }
 
-func scopedProposals(ctx context.Context, q queryer, scope lexicalScope, expression string, limit int) ([]proposal, error) {
+func scopedProposals(ctx context.Context, q queryer, scope lexicalScope, expression string, limit int, mixed bool) ([]proposal, error) {
 	table := scope.table()
 	// Final bounded join does not load shared text or segment identities for
-	// every FTS match. Rowid is the deterministic tie break at the shard cutoff.
+	// every FTS match. A single shard keeps the historical rowid cutoff; in a
+	// mixed query the cutoff ties by segment ID and the rescore needs the text
+	// and token length of each local hit.
+	inner := `SELECT rowid, rank FROM ` + table + ` WHERE ` + table + ` MATCH ? AND rank MATCH 'bm25()'
+		ORDER BY rank, rowid LIMIT ?`
+	extra, docsize := "", ""
+	if mixed {
+		inner = `SELECT ` + table + `.rowid, rank FROM ` + table + `
+			LEFT JOIN segment_lexical_rows selected ON selected.rowid = ` + table + `.rowid
+			WHERE ` + table + ` MATCH ? AND rank MATCH 'bm25()' ORDER BY rank, selected.segment_id LIMIT ?`
+		extra = `, shard.text, sz.sz`
+		docsize = ` LEFT JOIN ` + table + `_docsize sz ON sz.id = hits.rowid`
+	}
 	rows, err := q.QueryContext(ctx, `
 		WITH hits AS MATERIALIZED (
-			SELECT rowid, rank FROM `+table+` WHERE `+table+` MATCH ? AND rank MATCH 'bm25()'
-			ORDER BY rank, rowid LIMIT ?
+			`+inner+`
 		)
-		SELECT r.segment_id, f.content_sha256, hits.rank, r.scope_id, shard.text = f.text
+		SELECT r.segment_id, f.content_sha256, hits.rank, r.scope_id, shard.text = f.text`+extra+`
 		FROM hits
 		LEFT JOIN segment_lexical_rows r ON r.rowid = hits.rowid
 		LEFT JOIN segment_lexical_fts f ON f.rowid = hits.rowid
-		JOIN `+table+` shard ON shard.rowid = hits.rowid`, expression, limit)
+		JOIN `+table+` shard ON shard.rowid = hits.rowid`+docsize, expression, limit)
 	if err != nil {
 		return nil, lexicalQueryError(ctx, err)
 	}
 	defer rows.Close()
 	proposals := make([]proposal, 0, limit)
 	for rows.Next() {
+		var candidate proposal
 		var id, digest []byte
-		var score float64
 		var scopeID sql.NullInt64
 		var same sql.NullBool
-		if err := rows.Scan(&id, &digest, &score, &scopeID, &same); err != nil {
+		var size []byte
+		var scan []any
+		if mixed {
+			scan = []any{&id, &digest, &candidate.Score, &scopeID, &same, &candidate.text, &size}
+		} else {
+			scan = []any{&id, &digest, &candidate.Score, &scopeID, &same}
+		}
+		if err := rows.Scan(scan...); err != nil {
 			return nil, lexicalIntegrityError(ctx, "read scoped lexical proposal", err)
 		}
 		if len(id) != len(mousa.SegmentID{}) || len(digest) != len(mousa.SHA256{}) || !scopeID.Valid ||
-			scopeID.Int64 != scope.id || !same.Valid || !same.Bool || math.IsNaN(score) || math.IsInf(score, 0) {
+			scopeID.Int64 != scope.id || !same.Valid || !same.Bool || math.IsNaN(candidate.Score) || math.IsInf(candidate.Score, 0) {
 			return nil, integrity("read scoped lexical proposal", "shard projection disagrees with shared index")
 		}
-		proposals = append(proposals, proposal{SegmentID: mousa.SegmentID(id), ContentSHA256: mousa.SHA256(digest), Score: score, Sources: scope.sources})
+		if mixed {
+			lengths, err := decodeSQLiteVarints(size, 1)
+			if err != nil || lengths[0] == 0 {
+				return nil, integrity("read scoped lexical proposal", "missing or invalid document size")
+			}
+			candidate.length = lengths[0]
+		}
+		candidate.SegmentID = mousa.SegmentID(id)
+		candidate.ContentSHA256 = mousa.SHA256(digest)
+		candidate.Sources = scope.sources
+		proposals = append(proposals, candidate)
 	}
 	return proposals, classify("finish scoped lexical proposals", rows.Err())
 }

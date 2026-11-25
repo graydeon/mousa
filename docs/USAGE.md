@@ -111,6 +111,23 @@ uses only the statistics of the candidate's source ancestry, and a shard
 is searched only when every source in it allows retrieval. A collection
 does not grant access.
 
+When a query's eligible ancestry spans more than one shard, each shard
+still proposes its top hits by its own BM25, and every proposal is
+rescored with the same FTS5 arithmetic against statistics summed over all
+eligible shards: row count, token count and each phrase's document
+frequency, including shards that returned no hits. A single text merges
+by that shared score with ties by segment ID; several texts keep their
+per-text rankings and fuse with the existing reciprocal-rank rule. Each
+branch names the scoring `bm25-shared-v1` and records the shared
+statistics; each candidate score records the token length and per-phrase
+occurrences it was recomputed from. Multi-text fusions are named
+`bm25-shared-rrf-k60-v1`. A query whose eligible ancestry spans zero or
+one shard keeps the earlier ranking, names and evidence, and no query
+accepts weights. Verification replays ranking and packing from recorded
+score bits and accepts a recomputed score within
+`1e-9 * max(1, abs(recorded))` of the recorded value so library rounding
+changes do not invalidate stored trails.
+
 ### Verify a store
 
 Open checks only store identity and schema compatibility; it does not scan the
@@ -360,8 +377,11 @@ global log index, not a count of visible changes.
 
 `recheck` returns `fresh`, `stale`, `unsourced` (note without citations),
 or `empty` (trail without released passages). Stale reasons include
-withdrawn or denied citation sources, retired segments, and citations
-that this store cannot verify. Rechecking does not rewrite a note or trail.
+withdrawn or denied citation sources, retired segments, citations
+that this store cannot verify, and `bm25_statistics_changed` when a
+shared-statistics trail's eligible shards changed its recorded counts —
+including one that grew without releasing anything. Rechecking does not
+rewrite a note or trail.
 
 ## What the store does not protect against
 
