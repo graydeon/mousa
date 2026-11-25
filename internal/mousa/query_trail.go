@@ -28,14 +28,15 @@ type QueryMode string
 type BudgetUnit string
 
 type QueryRequest struct {
-	Scope     Scope
-	Texts     []string
-	Mode      QueryMode
-	Budget    Budget
-	Limit     int
-	Caller    string
-	Purpose   string
-	RequestID string
+	Scope             Scope
+	Texts             []string
+	Mode              QueryMode
+	Budget            Budget
+	Limit             int
+	Caller            string
+	Purpose           string
+	RequestID         string
+	IncludeSuperseded bool
 	// Nil is the store owner. A caller grant must cover the entire scope.
 	PermittedSources map[SourceID]bool
 }
@@ -68,33 +69,46 @@ type Passage struct {
 	Extract              bool             `json:"extract"`
 	ContentSHA256        SHA256           `json:"content_sha256"`
 	Text                 string           `json:"text"`
+	Path                 string           `json:"path"`
 	Note                 *NoteEvidence    `json:"note,omitempty"`
 }
 
 // Trail and its nested wire types declare fields in canonical key order.
 type Trail struct {
-	AsOf         uint64           `json:"as_of"`
-	Candidates   []Candidate      `json:"candidates,omitzero"`
-	ID           SourceTrailID    `json:"id,omitzero"`
-	Packing      *Packing         `json:"packing,omitempty"`
-	Request      TrailRequest     `json:"request"`
-	ResultSHA256 SHA256           `json:"result_sha256"`
-	Retrieval    *Retrieval       `json:"retrieval,omitempty"`
-	Schema       string           `json:"schema"`
-	Sources      []SourceDecision `json:"sources"`
-	StoreID      string           `json:"store_id"`
+	AsOf         uint64               `json:"as_of"`
+	Candidates   []Candidate          `json:"candidates,omitzero"`
+	ID           SourceTrailID        `json:"id,omitzero"`
+	Packing      *Packing             `json:"packing,omitempty"`
+	Request      TrailRequest         `json:"request"`
+	ResultSHA256 SHA256               `json:"result_sha256"`
+	Retrieval    *Retrieval           `json:"retrieval,omitempty"`
+	Schema       string               `json:"schema"`
+	Sources      []SourceDecision     `json:"sources"`
+	StoreID      string               `json:"store_id"`
+	Supersession []SupersessionEffect `json:"supersession,omitempty"`
 }
 
 type TrailRequest struct {
-	Budget          Budget     `json:"budget"`
-	Caller          string     `json:"caller,omitempty"`
-	Limit           int        `json:"limit"`
-	Mode            QueryMode  `json:"mode"`
-	Purpose         string     `json:"purpose,omitempty"`
-	RequestID       string     `json:"request_id,omitempty"`
-	RequestedAtUsec uint64     `json:"requested_at_usec,omitzero"`
-	Scope           TrailScope `json:"scope"`
-	Texts           []string   `json:"texts"`
+	Budget            Budget     `json:"budget"`
+	Caller            string     `json:"caller,omitempty"`
+	IncludeSuperseded bool       `json:"include_superseded,omitempty"`
+	Limit             int        `json:"limit"`
+	Mode              QueryMode  `json:"mode"`
+	Purpose           string     `json:"purpose,omitempty"`
+	RequestID         string     `json:"request_id,omitempty"`
+	RequestedAtUsec   uint64     `json:"requested_at_usec,omitzero"`
+	Scope             TrailScope `json:"scope"`
+	Texts             []string   `json:"texts"`
+}
+
+// SupersessionEffect records that one candidate note was already replaced by
+// newer durable notes at the trail's snapshot. The note ID names the note
+// that owns the candidate's segment; each entry of SupersededBy is a
+// replacement note ID.
+type SupersessionEffect struct {
+	NoteID       SHA256    `json:"note_id"`
+	SegmentID    SegmentID `json:"segment_id"`
+	SupersededBy []SHA256  `json:"superseded_by"`
 }
 
 type TrailScope struct {
@@ -175,15 +189,16 @@ type Packing struct {
 // CallerTrail deliberately cannot represent global log positions, denied
 // decision details, or counts of proposals dropped by the verifier.
 type CallerTrail struct {
-	Candidates   *[]Candidate     `json:"candidates,omitempty"`
-	ID           SourceTrailID    `json:"id"`
-	Packing      *Packing         `json:"packing,omitempty"`
-	Request      TrailRequest     `json:"request"`
-	ResultSHA256 SHA256           `json:"result_sha256"`
-	Retrieval    *CallerRetrieval `json:"retrieval,omitempty"`
-	Schema       string           `json:"schema"`
-	Sources      []CallerSource   `json:"sources"`
-	StoreID      string           `json:"store_id"`
+	Candidates   *[]Candidate         `json:"candidates,omitempty"`
+	ID           SourceTrailID        `json:"id"`
+	Packing      *Packing             `json:"packing,omitempty"`
+	Request      TrailRequest         `json:"request"`
+	ResultSHA256 SHA256               `json:"result_sha256"`
+	Retrieval    *CallerRetrieval     `json:"retrieval,omitempty"`
+	Schema       string               `json:"schema"`
+	Sources      []CallerSource       `json:"sources"`
+	StoreID      string               `json:"store_id"`
+	Supersession []SupersessionEffect `json:"supersession,omitempty"`
 }
 
 type CallerSource struct {
@@ -217,6 +232,7 @@ func (trail Trail) CallerView() CallerTrail {
 	view := CallerTrail{
 		ID: trail.ID, Packing: trail.Packing, Request: trail.Request, ResultSHA256: trail.ResultSHA256,
 		Schema: trail.Schema, Sources: make([]CallerSource, 0, len(trail.Sources)), StoreID: trail.StoreID,
+		Supersession: trail.Supersession,
 	}
 	if trail.Retrieval != nil {
 		view.Candidates = &trail.Candidates
@@ -305,13 +321,14 @@ func (trail Trail) resultDigest() (SHA256, error) {
 		}
 	}
 	data, err := canonicalTrailJSON(struct {
-		Candidates []Candidate      `json:"candidates,omitzero"`
-		Packing    *Packing         `json:"packing,omitempty"`
-		Request    TrailRequest     `json:"request"`
-		Retrieval  *Retrieval       `json:"retrieval,omitempty"`
-		Schema     string           `json:"schema"`
-		Sources    []SourceDecision `json:"sources"`
-	}{trail.Candidates, trail.Packing, request, trail.Retrieval, trail.Schema, sources})
+		Candidates   []Candidate          `json:"candidates,omitzero"`
+		Packing      *Packing             `json:"packing,omitempty"`
+		Request      TrailRequest         `json:"request"`
+		Retrieval    *Retrieval           `json:"retrieval,omitempty"`
+		Schema       string               `json:"schema"`
+		Sources      []SourceDecision     `json:"sources"`
+		Supersession []SupersessionEffect `json:"supersession,omitempty"`
+	}{trail.Candidates, trail.Packing, request, trail.Retrieval, trail.Schema, sources, trail.Supersession})
 	return SHA256(sha256.Sum256(data)), err
 }
 
@@ -404,8 +421,8 @@ func (trail Trail) validate() error {
 		}
 	}
 	if len(allowed) == 0 {
-		if trail.Retrieval != nil || trail.Candidates != nil || trail.Packing != nil {
-			return errors.New("all-denied trail cannot contain retrieval, candidates or packing")
+		if trail.Retrieval != nil || trail.Candidates != nil || trail.Packing != nil || len(trail.Supersession) != 0 {
+			return errors.New("all-denied trail cannot contain retrieval, candidates, packing or supersession")
 		}
 		return nil
 	}
@@ -478,15 +495,17 @@ func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 		proposed[i] = branch.Proposed - branch.DroppedUnknown - branch.DroppedNotAllowed
 	}
 	check := slices.Clone(trail.Candidates)
+	// seen doubles as the supersession eligibility set: an unrejected
+	// candidate may carry an effect, a rejected one may not.
 	seen := make(map[SegmentID]bool, len(check))
 	for i, candidate := range check {
-		if seen[candidate.SegmentID] || candidate.SegmentID == (SegmentID{}) ||
+		if _, duplicate := seen[candidate.SegmentID]; duplicate || candidate.SegmentID == (SegmentID{}) ||
 			candidate.RepresentationID == (RepresentationID{}) || candidate.ContentSHA256 == (SHA256{}) ||
 			candidate.Range.Start >= candidate.Range.End || candidate.Range.End > maxJSONSafeInteger ||
 			len(candidate.SourceIDs) == 0 || !sortedSourceIDs(candidate.SourceIDs) {
 			return errors.New("invalid or repeated trail candidate")
 		}
-		seen[candidate.SegmentID] = true
+		seen[candidate.SegmentID] = len(candidate.Rejected) == 0
 		for _, source := range candidate.SourceIDs {
 			if !allowed[source] {
 				return errors.New("candidate ancestry must be allowed by the trail")
@@ -511,10 +530,33 @@ func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 	if proposed != ([4]int{}) {
 		return errors.New("candidate scores disagree with proposal counts")
 	}
+	// Supersession effects must name eligible unrejected candidates in
+	// strictly sorted unique order, with sorted unique nonzero replacements
+	// that never include the note they replace.
+	for i, effect := range trail.Supersession {
+		if effect.SegmentID == (SegmentID{}) || effect.NoteID == (SHA256{}) || !seen[effect.SegmentID] ||
+			(i > 0 && bytes.Compare(trail.Supersession[i-1].SegmentID[:], effect.SegmentID[:]) >= 0) {
+			return errors.New("invalid or repeated supersession effect")
+		}
+		if len(effect.SupersededBy) == 0 {
+			return errors.New("supersession effect has no replacements")
+		}
+		for j, replacement := range effect.SupersededBy {
+			if replacement == (SHA256{}) || replacement == effect.NoteID ||
+				(j > 0 && bytes.Compare(effect.SupersededBy[j-1][:], replacement[:]) >= 0) {
+				return errors.New("invalid supersession effect replacement")
+			}
+		}
+	}
 	if err := RankCandidates(check, len(branches)); err != nil {
 		return err
 	}
-	packing := ApplyFirstFit(check, trail.Request.Budget.Limit)
+	// An include request records the effects but never omits for them.
+	var packSupersession []SupersessionEffect
+	if !trail.Request.IncludeSuperseded {
+		packSupersession = trail.Supersession
+	}
+	packing := ApplyFirstFit(check, trail.Request.Budget.Limit, packSupersession)
 	if packing != *trail.Packing {
 		return errors.New("packing total or policy disagrees with replay")
 	}
@@ -609,14 +651,24 @@ func RankCandidates(candidates []Candidate, branchCount int) error {
 }
 
 // ApplyFirstFit packs whole segments, skipping over budget omissions and
-// suppressing duplicates of segments already packed.
-func ApplyFirstFit(candidates []Candidate, budget uint64) Packing {
+// suppressing duplicates of segments already packed. Every segment a
+// supersession effect names is omitted; callers pass nil when the request
+// asked for superseded passages.
+func ApplyFirstFit(candidates []Candidate, budget uint64, supersession []SupersessionEffect) Packing {
+	excluded := make(map[SegmentID]bool, len(supersession))
+	for _, effect := range supersession {
+		excluded[effect.SegmentID] = true
+	}
 	packing := Packing{Policy: "first-fit-v1"}
 	packed := make(map[SHA256]SegmentID)
 	for i := range candidates {
 		c := &candidates[i]
 		c.Packed, c.Omitted, c.DuplicateOf, c.Cost = "none", "", SegmentID{}, 0
 		if len(c.Rejected) != 0 {
+			continue
+		}
+		if excluded[c.SegmentID] {
+			c.Omitted = "superseded"
 			continue
 		}
 		size := c.Range.End - c.Range.Start

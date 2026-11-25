@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,13 +23,28 @@ import (
 func rememberCommand(ctx context.Context, storePath string, client *nativeClient, args []string) error {
 	flags := newCommandFlags("remember")
 	sourceID := flags.String("source", "", "external source ID for the note (required)")
+	path := flags.String("path", "", "location path for a new note; keeps the current path on a repeat")
 	var fromArgs []string
 	flags.Func("from", "cited query trail as TRAIL or TRAIL:SEG,SEG; repeatable", func(value string) error {
 		fromArgs = append(fromArgs, value)
 		return nil
 	})
+	var supersedeArgs []string
+	flags.Func("supersedes", "note ID this note replaces; repeatable", func(value string) error {
+		supersedeArgs = append(supersedeArgs, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	var notePath *string
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "path" {
+			notePath = path
+		}
+	})
+	if notePath != nil && !mousa.ValidPath(*notePath) {
+		return usageError{"invalid note path"}
 	}
 	if *sourceID == "" {
 		return usageError{"remember requires --source <external-id>"}
@@ -62,6 +78,14 @@ func rememberCommand(ctx context.Context, storePath string, client *nativeClient
 		}
 		citations = append(citations, citation)
 	}
+	supersedes := make([]mousa.SHA256, 0, len(supersedeArgs))
+	for _, value := range supersedeArgs {
+		id, err := mousa.ParseSHA256(value)
+		if err != nil {
+			return usageError{fmt.Sprintf("--supersedes note ID is not lowercase hexadecimal: %s", err)}
+		}
+		supersedes = append(supersedes, id)
+	}
 	if client != nil {
 		if !utf8.Valid(text) {
 			return errors.New("note text must be valid UTF-8")
@@ -69,6 +93,7 @@ func rememberCommand(ctx context.Context, storePath string, client *nativeClient
 		result, err := client.post(ctx, "/v1/notes", nativeNote{
 			nativeLabels: nativeLabels{Client: client.metadata},
 			Scope:        nativeScope{Source: *sourceID}, Text: string(text), Citations: citations,
+			Path: notePath, Supersedes: supersedes,
 		})
 		if err != nil {
 			return err
@@ -80,7 +105,7 @@ func rememberCommand(ctx context.Context, storePath string, client *nativeClient
 		return err
 	}
 	defer store.Close()
-	note, err := rememberNote(ctx, store, source, accessActor, text, citations, nil)
+	note, err := rememberNote(ctx, store, source, accessActor, text, citations, supersedes, nil, notePath)
 	if err != nil {
 		return err
 	}
@@ -89,10 +114,11 @@ func rememberCommand(ctx context.Context, storePath string, client *nativeClient
 
 // rememberNote is the single note write used by the CLI and the service. The
 // note's exact bytes are ingested as one internal note-policy item inside the
-// same transaction as the canonical record and its log leaf.
-func rememberNote(ctx context.Context, store *sqlite.Store, source mousa.Source, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool) (mousa.Note, error) {
-	return store.Remember(ctx, source.ID, author, text, citations, permittedSources, func(scoped *sqlite.Store, itemID string, createdAtUsec int64) error {
-		_, err := applyItem(ctx, scoped, source, itemInput{ID: itemID, Content: text, Captured: createdAtUsec}, nil, mousa.TextSegmentNoteV1)
+// same transaction as the canonical record and its log leaf. An explicit path
+// locates a new note; a repeat keeps the stored one.
+func rememberNote(ctx context.Context, store *sqlite.Store, source mousa.Source, author string, text []byte, citations []mousa.NoteCitation, supersedes []mousa.SHA256, permittedSources map[mousa.SourceID]bool, path *string) (mousa.Note, error) {
+	return store.Remember(ctx, source.ID, author, text, citations, supersedes, permittedSources, func(scoped *sqlite.Store, itemID string, createdAtUsec int64) error {
+		_, err := applyItem(ctx, scoped, source, itemInput{ID: itemID, Content: text, Captured: createdAtUsec, Path: path}, nil, mousa.TextSegmentNoteV1)
 		return err
 	})
 }
@@ -207,7 +233,11 @@ func runNotesImport(ctx context.Context, storePath string, source mousa.Source) 
 	}
 	defer store.Close()
 	created, err := store.ImportNotes(ctx, source.ID, notes, func(scoped *sqlite.Store, exported sqlite.ExportedNote) error {
-		_, err := applyItem(ctx, scoped, source, itemInput{ID: exported.ItemID, Content: []byte(exported.Text), Captured: exported.CreatedAtUsec}, nil, mousa.TextSegmentNoteV1)
+		var path *string
+		if exported.Path != "" {
+			path = &exported.Path
+		}
+		_, err := applyItem(ctx, scoped, source, itemInput{ID: exported.ItemID, Content: []byte(exported.Text), Captured: exported.CreatedAtUsec, Path: path}, nil, mousa.TextSegmentNoteV1)
 		return err
 	})
 	if err != nil {

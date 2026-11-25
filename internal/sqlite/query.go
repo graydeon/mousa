@@ -61,6 +61,7 @@ func (store *Store) query(ctx context.Context, request mousa.QueryRequest, admis
 		Budget: request.Budget, Caller: request.Caller, Limit: request.Limit, Mode: request.Mode,
 		Purpose: request.Purpose, RequestID: request.RequestID, Scope: scope,
 		RequestedAtUsec: uint64(time.Now().UnixMicro()), Texts: slices.Clone(request.Texts),
+		IncludeSuperseded: request.IncludeSuperseded,
 	}
 	if req.Mode == "" {
 		req.Mode = mousa.QueryLexical
@@ -373,7 +374,42 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		return nil, wrap(CodeIntegrity, "rank candidates", err)
 	}
 	finishPack := store.StartStage(mousa.StagePack)
-	packing := mousa.ApplyFirstFit(rows, req.Budget.Limit)
+	// Single-source candidates that are superseded notes get an exclusion
+	// effect; rejected candidates already stay out of packing on their own.
+	supersession := []mousa.SupersessionEffect{}
+	var marked map[mousa.SegmentID][]mousa.SHA256
+	if req.IncludeSuperseded {
+		marked = make(map[mousa.SegmentID][]mousa.SHA256)
+	}
+	for _, row := range candidates {
+		if len(row.candidate.Rejected) != 0 || len(row.candidate.SourceIDs) != 1 {
+			continue
+		}
+		effect, err := noteSupersessionEffect(ctx, q, row.candidate.SourceIDs[0], row.candidate.RepresentationID, row.candidate.SegmentID, trail.AsOf)
+		if err != nil {
+			finishPack(err)
+			return nil, err
+		}
+		if effect != nil {
+			supersession = append(supersession, *effect)
+			if marked != nil {
+				marked[effect.SegmentID] = effect.SupersededBy
+			}
+		}
+	}
+	if len(supersession) == 0 {
+		supersession = nil
+	} else {
+		slices.SortFunc(supersession, func(a, b mousa.SupersessionEffect) int {
+			return bytes.Compare(a.SegmentID[:], b.SegmentID[:])
+		})
+	}
+	trail.Supersession = supersession
+	var packSupersession []mousa.SupersessionEffect
+	if !req.IncludeSuperseded {
+		packSupersession = supersession
+	}
+	packing := mousa.ApplyFirstFit(rows, req.Budget.Limit, packSupersession)
 	trail.Candidates, trail.Packing, trail.Retrieval = rows, &packing, retrieval
 	passages := []mousa.Passage{}
 	for _, candidate := range rows {
@@ -387,10 +423,70 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 			return nil, err
 		}
 		passage.Rank = candidate.Rank
+		if marked != nil && passage.Note != nil {
+			passage.Note.SupersededBy = marked[candidate.SegmentID]
+		}
 		passages = append(passages, passage)
 	}
 	finishPack(nil)
 	return passages, nil
+}
+
+// noteSupersessionEffect checks whether one candidate segment's note was
+// already superseded at asOf. The replacement IDs come from the projection
+// but are trusted only after each canonical record and its log leaf confirm
+// the edge; a projection row that disagrees with the durable record fails
+// integrity. It returns nil for documents and unmodified notes.
+func noteSupersessionEffect(ctx context.Context, q queryer, sourceID mousa.SourceID, reprID mousa.RepresentationID, segmentID mousa.SegmentID, asOf uint64) (*mousa.SupersessionEffect, error) {
+	rows, err := q.QueryContext(ctx, `SELECT n.id, r.id, r.record_json, l.source_id, l.leaf_hash
+		FROM local_items li
+		JOIN notes n ON n.source_id = li.source_id AND n.item_id = li.item_id
+		JOIN note_supersessions ns ON ns.target_id = n.id
+		JOIN notes r ON r.id = ns.replacement_id
+		LEFT JOIN log l ON l.kind = 'note' AND l.record_id = r.id
+		WHERE li.source_id = ? AND li.representation_id = ? AND li.active = 1
+			AND (l.seq IS NULL OR l.seq <= ?)
+		ORDER BY r.id`, sourceID[:], reprID[:], asOf)
+	if err != nil {
+		return nil, classify("note supersession effect", err)
+	}
+	defer rows.Close()
+	var targetID mousa.SHA256
+	supersededBy := []mousa.SHA256{}
+	for rows.Next() {
+		var target, replacement, record, leafSource, leaf []byte
+		if err := rows.Scan(&target, &replacement, &record, &leafSource, &leaf); err != nil {
+			return nil, classify("note supersession effect", err)
+		}
+		if len(target) != len(targetID) || len(replacement) != len(targetID) {
+			return nil, integrity("note supersession effect", "invalid note identity")
+		}
+		if len(supersededBy) == 0 {
+			copy(targetID[:], target)
+		} else if !bytes.Equal(target, targetID[:]) {
+			return nil, integrity("note supersession effect", "supersession rows name different targets")
+		}
+		if err := checkLeaf(mousa.LogKindNote, leafSource, leaf, record, sourceID[:]); err != nil {
+			return nil, integrity("note supersession effect", err.Error())
+		}
+		note, err := decodeCanonical(record, mousa.DecodeNote, mousa.EncodeNote)
+		if err != nil {
+			return nil, integrity("note supersession effect", "replacement record is not canonical")
+		}
+		var replacementID mousa.SHA256
+		copy(replacementID[:], replacement)
+		if note.ID != replacementID || note.SourceID != sourceID || !slices.Contains(note.Supersedes, targetID) {
+			return nil, integrity("note supersession effect", "replacement record disagrees with the projection")
+		}
+		supersededBy = append(supersededBy, replacementID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, classify("note supersession effect", err)
+	}
+	if len(supersededBy) == 0 {
+		return nil, nil
+	}
+	return &mousa.SupersessionEffect{NoteID: targetID, SegmentID: segmentID, SupersededBy: supersededBy}, nil
 }
 
 func checkProposal(ctx context.Context, q queryer, id mousa.SegmentID, allowed map[mousa.SourceID]bool) (*queryCandidate, error) {
@@ -465,6 +561,7 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 		return mousa.Passage{}, err
 	}
 	item := observation.ExternalObservationID
+	isItem := strings.HasPrefix(item, "item/")
 	if rest, ok := strings.CutPrefix(item, "item/"); ok {
 		artifact, err := getArtifact(ctx, q, path.ArtifactID)
 		if err != nil {
@@ -477,7 +574,17 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 	}
 	passage := mousa.Passage{
 		SourceID: id, Item: item, SegmentID: candidate.SegmentID, Range: candidate.Range,
-		ContentSHA256: candidate.ContentSHA256, Text: row.text,
+		ContentSHA256: candidate.ContentSHA256, Text: row.text, Path: mousa.DefaultNotePath,
+	}
+	if isItem {
+		stored, err := localItemPath(ctx, q, id, item)
+		switch {
+		case err == nil:
+			passage.Path = stored
+		case IsCode(err, CodeNotFound):
+		default:
+			return mousa.Passage{}, err
+		}
 	}
 	repr, err := getRepresentation(ctx, q, candidate.RepresentationID)
 	if err != nil {

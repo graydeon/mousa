@@ -34,6 +34,8 @@ binary, until the scale probe passes at both sizes.
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>` | First-fit byte accounting, duplicate omission, and history reads. |
 | Canonical query trails | Yes | `query`; `trail` ID | Stable result digests, atomic leaf writes, corruption checks and caller-view masking. |
 | Durable notes | Yes | `remember --source <id>`, `notes export --source <id>`, `notes import --source <id>`; `POST /v1/notes` on a served store | Immutable canonical records with typed trail/segment lineage; idempotent writes, exact stdin/argument bytes (CRLF/BOM preserved), byte-exact export, lexical recall with stale reasons, denied/withdrawn enforcement, write guards on document sources, served lineage redaction for citations outside the caller's read grants |
+| Item paths and moves | Yes | `remember --path`, JSONL record `path`, `move --note|--item|--prefix --to`; `POST /v1/moves` on a served store | Validated lowercase paths, `unsorted` default for notes, literal legacy item IDs preserved, atomic `path_move` log leaves, no-op and denied enforcement, monitor move detail |
+| Note supersession | Yes | `remember --supersedes NOTE` (repeatable), `query --include-superseded`; native `supersedes`, `include_superseded` | Immutable same-source edges, default exclusion with include marking, verified trail effects, export/import in any line order |
 | Embedding inference, answer generation | No | No | Not implemented |
 | Loopback JSON request service | Yes | Opt-in `serve --config FILE`; `agent add NAME --config FILE --source ID`; client by `-endpoint`, `MOUSA_ENDPOINT` or client configuration, token by `MOUSA_TOKEN`, `token_file` or `token_command` | Durable admission/outcome per request including unauthorized and canceled attempts, typed errors with request IDs, verified operator history and detail, unknown-outcome transport failures; see [Local served store](USAGE.md#local-served-store-opt-in) |
 | Live stage stream and dashboard | Yes | `GET /v1/events`, `GET /` | Bounded frame ring with explicit gap on overflow/restart, `Last-Event-ID` resume without silent misses, operator-only, measured stage timings that are not archived; reconnects read verified history |
@@ -198,25 +200,28 @@ imports as no-ops. If an imported citation's trail is absent, recall reports
 Notes share their source's normal access grant; there are no agent-specific
 sources or per-note grants. The CLI author is the operator identity; on a served store the
 author is the authenticated principal, which needs a write grant on the source.
-Document and note sources stay disjoint: `sync` refuses a source holding notes,
+A new note can declare `--supersedes NOTE_ID` edges to existing same-source
+notes; the edges are immutable, there is no un-supersede, and queries exclude
+superseded passages unless asked to include them. Document and note sources
+stay disjoint: `sync` refuses a source holding notes,
 and `remember` refuses a source holding document items, active or not.
-Not supported: editing or retracting a note,
-recalling across multiple sources, a citation change cursor or standalone
-recheck, a daemon, and any change to ranking.
+Notes cannot be edited or retracted. Moving and superseding leave the stored
+text unchanged.
 
 ## Store schema and older stores
 
 A store has one schema. Mousa marks it in the SQLite header (`application_id`
 and `user_version`) and checks that header before it reads or verifies any record.
-There are no migrations. A store written before the schema was collapsed, or by
-an earlier schema version, is refused with an `incompatible_schema` error that
-says to create a new store and re-sync it from its sources. A SQLite file that is
-not a Mousa store and a store from a newer binary are refused the same way. A
-refused store is not modified.
-
-Schema 7 refuses older stores without modifying them. Export notes with the old
-binary before creating a new store, then import them under the same source ID.
-Re-sync document sources.
+The current schema is 8. A store written by the previous version is refused on
+open with an `incompatible_schema` error that names `mousa migrate`; that
+command upgrades the store in place inside one transaction, preserving notes,
+note citations, query trails and request history, and `verify` confirms the
+result. A store written before the schema was collapsed, or two or more
+versions back, is refused the same way without a migration path: export notes
+with the old binary before creating a new store, then import them under the
+same source ID and re-sync document sources. A SQLite file that is not a Mousa
+store and a store from a newer binary are refused the same way. A refused
+store is not modified.
 
 Open checks `application_id`, `user_version` and the store ID. Writes and
 queries verify records they touch. Use `verify` explicitly to scan stored

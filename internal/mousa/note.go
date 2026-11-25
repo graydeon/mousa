@@ -3,6 +3,7 @@ package mousa
 import (
 	"bytes"
 	"crypto/sha256"
+	"slices"
 )
 
 // NoteStale describes a citation that cannot support a fresh note.
@@ -19,6 +20,7 @@ type NoteEvidence struct {
 	DerivedFrom   []NoteCitation `json:"derived_from"`
 	Origin        string         `json:"origin"`
 	Stale         []NoteStale    `json:"stale"`
+	SupersededBy  []SHA256       `json:"superseded_by,omitempty"`
 }
 
 // NoteSchema is the canonical schema/version of a durable note record.
@@ -48,22 +50,33 @@ type Note struct {
 	ItemID        string         `json:"item_id"`
 	Schema        string         `json:"schema"`
 	SourceID      SourceID       `json:"source_id"`
+	Supersedes    []SHA256       `json:"supersedes,omitempty"`
 }
+
+// MaxNoteSupersedes bounds one note's replacement edges; inputs over it are
+// rejected at canonical validation like oversized citation sets.
+const MaxNoteSupersedes = 64
 
 // NoteItemID is the local item identity of a note: the hex form of its content
 // digest, so two writes of identical text address the same item.
 func NoteItemID(digest SHA256) string { return digest.String() }
 
 // NewNote builds the canonical note for one write. The digest is computed over
-// the canonical record with id omitted and then stored back on the note.
-func NewNote(sourceID SourceID, author string, contentSHA256 SHA256, createdAtUsec int64, derivedFrom []NoteCitation) (Note, error) {
+// the canonical record with id omitted and then stored back on the note. The
+// supersession targets are caller order-insensitive: they are stored sorted.
+func NewNote(sourceID SourceID, author string, contentSHA256 SHA256, createdAtUsec int64, derivedFrom []NoteCitation, supersedes []SHA256) (Note, error) {
 	if derivedFrom == nil {
 		derivedFrom = []NoteCitation{}
 	}
+	targets := slices.Clone(supersedes)
+	slices.SortFunc(targets, func(a, b SHA256) int { return bytes.Compare(a[:], b[:]) })
 	note := Note{
 		Schema: NoteSchema, SourceID: sourceID, Author: author,
 		ContentSHA256: contentSHA256, CreatedAtUsec: createdAtUsec,
 		DerivedFrom: derivedFrom, ItemID: NoteItemID(contentSHA256),
+	}
+	if len(targets) != 0 {
+		note.Supersedes = targets
 	}
 	digest, err := noteDigest(note)
 	if err != nil {
@@ -112,6 +125,20 @@ func (note Note) Validate() error {
 	}
 	if note.SourceID == (SourceID{}) {
 		return newValidationError("source_id", ValidationCodeInvalidValue, "must not be zero", nil)
+	}
+	if len(note.Supersedes) > MaxNoteSupersedes {
+		return newValidationError("supersedes", ValidationCodeInvalidValue, "must hold at most 64 note ids", nil)
+	}
+	for i, target := range note.Supersedes {
+		if target == (SHA256{}) {
+			return newValidationError("supersedes", ValidationCodeInvalidValue, "superseded note id must not be zero", nil)
+		}
+		if i > 0 && bytes.Compare(note.Supersedes[i-1][:], target[:]) >= 0 {
+			return newValidationError("supersedes", ValidationCodeInvalidValue, "must be strictly sorted unique note ids", nil)
+		}
+	}
+	if slices.Contains(note.Supersedes, note.ID) {
+		return newValidationError("supersedes", ValidationCodeInvalidValue, "a note cannot supersede itself", nil)
 	}
 	if note.ID == (SHA256{}) {
 		return newValidationError("id", ValidationCodeInvalidValue, "must not be zero", nil)

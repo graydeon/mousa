@@ -428,9 +428,10 @@ func (store *Store) RequestDetail(ctx context.Context, requestID string) (Reques
 // RequestContent is what one served request asked for and what it was given:
 // a query's text with the passages released to the caller, or a note's text.
 type RequestContent struct {
-	Query    string   `json:"query,omitempty"`
-	Returned []string `json:"returned,omitempty"`
-	Note     string   `json:"note,omitempty"`
+	Query    string                `json:"query,omitempty"`
+	Returned []string              `json:"returned,omitempty"`
+	Note     string                `json:"note,omitempty"`
+	Moves    []mousa.PathMoveEntry `json:"moves,omitempty"`
 }
 
 // RequestContent reads the content behind one completed request's evidence.
@@ -482,6 +483,12 @@ func (store *Store) RequestContent(ctx context.Context, requestID string) (Reque
 			return RequestContent{}, err
 		}
 		content.Note = text
+	case evidence.PathMoveID != nil:
+		move, err := readPathMove(ctx, tx, *evidence.PathMoveID)
+		if err != nil {
+			return RequestContent{}, err
+		}
+		content.Moves = move.Records
 	}
 	return content, nil
 }
@@ -623,6 +630,35 @@ func requestEvidenceSummary(ctx context.Context, q queryer, admission mousa.Requ
 			summary.Previous = change.Previous.String()
 		}
 		return summary, nil
+	case evidence.PathMoveID != nil:
+		move, err := readPathMove(ctx, q, *evidence.PathMoveID)
+		switch {
+		case IsCode(err, CodeNotFound):
+			return nil, integrity("request evidence", "path move leaf is missing")
+		case err != nil:
+			return nil, err
+		}
+		if move.Seq >= uint64(outcomeSeq) {
+			return nil, integrity("request evidence", "path move leaf does not precede the outcome")
+		}
+		if outcome.State == mousa.RequestStateCommitted && move.Actor != admission.Principal {
+			return nil, integrity("request evidence", "path move actor disagrees with the request actor")
+		}
+		source, err := getSource(ctx, q, move.SourceID)
+		if err != nil {
+			return nil, lexicalStructuralError("request evidence source", err)
+		}
+		_, moveID, err := mousa.EncodePathMove(move)
+		if err != nil {
+			return nil, wrap(CodeIntegrity, "request evidence path move", err)
+		}
+		if moveID != *evidence.PathMoveID {
+			return nil, integrity("request evidence", "path move id disagrees with its record")
+		}
+		return &RequestEvidenceSummary{
+			Kind: "path_move", ID: moveID.String(), SourceID: move.SourceID.String(),
+			Source: source.ExternalSourceID,
+		}, nil
 	}
 	return nil, nil
 }

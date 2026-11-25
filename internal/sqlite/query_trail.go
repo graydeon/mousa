@@ -284,6 +284,39 @@ func checkTrailReferences(ctx context.Context, q queryer, trail mousa.Trail) err
 			return err
 		}
 	}
+	// Every eligible candidate's effect must recompute identically at the
+	// trail's own snapshot — a forged effect, a dropped effect, and one
+	// naming an ineligible or unknown candidate all fail.
+	declared := make(map[mousa.SegmentID]mousa.SupersessionEffect, len(trail.Supersession))
+	for _, effect := range trail.Supersession {
+		declared[effect.SegmentID] = effect
+	}
+	for i := range trail.Candidates {
+		candidate := &trail.Candidates[i]
+		effect, listed := declared[candidate.SegmentID]
+		if listed {
+			delete(declared, candidate.SegmentID)
+		}
+		if len(candidate.Rejected) != 0 || len(candidate.SourceIDs) != 1 {
+			if listed {
+				return integrity("read query trail", "supersession effect names an ineligible candidate")
+			}
+			continue
+		}
+		current, err := noteSupersessionEffect(ctx, q, candidate.SourceIDs[0], candidate.RepresentationID, candidate.SegmentID, trail.AsOf)
+		if err != nil {
+			return err
+		}
+		if (current == nil) == listed {
+			return integrity("read query trail", "supersession effect disagrees with the durable record")
+		}
+		if current != nil && (current.NoteID != effect.NoteID || !slices.Equal(current.SupersededBy, effect.SupersededBy)) {
+			return integrity("read query trail", "supersession effect disagrees with the durable record")
+		}
+	}
+	if len(declared) != 0 {
+		return integrity("read query trail", "supersession effect names an unknown candidate")
+	}
 	return nil
 }
 

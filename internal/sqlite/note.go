@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -16,10 +17,13 @@ import (
 type NoteStale = mousa.NoteStale
 type NoteEvidence = mousa.NoteEvidence
 
-// ExportedNote is the exact canonical note record plus its exact stored text.
+// ExportedNote is the exact canonical note record plus its exact stored text
+// and current path. A note exported before paths existed carries no path
+// field; importing one treats the path as "unsorted".
 type ExportedNote struct {
 	mousa.Note
 	Text string `json:"text"`
+	Path string `json:"path,omitempty"`
 }
 
 const (
@@ -76,7 +80,8 @@ func getNote(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID str
 		return mousa.Note{}, "", integrity("get note", "note projection disagrees with its record")
 	}
 	var leafSource, leaf []byte
-	err = q.QueryRowContext(ctx, `SELECT source_id, leaf_hash FROM log WHERE kind = ? AND record_id = ?`, mousa.LogKindNote, note.ID[:]).Scan(&leafSource, &leaf)
+	var leafSeq int64
+	err = q.QueryRowContext(ctx, `SELECT source_id, leaf_hash, seq FROM log WHERE kind = ? AND record_id = ?`, mousa.LogKindNote, note.ID[:]).Scan(&leafSource, &leaf, &leafSeq)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return mousa.Note{}, "", integrity("get note", "note has no log leaf")
@@ -85,6 +90,37 @@ func getNote(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID str
 	}
 	if err := checkLeaf(mousa.LogKindNote, leafSource, leaf, record, note.SourceID[:]); err != nil {
 		return mousa.Note{}, "", integrity("get note leaf", err.Error())
+	}
+	// The supersession projection must be the canonical list exactly, and
+	// every target must be an earlier note of the same source.
+	targets, err := q.QueryContext(ctx, `SELECT ns.target_id, n.source_id, l.seq FROM note_supersessions ns
+		LEFT JOIN notes n ON n.id = ns.target_id
+		LEFT JOIN log l ON l.kind = 'note' AND l.record_id = ns.target_id
+		WHERE ns.replacement_id = ? ORDER BY ns.target_id`, note.ID[:])
+	if err != nil {
+		return mousa.Note{}, "", classify("get note supersessions", err)
+	}
+	defer targets.Close()
+	i := 0
+	for targets.Next() {
+		var target, targetSource []byte
+		var targetSeq sql.NullInt64
+		if err := targets.Scan(&target, &targetSource, &targetSeq); err != nil {
+			return mousa.Note{}, "", classify("scan note supersessions", err)
+		}
+		if i >= len(note.Supersedes) || !bytes.Equal(target, note.Supersedes[i][:]) {
+			return mousa.Note{}, "", integrity("get note supersessions", "lookup rows disagree with the canonical record")
+		}
+		if targetSource == nil || !targetSeq.Valid || !bytes.Equal(targetSource, note.SourceID[:]) || targetSeq.Int64 >= leafSeq {
+			return mousa.Note{}, "", integrity("get note supersessions", "superseded note is out of source or order")
+		}
+		i++
+	}
+	if err := targets.Err(); err != nil {
+		return mousa.Note{}, "", classify("scan note supersessions", err)
+	}
+	if i != len(note.Supersedes) {
+		return mousa.Note{}, "", integrity("get note supersessions", "lookup rows disagree with the canonical record")
 	}
 	rows, err := q.QueryContext(ctx, `SELECT citation_ordinal, segment_ordinal, trail_id, segment_id
 		FROM note_citations WHERE note_id = ? ORDER BY citation_ordinal, segment_ordinal`, note.ID[:])
@@ -262,8 +298,10 @@ func resolveNoteCitations(ctx context.Context, conn *sql.Conn, citations []mousa
 // canonical ancestry and indexes are applied through the caller's writer, then
 // the canonical record, its citation lookup rows, and its log leaf are written
 // and read back before commit. An identical retry returns the stored note.
-func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error) (mousa.Note, error) {
-	note, _, err := store.remember(ctx, sourceID, author, text, citations, permittedSources, apply, nil)
+// supersedes names same-source notes this write replaces; the caller order is
+// canonicalized, and a retry must repeat the same set.
+func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, supersedes []mousa.SHA256, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error) (mousa.Note, error) {
+	note, _, err := store.remember(ctx, sourceID, author, text, citations, supersedes, permittedSources, apply, nil)
 	return note, err
 }
 
@@ -273,11 +311,11 @@ func (store *Store) Remember(ctx context.Context, sourceID mousa.SourceID, autho
 // same transaction. An identical existing note records a no-op that links the
 // original record while its author stays untouched; the returned flag reports
 // whether the note was created by this request.
-func (store *Store) RememberAdmitted(ctx context.Context, sourceID mousa.SourceID, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, admission mousa.RequestAdmission, apply func(*Store, string, int64) error) (mousa.Note, bool, error) {
-	return store.remember(ctx, sourceID, admission.Principal, text, citations, permittedSources, apply, &admission)
+func (store *Store) RememberAdmitted(ctx context.Context, sourceID mousa.SourceID, text []byte, citations []mousa.NoteCitation, supersedes []mousa.SHA256, permittedSources map[mousa.SourceID]bool, admission mousa.RequestAdmission, apply func(*Store, string, int64) error) (mousa.Note, bool, error) {
+	return store.remember(ctx, sourceID, admission.Principal, text, citations, supersedes, permittedSources, apply, &admission)
 }
 
-func (store *Store) remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error, admission *mousa.RequestAdmission) (mousa.Note, bool, error) {
+func (store *Store) remember(ctx context.Context, sourceID mousa.SourceID, author string, text []byte, citations []mousa.NoteCitation, supersedes []mousa.SHA256, permittedSources map[mousa.SourceID]bool, apply func(*Store, string, int64) error, admission *mousa.RequestAdmission) (mousa.Note, bool, error) {
 	if err := store.requireWritable("remember note"); err != nil {
 		return mousa.Note{}, false, err
 	}
@@ -311,10 +349,21 @@ func (store *Store) remember(ctx context.Context, sourceID mousa.SourceID, autho
 		}
 		contentDigest := mousa.SHA256(sha256.Sum256(text))
 		itemID := mousa.NoteItemID(contentDigest)
+		// Caller order is canonicalized for the replay comparison; strict
+		// uniqueness and the target bound are enforced by the record itself.
+		targets := slices.Clone(supersedes)
+		slices.SortFunc(targets, func(a, b mousa.SHA256) int { return bytes.Compare(a[:], b[:]) })
 		finishNote := store.StartStage(mousa.StageNote)
 		existing, _, err := getNote(ctx, conn, sourceID, itemID)
 		switch {
 		case err == nil:
+			// A replay that omits the flag keeps the stored edges; only an
+			// explicitly different set conflicts.
+			if len(targets) != 0 && !slices.Equal(existing.Supersedes, targets) {
+				err := wrap(CodeConflict, "remember note", errors.New("record exists with a different supersedes list"))
+				finishNote(err)
+				return err
+			}
 			if admission != nil {
 				// A replay returns the original canonical note; deny it
 				// when any originally cited trail lies outside the
@@ -345,7 +394,21 @@ func (store *Store) remember(ctx context.Context, sourceID mousa.SourceID, autho
 			finishNote(err)
 			return err
 		}
-		note, err := mousa.NewNote(sourceID, author, contentDigest, time.Now().UnixMicro(), resolved)
+		// Every replacement target must already exist as a note of this
+		// same source; a missing or foreign target is the same refusal.
+		for _, target := range targets {
+			var exists bool
+			if err := conn.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM notes WHERE source_id = ? AND id = ?)`, sourceID[:], target[:]).Scan(&exists); err != nil {
+				finishNote(err)
+				return classify("check supersession target", err)
+			}
+			if !exists {
+				err := wrap(CodeInvalidRecord, "remember note", errors.New("superseded note does not exist"))
+				finishNote(err)
+				return err
+			}
+		}
+		note, err := mousa.NewNote(sourceID, author, contentDigest, time.Now().UnixMicro(), resolved, targets)
 		if err != nil {
 			err = wrap(CodeInvalidRecord, "remember note", err)
 			finishNote(err)
@@ -440,6 +503,12 @@ func (store *Store) writeNote(ctx context.Context, conn *sql.Conn, note mousa.No
 			}
 		}
 	}
+	for _, target := range note.Supersedes {
+		if _, err := conn.ExecContext(ctx, `INSERT INTO note_supersessions(target_id, replacement_id) VALUES (?, ?)`,
+			target[:], note.ID[:]); err != nil {
+			return classify("write note supersession", err)
+		}
+	}
 	if err := appendLog(ctx, conn, mousa.LogKindNote, note.ID[:], sourceID[:], data); err != nil {
 		return err
 	}
@@ -455,13 +524,40 @@ func (store *Store) writeNote(ctx context.Context, conn *sql.Conn, note mousa.No
 
 // ImportNotes preserves note records verbatim and treats an identical existing
 // note as a retry. A conflicting item or invalid record rolls the batch back.
+// Supersession edges order the batch internally: a replacement lands only
+// after every target it names, whether that target is stored already or
+// appears later in the file, and a cycle is refused rather than followed.
 func (store *Store) ImportNotes(ctx context.Context, sourceID mousa.SourceID, notes []ExportedNote, apply func(*Store, ExportedNote) error) (int, error) {
 	created := 0
 	err := store.writeImmediate(ctx, "import notes", func(conn *sql.Conn) error {
 		if err := requireNoteDestination(ctx, conn, sourceID); err != nil {
 			return err
 		}
-		for _, exported := range notes {
+		batch := make(map[mousa.SHA256]int, len(notes))
+		for i, exported := range notes {
+			if _, seen := batch[exported.Note.ID]; !seen {
+				batch[exported.Note.ID] = i
+			}
+		}
+		state := make([]int, len(notes)) // 0 unseen, 1 visiting, 2 stored
+		var visit func(int) error
+		visit = func(i int) error {
+			exported := notes[i]
+			if first := batch[exported.Note.ID]; first != i {
+				// A verbatim repeat line is an identical retry; the same
+				// ID with a different record or text conflicts.
+				if !reflect.DeepEqual(notes[first], exported) {
+					return wrap(CodeConflict, "import notes", errors.New("repeated note record conflicts"))
+				}
+				return nil
+			}
+			switch state[i] {
+			case 2:
+				return nil
+			case 1:
+				return wrap(CodeInvalidRecord, "import notes", errors.New("supersedes cycle"))
+			}
+			state[i] = 1
 			note := exported.Note
 			if note.SourceID != sourceID {
 				return wrap(CodeInvalidRecord, "import notes", errors.New("record belongs to a different source"))
@@ -472,22 +568,46 @@ func (store *Store) ImportNotes(ctx context.Context, sourceID mousa.SourceID, no
 			if digest := mousa.SHA256(sha256.Sum256([]byte(exported.Text))); digest != note.ContentSHA256 {
 				return wrap(CodeInvalidRecord, "import notes", errors.New("text digest disagrees with note"))
 			}
+			for _, target := range note.Supersedes {
+				if j, ok := batch[target]; ok {
+					if err := visit(j); err != nil {
+						return err
+					}
+				}
+			}
 			existing, text, err := getNote(ctx, conn, sourceID, note.ItemID)
 			switch {
 			case err == nil:
 				if !reflect.DeepEqual(existing, note) || text != exported.Text {
 					return wrap(CodeConflict, "import notes", errors.New("note item already has a different record"))
 				}
-				continue
+				state[i] = 2
+				return nil
 			case !IsCode(err, CodeNotFound):
 				return err
+			}
+			for _, target := range note.Supersedes {
+				var exists bool
+				if err := conn.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM notes WHERE source_id = ? AND id = ?)`, sourceID[:], target[:]).Scan(&exists); err != nil {
+					return classify("check supersession target", err)
+				}
+				if !exists {
+					return wrap(CodeInvalidRecord, "import notes", errors.New("superseded note does not exist"))
+				}
 			}
 			if err := store.writeNote(ctx, conn, note, func(scoped *Store) error {
 				return apply(scoped, exported)
 			}); err != nil {
 				return err
 			}
+			state[i] = 2
 			created++
+			return nil
+		}
+		for i := range notes {
+			if err := visit(i); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -666,7 +786,11 @@ func (store *Store) ExportNotes(ctx context.Context, sourceID mousa.SourceID) ([
 		if err != nil {
 			return nil, err
 		}
-		exported = append(exported, ExportedNote{Note: note, Text: text})
+		path, err := localItemPath(ctx, tx, sourceID, itemID)
+		if err != nil {
+			return nil, err
+		}
+		exported = append(exported, ExportedNote{Note: note, Text: text, Path: path})
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, classify("finish note export", err)

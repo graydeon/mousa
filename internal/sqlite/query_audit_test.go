@@ -23,7 +23,7 @@ func seedAuditItem(t *testing.T, s *Store, name, text string) (mousa.SourceID, m
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ActivateLocalItem(t.Context(), source.ID, name, repr.ID, normalized); err != nil {
+	if _, err := s.ActivateLocalItem(t.Context(), source.ID, name, repr.ID, normalized, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	return source.ID, segments[0]

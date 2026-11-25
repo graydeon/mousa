@@ -17,6 +17,7 @@ const logCountsSQL = `
 	UNION ALL SELECT 'ingest_receipt', count(*) FROM ingest_receipts
 	UNION ALL SELECT 'item_change', count(*) FROM item_changes
 	UNION ALL SELECT 'note', count(*) FROM notes
+	UNION ALL SELECT 'path_move', count(*) FROM path_moves
 	UNION ALL SELECT 'request_admission', count(*) FROM request_admissions
 	UNION ALL SELECT 'request_outcome', count(*) FROM request_outcomes
 	UNION ALL SELECT 'source_withdrawal', count(*) FROM source_withdrawals

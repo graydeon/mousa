@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
 )
 
@@ -34,6 +35,7 @@ type itemRecord struct {
 	ID      string
 	Text    *string
 	Deleted bool
+	Path    *string
 }
 
 type recordError struct {
@@ -75,6 +77,8 @@ func decodeItemRecord(line []byte) (itemRecord, error) {
 			bit = 2
 		case "deleted":
 			bit = 4
+		case "path":
+			bit = 8
 		default:
 			return itemRecord{}, fmt.Errorf("unknown field %q", key)
 		}
@@ -104,6 +108,12 @@ func decodeItemRecord(line []byte) (itemRecord, error) {
 			if err := json.Unmarshal(raw, &record.Deleted); err != nil {
 				return itemRecord{}, err
 			}
+		case "path":
+			value, err := decodeItemString(raw)
+			if err != nil {
+				return itemRecord{}, fmt.Errorf("field %q: %w", key, err)
+			}
+			record.Path = &value
 		}
 	}
 	if _, err := decoder.Token(); err != nil {
@@ -123,6 +133,10 @@ func decodeItemRecord(line []byte) (itemRecord, error) {
 		return itemRecord{}, errors.New("a record must carry text or deleted, not both")
 	case record.Text == nil && !record.Deleted:
 		return itemRecord{}, errors.New("record needs text, or deleted: true")
+	case record.Deleted && record.Path != nil:
+		return itemRecord{}, errors.New("a deleted record cannot name a path")
+	case record.Path != nil && !mousa.ValidPath(*record.Path):
+		return itemRecord{}, errors.New("path must be lowercase segments of letters, digits, '.', '_' and '-' joined by single slashes")
 	}
 	return record, nil
 }
@@ -243,7 +257,7 @@ func runSyncJSONL(ctx context.Context, storePath, externalSourceID string, input
 	}
 	scanErr := scanItemStream(ctx, input, func(line int, raw []byte, record itemRecord) error {
 		lineOf[record.ID] = line
-		item := itemInput{ID: record.ID, Deleted: record.Deleted}
+		item := itemInput{ID: record.ID, Deleted: record.Deleted, Path: record.Path}
 		if record.Text != nil {
 			item.Content = []byte(*record.Text)
 		}

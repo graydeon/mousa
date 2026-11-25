@@ -23,6 +23,7 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 	collection := flags.String("collection", "", "named collection instead of explicit sources")
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	mode := flags.String("mode", string(mousa.QueryLexical), "query mode: lexical")
+	includeSuperseded := flags.Bool("include-superseded", false, "pack superseded passages instead of omitting them")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -37,7 +38,7 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 		return usageError{"query requires a source and query text"}
 	}
 	if client != nil {
-		return runEndpointQuery(ctx, client, externalSources, *collection, *budget, positional)
+		return runEndpointQuery(ctx, client, externalSources, *collection, *budget, *includeSuperseded, positional)
 	}
 	var sources []mousa.SourceID
 	for _, external := range externalSources {
@@ -71,11 +72,12 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 	}
 	defer store.Close()
 	result, err := store.Query(ctx, mousa.QueryRequest{
-		Scope:  scope,
-		Texts:  []string{positional[len(positional)-1]},
-		Mode:   mousa.QueryMode(*mode),
-		Budget: mousa.Budget{Unit: mousa.BudgetBytes, Limit: *budget},
-		Caller: accessActor,
+		Scope:             scope,
+		Texts:             []string{positional[len(positional)-1]},
+		Mode:              mousa.QueryMode(*mode),
+		Budget:            mousa.Budget{Unit: mousa.BudgetBytes, Limit: *budget},
+		Caller:            accessActor,
+		IncludeSuperseded: *includeSuperseded,
 	})
 	if err != nil {
 		return err
@@ -85,7 +87,7 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 
 // runEndpointQuery sends the query to the served store. Directory scopes have
 // no external identifier and stay offline.
-func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources []string, collection string, budget uint64, positional []string) error {
+func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources []string, collection string, budget uint64, includeSuperseded bool, positional []string) error {
 	scope := nativeScope{Collection: collection}
 	switch {
 	case collection != "" || len(externalSources) != 0:
@@ -103,6 +105,7 @@ func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources
 	result, err := client.post(ctx, "/v1/query", nativeQuery{
 		nativeLabels: nativeLabels{Client: client.metadata},
 		Scope:        scope, Text: positional[len(positional)-1], BudgetBytes: budget,
+		IncludeSuperseded: includeSuperseded,
 	})
 	if err != nil {
 		return err

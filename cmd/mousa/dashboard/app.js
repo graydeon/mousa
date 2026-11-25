@@ -9,12 +9,13 @@
 		["query", "Search", ["receive", "admission", "access", "retrieval", "rank", "pack", "commit", "response"]],
 		["note", "Remember", ["receive", "admission", "access", "citations", "note", "commit", "response"]],
 		["document", "Document", ["receive", "admission", "access", "represent", "index", "commit", "response"]],
+		["move", "Move", ["receive", "admission", "access", "commit", "response"]],
 	];
 	const NAMES = {
 		receive: "Arrive", admission: "Log", access: "Permit", retrieval: "Find", rank: "Rank", pack: "Pack",
 		citations: "Cite", note: "Write", represent: "Split", index: "Index", commit: "Save", response: "Reply",
 	};
-	const VERBS = { query: "Searched", note: "Saved a note", document: "Updated a document" };
+	const VERBS = { query: "Searched", note: "Saved a note", document: "Updated a document", move: "Moved paths" };
 	const ENDS = {
 		no_op: "Already saved", denied: "Refused", invalid: "Bad request",
 		failed: "Failed", canceled: "Canceled", interrupted: "Cut off",
@@ -171,7 +172,11 @@
 		item.cells[4].className = good ? "" : "bad";
 		item.cells[4].textContent = resultText(item);
 		item.cells[5].textContent = item.took ? ms(item.took) : "";
-		if (item.content) { item.cells[3].textContent = item.content.query || item.content.note || ""; }
+		if (item.content) {
+			const moveCount = (item.content.moves || []).length;
+			const movedItems = moveCount ? moveCount + (moveCount === 1 ? " item" : " items") : "";
+			item.cells[3].textContent = item.content.query || item.content.note || movedItems;
+		}
 	}
 	function finish(item, state, tookUsec) {
 		item.state = state;
@@ -236,7 +241,7 @@
 		});
 	}
 	function paintStats() {
-		const counts = { query: 0, note: 0, document: 0 }, took = { query: [], note: [], document: [] };
+		const counts = { query: 0, note: 0, document: 0, move: 0 }, took = { query: [], note: [], document: [], move: [] };
 		let refused = 0;
 		const all = [];
 		requests.forEach(function (item) {
@@ -248,6 +253,7 @@
 		$("stat-query").textContent = counts.query;
 		$("stat-note").textContent = counts.note;
 		$("stat-document").textContent = counts.document;
+		$("stat-move").textContent = counts.move;
 		$("stat-refused").textContent = refused;
 		$("stat-refused").classList.toggle("some", refused > 0);
 		$("stat-typical").textContent = all.length ? ms(median(all)) : "–";
@@ -266,6 +272,16 @@
 		const words = el("div", "words"), facts = el("div", "facts");
 		if (content.query) { words.append(el("h3", "", "Asked"), el("p", "said", content.query)); }
 		if (content.note) { words.append(el("h3", "", "Saved"), el("p", "said", content.note)); }
+		if (content.moves && content.moves.length) {
+			words.appendChild(el("h3", "", "Moved paths"));
+			content.moves.forEach(function (entry) {
+				const moved = el("dl", "moved");
+				moved.append(el("dt", "", "Item"), el("dd", "", entry.item_id));
+				moved.append(el("dt", "", "Old path"), el("dd", "", entry.old_path));
+				moved.append(el("dt", "", "New path"), el("dd", "", entry.new_path));
+				words.appendChild(moved);
+			});
+		}
 		if (item.op === "query" && item.content) {
 			const returned = content.returned || [];
 			words.appendChild(el("h3", "", returned.length ? "Returned " + returned.length : "Returned nothing"));

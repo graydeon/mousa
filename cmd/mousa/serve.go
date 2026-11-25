@@ -194,6 +194,7 @@ func (s *nativeService) routes() http.Handler {
 	mux.HandleFunc("POST /v1/query", serveOperation(s, mousa.RequestOperationQuery, nativeMaxSmallBody, s.handleQuery))
 	mux.HandleFunc("POST /v1/notes", serveOperation(s, mousa.RequestOperationNote, nativeMaxSmallBody, s.handleNote))
 	mux.HandleFunc("POST /v1/documents", serveOperation(s, mousa.RequestOperationDocument, nativeMaxDocumentBody, s.handleDocument))
+	mux.HandleFunc("POST /v1/moves", serveOperation(s, mousa.RequestOperationMove, nativeMaxSmallBody, s.handleMove))
 	mux.HandleFunc("GET /v1/requests", s.requestHistory)
 	mux.HandleFunc("GET /v1/requests/{request_id}", s.requestDetail)
 	mux.HandleFunc("GET /v1/events", s.stageEvents)
@@ -664,16 +665,33 @@ type nativeScope struct {
 
 type nativeQuery struct {
 	nativeLabels
-	Scope       nativeScope `json:"scope"`
-	Text        string      `json:"text"`
-	BudgetBytes uint64      `json:"budget_bytes,omitzero"`
+	Scope             nativeScope `json:"scope"`
+	Text              string      `json:"text"`
+	BudgetBytes       uint64      `json:"budget_bytes,omitzero"`
+	IncludeSuperseded bool        `json:"include_superseded,omitempty"`
 }
 
 type nativeNote struct {
 	nativeLabels
-	Scope     nativeScope          `json:"scope"`
-	Text      string               `json:"text"`
-	Citations []mousa.NoteCitation `json:"citations,omitempty"`
+	Scope      nativeScope          `json:"scope"`
+	Text       string               `json:"text"`
+	Citations  []mousa.NoteCitation `json:"citations,omitempty"`
+	Path       *string              `json:"path,omitempty"`
+	Supersedes []mousa.SHA256       `json:"supersedes,omitempty"`
+}
+
+type nativeMove struct {
+	nativeLabels
+	Source string `json:"source"`
+	Note   string `json:"note,omitempty"`
+	Item   string `json:"item,omitempty"`
+	Prefix string `json:"prefix,omitempty"`
+	To     string `json:"to"`
+}
+
+type nativeMoveResult struct {
+	SourceID mousa.SourceID        `json:"source_id"`
+	Moved    []mousa.PathMoveEntry `json:"moved"`
 }
 
 type nativeDocument struct {
@@ -766,11 +784,12 @@ func (s *nativeService) handleQuery(ctx context.Context, principal *nativePrinci
 		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
 	}
 	queried, err := store.QueryAdmitted(ctx, mousa.QueryRequest{
-		Scope:            scope,
-		Texts:            []string{request.Text},
-		Mode:             mousa.QueryLexical,
-		Budget:           mousa.Budget{Unit: mousa.BudgetBytes, Limit: budget},
-		PermittedSources: principal.read,
+		Scope:             scope,
+		Texts:             []string{request.Text},
+		Mode:              mousa.QueryLexical,
+		Budget:            mousa.Budget{Unit: mousa.BudgetBytes, Limit: budget},
+		PermittedSources:  principal.read,
+		IncludeSuperseded: request.IncludeSuperseded,
 	}, admission)
 	if err != nil {
 		return nil, "", err
@@ -796,10 +815,13 @@ func (s *nativeService) handleNote(ctx context.Context, principal *nativePrincip
 	if !principal.write[source.ID] {
 		return nil, "", &nativeFailure{status: http.StatusForbidden, code: "source_denied"}
 	}
+	if request.Path != nil && !mousa.ValidPath(*request.Path) {
+		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
+	}
 	text := []byte(request.Text)
-	note, created, err := store.RememberAdmitted(ctx, source.ID, text, request.Citations, principal.read, admission,
+	note, created, err := store.RememberAdmitted(ctx, source.ID, text, request.Citations, request.Supersedes, principal.read, admission,
 		func(scoped *sqlite.Store, itemID string, createdAtUsec int64) error {
-			_, err := applyItem(ctx, scoped, source, itemInput{ID: itemID, Content: text, Captured: createdAtUsec}, nil, mousa.TextSegmentNoteV1)
+			_, err := applyItem(ctx, scoped, source, itemInput{ID: itemID, Content: text, Captured: createdAtUsec, Path: request.Path, Actor: admission.Principal}, nil, mousa.TextSegmentNoteV1)
 			return err
 		})
 	if err != nil {
@@ -834,16 +856,15 @@ func (s *nativeService) handleDocument(ctx context.Context, principal *nativePri
 	if err != nil {
 		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
 	}
-	item := itemInput{ID: record.ID, Deleted: record.Deleted}
+	item := itemInput{ID: record.ID, Deleted: record.Deleted, Path: record.Path, Actor: admission.Principal}
 	if record.Text != nil {
 		item.Content = []byte(*record.Text)
 	}
 	result := nativeDocumentResult{SourceID: source.ID, ItemID: record.ID}
-	changed := false
-	err = store.ApplyRequestDocument(ctx, admission, source.ID, record.ID, func(scoped *sqlite.Store) (bool, error) {
+	committed, err := store.ApplyRequestDocument(ctx, admission, source.ID, record.ID, func(scoped *sqlite.Store) (string, error) {
 		action, err := applyItem(ctx, scoped, source, item, nil, policy)
 		if err != nil {
-			return false, err
+			return "", err
 		}
 		result.Action = action
 		current, err := scoped.GetLocalItem(ctx, source.ID, record.ID)
@@ -852,23 +873,51 @@ func (s *nativeService) handleDocument(ctx context.Context, principal *nativePri
 			result.RepresentationID = &current.RepresentationID
 		case sqlite.IsCode(err, sqlite.CodeNotFound):
 		default:
-			return false, err
+			return "", err
 		}
-		switch action {
-		case "added", "updated", "restored", "deleted":
-			changed = true
-			return true, nil
-		}
-		return false, nil
+		return action, nil
 	})
 	if err != nil {
 		return nil, "", err
 	}
 	state := mousa.RequestStateNoOp
-	if changed {
+	if committed {
 		state = mousa.RequestStateCommitted
 	}
 	return result, state, nil
+}
+
+// handleMove relocates one note, one document item, or a whole path prefix.
+// The move commits inside the same transaction as its outcome, like every
+// other served write.
+func (s *nativeService) handleMove(ctx context.Context, principal *nativePrincipal, admission mousa.RequestAdmission, store *sqlite.Store, request nativeMove) (any, mousa.RequestState, error) {
+	if request.Source == "" {
+		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
+	}
+	source, err := streamSource(request.Source)
+	if err != nil {
+		return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
+	}
+	if !principal.write[source.ID] {
+		return nil, "", &nativeFailure{status: http.StatusForbidden, code: "source_denied"}
+	}
+	selector := mousa.MoveSelector{ItemID: request.Item, Prefix: request.Prefix, To: request.To}
+	if request.Note != "" {
+		id, err := mousa.ParseSHA256(request.Note)
+		if err != nil {
+			return nil, "", &nativeFailure{status: http.StatusBadRequest, code: "invalid_request"}
+		}
+		selector.NoteID = id
+	}
+	entries, err := store.Move(ctx, source.ID, selector, admission.Principal, &admission)
+	if err != nil {
+		return nil, "", err
+	}
+	state := mousa.RequestStateNoOp
+	if len(entries) != 0 {
+		state = mousa.RequestStateCommitted
+	}
+	return nativeMoveResult{SourceID: source.ID, Moved: entries}, state, nil
 }
 
 // serveCommand owns one existing store and serves it on a loopback listener

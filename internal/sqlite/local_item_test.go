@@ -50,7 +50,7 @@ func seedLocalItem(t *testing.T, store *Store, source mousa.Source, item, text s
 	if err := store.IndexTextRepresentation(ctx, representation.ID, normalized); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, item, representation.ID, normalized); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, item, representation.ID, normalized, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 }

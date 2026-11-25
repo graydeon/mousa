@@ -206,6 +206,7 @@ CREATE TABLE local_items (
   item_id TEXT NOT NULL CHECK (length(item_id) > 0),
   representation_id BLOB NOT NULL REFERENCES representations(id) ON DELETE RESTRICT,
   active INTEGER NOT NULL CHECK (active IN (0, 1)),
+  path TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (source_id, item_id)
 ) STRICT;
 
@@ -273,22 +274,5 @@ CREATE TABLE access_events (
 
 CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 
--- The append-only store log. Each receipt, access event, withdrawal, note and trail is one leaf,
--- written in the same transaction as its record. seq runs 1, 2, 3 ... with no gaps; leaf_hash
--- is the RFC 6962 leaf hash SHA-256(0x00 || record_json) of the record named by kind and
--- record_id.
-CREATE TABLE log (
-    seq INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind TEXT NOT NULL COLLATE BINARY,
-    record_id BLOB NOT NULL CHECK (typeof(record_id) = 'blob' AND length(record_id) = 32 AND record_id != zeroblob(32)),
-    source_id BLOB CHECK (source_id IS NULL OR (length(source_id) = 32 AND source_id != zeroblob(32))) REFERENCES sources(id) ON DELETE RESTRICT,
-    leaf_hash BLOB NOT NULL CHECK (typeof(leaf_hash) = 'blob' AND length(leaf_hash) = 32),
-    UNIQUE (kind, record_id),
-    CHECK (CASE WHEN source_id IS NULL
-        THEN kind IN ('trail', 'request_admission', 'request_outcome')
-        ELSE kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note')
-    END)
-) STRICT;
-
-CREATE INDEX log_source_kind_seq_idx ON log(source_id, kind, seq);
-CREATE INDEX log_source_seq_idx ON log(source_id, seq);
+-- The append-only store log is created from log.sql: init and the schema-7
+-- migration share that one definition so both produce the same table.

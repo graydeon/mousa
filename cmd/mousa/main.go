@@ -67,7 +67,7 @@ func main() {
 	var client *nativeClient
 	if *endpoint != "" {
 		switch command {
-		case "query", "remember", "sync":
+		case "query", "remember", "sync", "move":
 			var clientErr error
 			client, clientErr = newNativeClient(*endpoint, config)
 			if clientErr != nil {
@@ -75,7 +75,7 @@ func main() {
 				os.Exit(1)
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "mousa: a served store supports only query, remember and sync --source; use -store for %s\n", command)
+			fmt.Fprintf(os.Stderr, "mousa: a served store supports only query, remember, sync --source and move; use -store for %s\n", command)
 			os.Exit(2)
 		}
 	}
@@ -91,6 +91,14 @@ func main() {
 		err = trailCommand(ctx, *storePath, rest)
 	case "verify":
 		err = verifyCommand(ctx, *storePath, rest)
+	case "migrate":
+		if len(rest) != 0 {
+			err = usageError{"migrate takes no arguments"}
+		} else {
+			err = migrateCommand(ctx, *storePath)
+		}
+	case "move":
+		err = moveCommand(ctx, *storePath, client, rest)
 	case "collection":
 		err = collectionCommand(ctx, *storePath, rest)
 	case "changes":
@@ -126,7 +134,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
-       mousa [-endpoint <url>] query|remember|sync --source <id>
+       mousa [-endpoint <url>] query|remember|sync|move --source <id>
        mousa agent add <name> --config <file> --source <id>
 
 commands:
@@ -150,6 +158,12 @@ commands:
                             list owner-visible trail metadata in log order (JSONL)
   verify [--log | --trail <trail-id> | --stdin]
                             verify the store, log, or named trails read-only (JSON)
+  migrate                   upgrade a schema-7 store to the current schema in
+                            place; takes no arguments, prints {"schema":8}
+  move <dir> | --source <id> --note ID|--item ID|--prefix P --to DEST
+                            relocate one note, one document item, or every
+                            item under a path prefix; --prefix and its --to
+                            both end in /
   access <dir> allow|deny     record an access event for every caller of the source (JSON)
   access --source <id> allow|deny
                             a source with no access event is denied to every caller;
@@ -157,7 +171,9 @@ commands:
   remember --source <id> [text]
                             store one durable note; exact stdin text when no
                             argument is given; --from TRAIL[:SEG,SEG] cites a
-                            query trail, repeatable
+                            query trail, repeatable; --path places a new note
+                            (default unsorted); --supersedes NOTE_ID marks a
+                            replaced note, repeatable
   notes export --source <id>
                             export the source's notes exactly, one JSONL record each
   notes import --source <id>
@@ -181,6 +197,7 @@ client configuration ($MOUSA_CONFIG, else <user config dir>/mousa/client.json):
 query options (before positional arguments):
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --mode lexical             query mode; only lexical is available
+  --include-superseded       pack passages whose notes were superseded
 
 sync options (before positional arguments):
   --segment-policy fixed-v1|passage-v1
@@ -344,12 +361,17 @@ type itemInput struct {
 	Content  []byte
 	Deleted  bool
 	Captured int64
+	// Path is an explicit destination location; nil leaves the current or
+	// default path alone. Served inputs record the requesting actor.
+	Path  *string
+	Actor string
 }
 
 // Item actions reported in a sync result.
 const (
 	actionAdded     = "added"
 	actionUpdated   = "updated"
+	actionMoved     = "moved"
 	actionRestored  = "restored"
 	actionUnchanged = "unchanged"
 	actionDeleted   = "deleted"
@@ -376,10 +398,16 @@ func applyItemBatch(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 // Canonical history may be prepared independently; index activation is atomic.
 func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, input itemInput, sequence *uint64, segmentPolicy string) (string, error) {
 	if input.Deleted {
+		if input.Path != nil {
+			return "", usageError{"a deleted item cannot name a path"}
+		}
 		finishIndex := store.StartStage(mousa.StageIndex)
 		action, err := store.DeleteLocalItem(ctx, source.ID, input.ID)
 		finishIndex(err)
 		return action, err
+	}
+	if input.Path != nil && !mousa.ValidPath(*input.Path) {
+		return "", usageError{"path must be lowercase segments of letters, digits, '.', '_' and '-' joined by single slashes"}
 	}
 	digest := mousa.SHA256(sha256.Sum256(input.Content))
 	current, err := store.GetLocalItem(ctx, source.ID, input.ID)
@@ -387,9 +415,19 @@ func applyItem(ctx context.Context, store *sqlite.Store, source mousa.Source, in
 		return "", err
 	}
 	if err == nil && current.Active && current.SegmentationPolicy == segmentPolicy && current.Artifact.ContentSHA256 == digest && current.Artifact.ByteLength == uint64(len(input.Content)) {
-		// An unchanged item performs no representation or index work.
+		// An unchanged item performs no representation or index work; an
+		// explicit path still moves it without touching the revision.
 		store.ObserveMarker(mousa.StageRepresent, mousa.StagePhaseSkip, 0)
 		store.ObserveMarker(mousa.StageIndex, mousa.StagePhaseSkip, 0)
+		if input.Path != nil && *input.Path != current.Path {
+			moved, err := store.SetDocumentPath(ctx, source.ID, input.ID, *input.Path, input.Actor)
+			if err != nil {
+				return "", err
+			}
+			if moved {
+				return actionMoved, nil
+			}
+		}
 		return actionUnchanged, nil
 	}
 	return ingestRevision(ctx, store, source, input, digest, sequence, segmentPolicy)
@@ -448,7 +486,7 @@ func ingestRevision(ctx context.Context, store *sqlite.Store, source mousa.Sourc
 		}
 	}
 	finishIndex := store.StartStage(mousa.StageIndex)
-	action, err := store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized)
+	action, err := store.ActivateLocalItem(ctx, source.ID, input.ID, representation.ID, normalized, input.Path, input.Actor)
 	finishIndex(err)
 	return action, err
 }
@@ -479,7 +517,7 @@ func (result *syncResult) record(action, item string) {
 	switch action {
 	case actionAdded:
 		result.Added = append(result.Added, item)
-	case actionUpdated:
+	case actionUpdated, actionMoved:
 		result.Updated = append(result.Updated, item)
 	case actionRestored:
 		result.Restored = append(result.Restored, item)

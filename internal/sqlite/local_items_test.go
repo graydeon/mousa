@@ -74,14 +74,14 @@ func TestLocalItemReplacementAndDeletionRollBackTogether(t *testing.T) {
 	store := openLexicalStore(t)
 	defer store.Close()
 	source, old, oldText := prepareLocalRevision(t, store, "doc", "oldterm evidence")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	_, next, nextText := prepareLocalRevision(t, store, "doc", "newterm evidence")
 	if _, err := store.db.ExecContext(ctx, `CREATE TEMP TRIGGER reject_local_activation BEFORE UPDATE ON local_items BEGIN SELECT RAISE(ABORT, 'injected activation failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText); err == nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText, nil, ""); err == nil {
 		t.Fatal("replacement ignored injected failure")
 	}
 	assertOnlyLocalText(t, store, string(oldText))
@@ -92,7 +92,7 @@ func TestLocalItemReplacementAndDeletionRollBackTogether(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `DROP TRIGGER reject_local_activation`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	assertOnlyLocalText(t, store, string(nextText))
@@ -110,7 +110,7 @@ func TestLocalItemReaderSeesOneActivationSnapshot(t *testing.T) {
 	store := openLexicalStore(t)
 	defer store.Close()
 	source, old, oldText := prepareLocalRevision(t, store, "doc", "oldterm evidence")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	_, next, nextText := prepareLocalRevision(t, store, "doc", "newterm evidence")
@@ -128,7 +128,7 @@ func TestLocalItemReaderSeesOneActivationSnapshot(t *testing.T) {
 	if err != nil || before.RepresentationID != old.ID {
 		t.Fatalf("initial snapshot = %#v, %v", before, err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	var text string
@@ -149,7 +149,7 @@ func TestLocalItemAbruptExitBeforeCommitRetainsOldEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	source, old, oldText := prepareLocalRevision(t, store, "doc", "oldterm evidence")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, oldText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
@@ -173,7 +173,7 @@ func TestLocalItemAbruptExitBeforeCommitRetainsOldEvidence(t *testing.T) {
 		t.Fatalf("recovered activation = %#v, %v", current, err)
 	}
 	_, next, nextText := prepareLocalRevision(t, store, "doc", "newterm evidence")
-	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText); err != nil || action != "updated" {
+	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, nextText, nil, ""); err != nil || action != "updated" {
 		t.Fatalf("retry = %q, %v", action, err)
 	}
 	assertOnlyLocalText(t, store, string(nextText))
@@ -200,7 +200,7 @@ func TestLocalItemCrashHelper(t *testing.T) {
 	if _, err := store.db.Exec(`CREATE TEMP TRIGGER crash_local_activation AFTER UPDATE ON local_items BEGIN SELECT crash_before_local_commit(); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(context.Background(), source.ID, "doc", next.ID, text); err != nil {
+	if _, err := store.ActivateLocalItem(context.Background(), source.ID, "doc", next.ID, text, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Fatal("activation did not reach crash point")

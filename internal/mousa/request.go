@@ -21,11 +21,12 @@ const (
 	RequestOperationQuery    RequestOperation = "query"
 	RequestOperationNote     RequestOperation = "note"
 	RequestOperationDocument RequestOperation = "document"
+	RequestOperationMove     RequestOperation = "move"
 )
 
 func (operation RequestOperation) valid() bool {
 	switch operation {
-	case RequestOperationQuery, RequestOperationNote, RequestOperationDocument:
+	case RequestOperationQuery, RequestOperationNote, RequestOperationDocument, RequestOperationMove:
 		return true
 	}
 	return false
@@ -181,6 +182,7 @@ func (admission RequestAdmission) Validate() error {
 type RequestEvidence struct {
 	ItemChangeID *SHA256        `json:"item_change_id,omitempty"`
 	NoteID       *SHA256        `json:"note_id,omitempty"`
+	PathMoveID   *SHA256        `json:"path_move_id,omitempty"`
 	TrailID      *SourceTrailID `json:"trail_id,omitempty"`
 }
 
@@ -192,13 +194,15 @@ func (evidence RequestEvidence) validate() error {
 		return errors.New("request evidence has a zero note id")
 	case evidence.ItemChangeID != nil && *evidence.ItemChangeID == (SHA256{}):
 		return errors.New("request evidence has a zero item change id")
+	case evidence.PathMoveID != nil && *evidence.PathMoveID == (SHA256{}):
+		return errors.New("request evidence has a zero path move id")
 	}
 	return nil
 }
 
 func (evidence RequestEvidence) count() int {
 	count := 0
-	for _, set := range []bool{evidence.TrailID != nil, evidence.NoteID != nil, evidence.ItemChangeID != nil} {
+	for _, set := range []bool{evidence.TrailID != nil, evidence.NoteID != nil, evidence.ItemChangeID != nil, evidence.PathMoveID != nil} {
 		if set {
 			count++
 		}
@@ -294,8 +298,12 @@ func CheckRequestOutcomePair(admission RequestAdmission, outcome RequestOutcome)
 				return errors.New("committed note must link its note")
 			}
 		case RequestOperationDocument:
-			if evidence.ItemChangeID == nil {
-				return errors.New("committed document must link its item change")
+			if evidence.ItemChangeID == nil && evidence.PathMoveID == nil {
+				return errors.New("committed document must link its item change or path move")
+			}
+		case RequestOperationMove:
+			if evidence.PathMoveID == nil {
+				return errors.New("committed move must link its path move")
 			}
 		}
 	case RequestStateNoOp:
@@ -306,13 +314,13 @@ func CheckRequestOutcomePair(admission RequestAdmission, outcome RequestOutcome)
 			if evidence.count() != 1 || evidence.NoteID == nil {
 				return errors.New("a no-op note must link the original note")
 			}
-		case RequestOperationDocument:
+		case RequestOperationDocument, RequestOperationMove:
 			if evidence.count() != 0 {
-				return errors.New("a no-op document carries no evidence")
+				return errors.New("a no-op document or move carries no evidence")
 			}
 		}
 	case RequestStateDenied:
-		if evidence.NoteID != nil || evidence.ItemChangeID != nil {
+		if evidence.NoteID != nil || evidence.ItemChangeID != nil || evidence.PathMoveID != nil {
 			return errors.New("denied request links write evidence")
 		}
 		if evidence.TrailID != nil && admission.Operation != RequestOperationQuery {

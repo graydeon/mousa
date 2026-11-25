@@ -14,13 +14,21 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+//go:embed log.sql
+var logSQL string
+
+//go:embed paths.sql
+var pathsSQL string
+
 const (
 	// applicationID ("MOSA" in the SQLite header) marks a store written with schema.sql.
 	applicationID = 0x4D4F5341
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 7
+	schemaVersion = 8
+	// migratableVersion is the one version `mousa migrate` upgrades in place.
+	migratableVersion = 7
 )
 
 // errResyncRequired is the refusal for a Mousa store this binary cannot read. There is no
@@ -35,6 +43,7 @@ var requiredObjects = []string{
 	"index:local_items_active_representation_idx",
 	"index:log_source_kind_seq_idx",
 	"index:log_source_seq_idx",
+	"index:note_supersessions_replacement_idx",
 	"index:observations_source_id_idx",
 	"index:representation_inputs_artifact_id_idx",
 	"index:representation_inputs_representation_id_idx",
@@ -52,8 +61,10 @@ var requiredObjects = []string{
 	"table:local_items",
 	"table:log",
 	"table:note_citations",
+	"table:note_supersessions",
 	"table:notes",
 	"table:observations",
+	"table:path_moves",
 	"table:representation_inputs",
 	"table:representations",
 	"table:request_admissions",
@@ -75,15 +86,24 @@ var requiredObjects = []string{
 	"table:trails",
 }
 
+// storeHeader reads the stamped application identity and schema version.
+// checkStoreIdentity and Migrate share it so both judge the same header.
+func storeHeader(ctx context.Context, q queryRower) (id, version int, err error) {
+	if err := q.QueryRowContext(ctx, `PRAGMA application_id`).Scan(&id); err != nil {
+		return 0, 0, startupError("read application ID", err)
+	}
+	if err := q.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return 0, 0, startupError("read schema version", err)
+	}
+	return id, version, nil
+}
+
 // checkStoreIdentity reads the SQLite header and store ID. Only an unstamped
 // database needs an object-count check to distinguish empty from unrelated.
 func checkStoreIdentity(ctx context.Context, db *sql.DB) (empty bool, err error) {
-	var id, version int
-	if err := db.QueryRowContext(ctx, `PRAGMA application_id`).Scan(&id); err != nil {
-		return false, startupError("read application ID", err)
-	}
-	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
-		return false, startupError("read schema version", err)
+	id, version, err := storeHeader(ctx, db)
+	if err != nil {
+		return false, err
 	}
 	if id == 0 && version == 0 {
 		var objects int
@@ -98,6 +118,9 @@ func checkStoreIdentity(ctx context.Context, db *sql.DB) (empty bool, err error)
 	case id == applicationID && version == schemaVersion:
 		_, err := getStoreID(ctx, db)
 		return false, err
+	case id == applicationID && version == migratableVersion:
+		return false, wrap(CodeIncompatibleSchema, "open store",
+			fmt.Errorf("store was written by schema version %d; run `mousa migrate` on this store", version))
 	case id == applicationID && version > schemaVersion:
 		return false, wrap(CodeIncompatibleSchema, "open store", fmt.Errorf("schema version %d is newer than this binary's %d", version, schemaVersion))
 	case id == applicationID || id == preReworkApplicationID:
@@ -124,7 +147,7 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		}
 	}()
-	statements := schemaSQL + fmt.Sprintf("\nPRAGMA application_id = %d;\nPRAGMA user_version = %d;\n", applicationID, schemaVersion)
+	statements := schemaSQL + logSQL + pathsSQL + fmt.Sprintf("\nPRAGMA application_id = %d;\nPRAGMA user_version = %d;\n", applicationID, schemaVersion)
 	if _, err := conn.ExecContext(ctx, statements); err != nil {
 		return startupError("apply schema", err)
 	}

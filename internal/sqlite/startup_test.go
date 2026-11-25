@@ -22,7 +22,7 @@ func TestStartupVerificationReleasesSnapshotsAndRechecksDamage(t *testing.T) {
 			store := openFreshLexicalStore(t)
 			defer store.Close()
 			source, representation, content := prepareLocalRevision(t, store, "doc", "newterm current evidence")
-			if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", representation.ID, content); err != nil {
+			if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", representation.ID, content, nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if err := test.verify(ctx, store.db); err != nil {
@@ -52,11 +52,11 @@ func TestStartupPreservesActiveEmptyAndIndexedItems(t *testing.T) {
 	store := openFreshLexicalStore(t)
 	path := store.path
 	source, empty, emptyText := prepareLocalRevision(t, store, "empty", "")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "empty", empty.ID, emptyText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "empty", empty.ID, emptyText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	_, visible, visibleText := prepareLocalRevision(t, store, "visible", "newterm visible evidence")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "visible", visible.ID, visibleText); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "visible", visible.ID, visibleText, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {

@@ -121,6 +121,13 @@ open the source read-only, return JSON `record_counts` on success, and fail
 with a non-zero exit on damage. Whole-store verification checks an isolated
 SQLite page copy because the FTS5 integrity command requires write permission.
 
+A store written by a schema-7 binary is refused on open with a hint to run
+`mousa -store STORE migrate`. Migration rewrites the store in place to schema
+8 — stop any daemon holding it first and keep a verified backup — preserving
+every note, citation, trail and request record; run `verify` afterwards.
+Stores older than schema 7 are still refused without modification and must be
+rebuilt by re-syncing from their sources.
+
 ### CLI client example
 
 Two Python consumers show the CLI contract:
@@ -214,10 +221,82 @@ nothing, and later access changes do not redact note bytes already released.
 a document source, including one whose items are all inactive.
 
 Notes share the source's static identity and access grant; there are no
-agent-specific sources or per-note grants yet. Not supported:
-editing or retracting a note, recalling across multiple sources in one query,
-a citation change cursor or standalone recheck, a daemon, and any change to
-lexical ranking.
+agent-specific sources or per-note grants yet. Notes cannot be edited or
+retracted. Moving and superseding leave the stored text unchanged.
+
+## Paths
+
+Every local item carries one location path alongside its item ID. A path is at
+most 256 bytes of lowercase ASCII segments joined by `/`
+(`^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$`); uppercase letters, empty
+segments, `.` and doubled slashes are refused. Notes default to `unsorted`;
+`remember --path workspace/decisions` places a new note, and a repeat of the
+same note keeps its stored path. Documents default to their literal item ID —
+`docs/one` lives at `docs/one`, `.env` at `.env` — whether they were synced
+before or after paths existed, and that ID stays the path until it is moved.
+Every explicit destination is validated, and passing `--path ''` is an error
+rather than a request for the default. A JSONL `sync` record may carry a
+`"path"` for a document item: the same text with a different path relocates it
+(`"action": "moved"`) without rebuilding its representation, a record with
+both changes updates the text and moves it in the same commit, and omitting
+`"path"` on re-sync preserves the current path. Delete records reject a path.
+
+Queries report each passage's current `path`. Paths describe locations only:
+they never rename an item ID or a note ID.
+
+## Move
+
+`mousa move` relocates stored items without re-syncing them. One selector is
+required: `--note NOTE_ID`, `--item ITEM_ID`, or `--prefix OLD/`, and `--to`
+names the new path (a prefix move appends each item's suffix after the new
+prefix). Directory sources move offline; JSONL sources move offline through
+`-store` or against a served store through the endpoint client.
+
+```sh
+./mousa -store local.sqlite move --source notes --note NOTE_ID --to workspace/decisions
+./mousa -store local.sqlite move --source docs --prefix team/ --to shelf/
+./mousa -endpoint http://127.0.0.1:8787 move --source docs --item docs/a --to shelf/cli
+```
+
+The served endpoint accepts the same JSON:
+
+```sh
+curl -X POST "$ENDPOINT/v1/moves" -H "authorization: Bearer $TOKEN" \
+  -d '{"source": "docs", "item": "docs/a", "to": "shelf/cli"}'
+```
+
+A move is one immutable `path_move` log leaf covering every entry, attributed
+to the operator or the authenticated principal (which needs a write grant on
+the source). A note or item ID that names nothing errors; a prefix that
+matches nothing, or only items already at the destination, is a no-op: the
+served request still records an admission and a no-op outcome, but no move
+leaf. Moving preserves IDs, bytes, representations and access accounting;
+earlier `trail` records still resolve, and `verify` stays green. The monitor
+shows each move's old and new paths in the open request's content as `Moved
+paths`; closed requests show metadata only. The destination's lifecycle rules
+apply: a denied or withdrawn source cannot be moved into.
+
+## Supersede
+
+`remember --supersedes NOTE_ID` records that the new note replaces an older
+note of the same source; repeat the flag for several targets. Every target
+must already exist in that source — self, missing, foreign-source and repeated
+IDs are refused, and a note already superseded can still be named. The edge is
+immutable and lands with the note atomically: there is no un-supersede.
+Repeating the same text returns the stored note; only an explicitly different
+`--supersedes` set conflicts.
+
+```sh
+./mousa -store local.sqlite remember --source memory \
+  --supersedes OLD_NOTE_ID 'The harbor inspection uses dry dock 5.'
+```
+
+Default queries omit candidates whose note is superseded (`omitted:
+"superseded"`); `--include-superseded` (or a native query's
+`"include_superseded": true`) packs them and marks each passage's note with
+`superseded_by`. The query trail records the `supersession` effects it used,
+so a trail taken before a replacement still verifies afterwards. Export and
+import carry the edges inside each canonical note record, in any line order.
 
 ## Changes and recheck
 

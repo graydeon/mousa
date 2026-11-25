@@ -109,7 +109,7 @@ func TestTrailReplaysFirstFit(t *testing.T) {
 	fill.Rank = 4
 	two.Candidates = append(two.Candidates, duplicate, fill)
 	two.Retrieval.Branches[0].Proposed = 4
-	*two.Packing = ApplyFirstFit(two.Candidates, two.Request.Budget.Limit)
+	*two.Packing = ApplyFirstFit(two.Candidates, two.Request.Budget.Limit, nil)
 	if c := two.Candidates[0]; c.Packed != "full" || c.Cost != 700 {
 		t.Errorf("first candidate not packed: %+v", c)
 	}
@@ -131,6 +131,30 @@ func TestTrailReplaysFirstFit(t *testing.T) {
 	two.Candidates[2].DuplicateOf = two.Candidates[1].SegmentID
 	if _, err := NewTrail(two); err == nil {
 		t.Fatal("accepted a changed duplicate reference")
+	}
+}
+
+func TestTrailSupersessionEffectValidation(t *testing.T) {
+	one, two, _, _ := trailVectors()
+	// Sixty-five sorted unique replacements stay valid on an eligible
+	// candidate; the bound on outgoing edges does not gate inbound trails.
+	replacements := make([]SHA256, 0, 65)
+	for i := 1; i <= 65; i++ {
+		replacements = append(replacements, vectorDigest(fmt.Sprintf("%02x", i)))
+	}
+	two.Request.IncludeSuperseded = true
+	two.Supersession = []SupersessionEffect{{
+		NoteID: vectorDigest("77"), SegmentID: two.Candidates[0].SegmentID, SupersededBy: replacements,
+	}}
+	if _, err := NewTrail(two); err != nil {
+		t.Fatalf("valid effect with 65 replacements rejected: %v", err)
+	}
+	// An all-denied trail cannot carry a supersession effect at all.
+	one.Supersession = []SupersessionEffect{{
+		NoteID: vectorDigest("77"), SegmentID: SegmentID(vectorDigest("51")), SupersededBy: []SHA256{vectorDigest("78")},
+	}}
+	if _, err := NewTrail(one); err == nil {
+		t.Fatal("all-denied trail accepted a supersession effect")
 	}
 }
 

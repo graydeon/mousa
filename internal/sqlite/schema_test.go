@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -101,15 +102,16 @@ func TestOpenFailsClosedForIncompatibleAndDamagedState(t *testing.T) {
 // verified, so an earlier store reports re-sync rather than an integrity failure.
 func TestOpenRefusesOtherStoresBeforeVerifyingRecords(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		header string
-		resync bool
+		name    string
+		header  string
+		resync  bool
+		migrate bool
 	}{
-		{"pre-rework application ID", `PRAGMA application_id = 1297044819`, true},
-		{"earlier schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = 0`, applicationID), true},
-		{"previous schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = %d`, applicationID, schemaVersion-1), true},
-		{"foreign application ID", `PRAGMA application_id = 7`, false},
-		{"no application ID", `PRAGMA application_id = 0`, false},
+		{"pre-rework application ID", `PRAGMA application_id = 1297044819`, true, false},
+		{"earlier schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = 0`, applicationID), true, false},
+		{"previous schema version", fmt.Sprintf(`PRAGMA application_id = %d; PRAGMA user_version = %d`, applicationID, schemaVersion-1), false, true},
+		{"foreign application ID", `PRAGMA application_id = 7`, false, false},
+		{"no application ID", `PRAGMA application_id = 0`, false, false},
 	} {
 		for _, open := range []struct {
 			name string
@@ -136,6 +138,9 @@ func TestOpenRefusesOtherStoresBeforeVerifyingRecords(t *testing.T) {
 				}
 				if got := errors.Is(err, errResyncRequired); got != test.resync {
 					t.Fatalf("open error = %v, re-sync = %v, want %v", err, got, test.resync)
+				}
+				if got := strings.Contains(err.Error(), "mousa migrate"); got != test.migrate {
+					t.Fatalf("open error = %v, migrate hint = %v, want %v", err, got, test.migrate)
 				}
 				after, err := os.ReadFile(path)
 				if err != nil {

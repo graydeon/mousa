@@ -29,16 +29,17 @@ const logRecordSQL = `SELECT l.seq, l.kind, l.record_id, l.source_id, l.leaf_has
   CASE l.kind
     WHEN 'request_admission' THEN (SELECT record_json FROM request_admissions WHERE id = l.record_id)
     WHEN 'request_outcome' THEN (SELECT record_json FROM request_outcomes WHERE id = l.record_id)
-    ELSE coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json)
+    ELSE coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json, p.record_json)
   END,
-  coalesce(r.source_id, a.source_id, i.source_id, w.source_id, n.source_id)
+  coalesce(r.source_id, a.source_id, i.source_id, w.source_id, n.source_id, p.source_id)
 FROM log l
 LEFT JOIN ingest_receipts r ON l.kind = 'ingest_receipt' AND r.observation_id = l.record_id
 LEFT JOIN access_events a ON l.kind = 'access_event' AND a.id = l.record_id
 LEFT JOIN item_changes i ON l.kind = 'item_change' AND i.id = l.record_id
 LEFT JOIN source_withdrawals w ON l.kind = 'source_withdrawal' AND w.id = l.record_id
 LEFT JOIN notes n ON l.kind = 'note' AND n.id = l.record_id
-LEFT JOIN trails t ON l.kind = 'trail' AND t.id = l.record_id`
+LEFT JOIN trails t ON l.kind = 'trail' AND t.id = l.record_id
+LEFT JOIN path_moves p ON l.kind = 'path_move' AND p.id = l.record_id`
 
 func checkLeaf(kind string, sourceID, leaf, record, recordSource []byte) error {
 	if record == nil {
@@ -70,6 +71,7 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	counts := make(map[string]int64)
 	accessTimes := make(map[mousa.SourceID]int64)
 	itemHeads := make(map[localItemKey]localItemHead)
+	pathHeads := make(map[localItemKey]string)
 	var want int64 = 1
 	for rows.Next() {
 		var seq int64
@@ -104,6 +106,27 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 			}
 			if err := applyVerifiedItemChange(itemHeads, change); err != nil {
 				return nil, err
+			}
+		}
+		if kind == mousa.LogKindPathMove {
+			move, err := decodePathMoveLeaf(uint64(seq), kind, recordID, sourceID, leaf, record, recordSource)
+			if err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
+			}
+			for _, entry := range move.Records {
+				key := localItemKey{move.SourceID, entry.ItemID}
+				// A move only rewrites a location an earlier item change
+				// projected; activation itself writes no move leaf.
+				if _, exists := itemHeads[key]; !exists {
+					return nil, integrity("verify log", fmt.Sprintf("seq %d: path move names an item with no projected activation", seq))
+				}
+				// The first logged move is the earliest path evidence: the
+				// path an item was created under is not itself logged. Every
+				// later move must name the path the chain left.
+				if head, exists := pathHeads[key]; exists && head != entry.OldPath {
+					return nil, integrity("verify log", fmt.Sprintf("seq %d: path move old path disagrees with log history", seq))
+				}
+				pathHeads[key] = entry.NewPath
 			}
 		}
 		if kind == mousa.LogKindRequestAdmission {
@@ -153,6 +176,9 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 		return nil, err
 	}
 	if err := verifyItemChangeHeads(ctx, tx, itemHeads); err != nil {
+		return nil, err
+	}
+	if err := verifyPathHeads(ctx, tx, pathHeads); err != nil {
 		return nil, err
 	}
 	if _, err := getStoreID(ctx, tx); err != nil {

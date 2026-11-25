@@ -56,6 +56,7 @@ type LocalItem struct {
 	Artifact           mousa.Artifact
 	Active             bool
 	SegmentationPolicy string
+	Path               string
 }
 
 // GetLocalItem reads the indexed current-item relationship and its verified ancestry.
@@ -81,13 +82,14 @@ func (store *Store) GetLocalItem(ctx context.Context, sourceID mousa.SourceID, i
 func getLocalItem(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID string) (LocalItem, error) {
 	var raw []byte
 	var active int
-	if err := q.QueryRowContext(ctx, `SELECT representation_id, active FROM local_items WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID).Scan(&raw, &active); err != nil {
+	var path string
+	if err := q.QueryRowContext(ctx, `SELECT representation_id, active, path FROM local_items WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID).Scan(&raw, &active, &path); err != nil {
 		return LocalItem{}, readError("get local item", err)
 	}
-	if len(raw) != len(mousa.RepresentationID{}) || active < 0 || active > 1 {
+	if len(raw) != len(mousa.RepresentationID{}) || active < 0 || active > 1 || !validStoredPath(path, itemID) {
 		return LocalItem{}, integrity("get local item", "invalid current-item projection")
 	}
-	item := LocalItem{Active: active == 1}
+	item := LocalItem{Active: active == 1, Path: path}
 	copy(item.RepresentationID[:], raw)
 	representation, err := getRepresentation(ctx, q, item.RepresentationID)
 	if err != nil {
@@ -115,15 +117,35 @@ func getLocalItem(ctx context.Context, q queryer, sourceID mousa.SourceID, itemI
 	return item, nil
 }
 
+// validStoredPath accepts a path or the compatibility exception: an item
+// created before paths existed keeps its literal item ID as its location.
+func validStoredPath(path, itemID string) bool {
+	return path != "" && (mousa.ValidPath(path) || path == itemID)
+}
+
 // ActivateLocalItem atomically replaces the prior index rows and current pointer.
 // The canonical representation and segments must already exist. A failed prepare
 // may leave immutable history, but only a committed activation becomes searchable.
-func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string, representationID mousa.RepresentationID, content []byte) (string, error) {
+// A nil path takes the default: "unsorted" for a note item, the item ID itself
+// for a document. An explicit path is validated; for an existing item it moves
+// the location through a path_move leaf, alongside or instead of the revision
+// change.
+func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.SourceID, itemID string, representationID mousa.RepresentationID, content []byte, path *string, actor string) (string, error) {
 	if err := store.requireWritable("activate local item"); err != nil {
 		return "", err
 	}
 	if itemID == "" || !utf8.ValidString(itemID) {
 		return "", wrap(CodeInvalidRecord, "activate local item", errors.New("item ID must be nonempty UTF-8"))
+	}
+	initial := itemID
+	if store.noteWrite {
+		initial = mousa.DefaultNotePath
+	}
+	if path != nil {
+		if !mousa.ValidPath(*path) {
+			return "", wrap(CodeInvalidRecord, "activate local item", errors.New("path is not a valid path"))
+		}
+		initial = *path
 	}
 	var action string
 	err := store.writeImmediate(ctx, "activate local item", func(conn *sql.Conn) error {
@@ -181,11 +203,24 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 			return err
 		case previous.Active && previous.RepresentationID == representationID:
 			action = "unchanged"
-			return nil
 		case previous.Active:
 			action = "updated"
 		case !previous.Active:
 			action = "restored"
+		}
+		// An explicit path that differs from the stored one moves the item;
+		// a new item takes its path at activation without a move leaf.
+		if action != "added" && path != nil && previous.Path != *path {
+			if _, err := appendPathMove(ctx, conn, sourceID,
+				[]mousa.PathMoveEntry{{ItemID: itemID, OldPath: previous.Path, NewPath: *path}}, moveActor(actor)); err != nil {
+				return err
+			}
+			if action == "unchanged" {
+				action = "moved"
+			}
+		}
+		if action == "unchanged" || action == "moved" {
+			return nil
 		}
 		if previous.Active {
 			if err := removeRepresentationIndex(ctx, conn, sourceID, previous.RepresentationID); err != nil {
@@ -204,8 +239,8 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 				}
 			}
 		}
-		_, err = conn.ExecContext(ctx, `INSERT INTO local_items(source_id, item_id, representation_id, active) VALUES(?, ?, ?, 1)
-			ON CONFLICT(source_id, item_id) DO UPDATE SET representation_id = excluded.representation_id, active = 1`, sourceID[:], itemID, representationID[:])
+		_, err = conn.ExecContext(ctx, `INSERT INTO local_items(source_id, item_id, representation_id, active, path) VALUES(?, ?, ?, 1, ?)
+			ON CONFLICT(source_id, item_id) DO UPDATE SET representation_id = excluded.representation_id, active = 1`, sourceID[:], itemID, representationID[:], initial)
 		if err != nil {
 			return classify("store local item activation", err)
 		}
@@ -396,11 +431,14 @@ func (store *Store) LocalSourceCounts(ctx context.Context, sourceID mousa.Source
 
 // ApplyRequestDocument applies one document item under a served request
 // admission. Verified access and document-kind checks run inside the write
-// transaction; a chargeable change resolves the item-change leaf written after
-// the admission's snapshot into outcome evidence, otherwise the request is a
+// transaction; the callback's action names which evidence the outcome binds:
+// a revision change binds the item-change leaf, a pure move the path-move
+// leaf written after the admission's snapshot, and every other action is a
 // no-op. An outcome write error rolls the item change back with it.
-func (store *Store) ApplyRequestDocument(ctx context.Context, admission mousa.RequestAdmission, source mousa.SourceID, item string, apply func(*Store) (bool, error)) error {
-	return store.writeImmediateAttempts(ctx, "apply request document", syncWriteAttempts, func(conn *sql.Conn) error {
+// The result reports whether the request committed evidence.
+func (store *Store) ApplyRequestDocument(ctx context.Context, admission mousa.RequestAdmission, source mousa.SourceID, item string, apply func(*Store) (string, error)) (bool, error) {
+	committed := false
+	err := store.writeImmediateAttempts(ctx, "apply request document", syncWriteAttempts, func(conn *sql.Conn) error {
 		var tail uint64
 		if err := conn.QueryRowContext(ctx, logIndexSQL).Scan(&tail); err != nil {
 			return classify("apply request document", err)
@@ -417,20 +455,31 @@ func (store *Store) ApplyRequestDocument(ctx context.Context, admission mousa.Re
 			return accessErr
 		}
 		finishIngest := store.StartStage(mousa.StageIngest)
-		changed, err := apply(&scoped)
+		action, err := apply(&scoped)
 		finishIngest(err)
 		if err != nil {
 			return err
 		}
-		if !changed {
+		switch action {
+		case "added", "updated", "restored", "deleted":
+			change, err := itemChangeAfter(ctx, conn, tail, source, item)
+			if err != nil {
+				return err
+			}
+			committed = true
+			return finishRequest(ctx, conn, admission, mousa.RequestStateCommitted, "", mousa.RequestEvidence{ItemChangeID: &change.ID})
+		case "moved":
+			_, moveID, err := pathMoveAfter(ctx, conn, tail, source, item)
+			if err != nil {
+				return err
+			}
+			committed = true
+			return finishRequest(ctx, conn, admission, mousa.RequestStateCommitted, "", mousa.RequestEvidence{PathMoveID: &moveID})
+		default:
 			return finishRequest(ctx, conn, admission, mousa.RequestStateNoOp, "", mousa.RequestEvidence{})
 		}
-		change, err := itemChangeAfter(ctx, conn, tail, source, item)
-		if err != nil {
-			return err
-		}
-		return finishRequest(ctx, conn, admission, mousa.RequestStateCommitted, "", mousa.RequestEvidence{ItemChangeID: &change.ID})
 	})
+	return committed, err
 }
 
 // itemChangeAfter verifies the item-change leaves appended after a sequence

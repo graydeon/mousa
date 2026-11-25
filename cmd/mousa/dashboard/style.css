@@ -178,7 +178,7 @@ aside { position: sticky; top: 1rem; }
 .detail .got::before {
 	content: attr(data-rank); position: absolute; left: 0.65rem; top: 0.5rem; color: var(--dim);
 }
-.detail dd { white-space: pre-wrap; font-family: var(--mono); font-size: 0.82rem; }
+.detail dd { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.82rem; }
 .facts h3:first-child { margin-top: 0; }
 .pick > .words + .facts { margin-top: 1rem; }
 .detail .pick > .words + .facts { margin-top: 0; }

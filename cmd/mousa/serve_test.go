@@ -35,7 +35,12 @@ type daemonHandle struct {
 // single startup line that announces the bound address.
 func startDaemon(t *testing.T, store, config string) *daemonHandle {
 	t.Helper()
-	cmd := exec.Command(cliBinary, "-store", store, "serve", "--listen", "127.0.0.1:0", "--config", config)
+	return startDaemonFlags(t, store, config)
+}
+
+func startDaemonFlags(t *testing.T, store, config string, extra ...string) *daemonHandle {
+	t.Helper()
+	cmd := exec.Command(cliBinary, append([]string{"-store", store, "serve", "--listen", "127.0.0.1:0", "--config", config}, extra...)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

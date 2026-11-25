@@ -303,6 +303,7 @@ func TestMemoryCLI(t *testing.T) {
 		}
 		clone := maps.Clone(record)
 		delete(clone, "text")
+		delete(clone, "path")
 		if !reflect.DeepEqual(clone, stored) {
 			t.Fatalf("export record %s differs from its canonical bytes: %v vs %v", id, clone, stored)
 		}

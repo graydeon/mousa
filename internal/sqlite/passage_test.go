@@ -17,7 +17,7 @@ func TestPassageActivationRollbackSnapshotAndHistory(t *testing.T) {
 	path := store.path
 	text := "# Recovery\n\nnewterm instructions\n\n" + strings.Repeat("background paragraph\n\n", 100)
 	source, old, content := prepareLocalRevision(t, store, "doc", text)
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, content); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, content, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	oldJSON, err := mousa.EncodeRepresentation(old)
@@ -41,7 +41,7 @@ func TestPassageActivationRollbackSnapshotAndHistory(t *testing.T) {
 	if _, err := store.db.Exec(`CREATE TEMP TRIGGER reject_passage BEFORE UPDATE ON local_items BEGIN SELECT RAISE(ABORT, 'interrupted'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content); err == nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content, nil, ""); err == nil {
 		t.Fatal("injected failure accepted")
 	}
 	if item, err := store.GetLocalItem(ctx, source.ID, "doc"); err != nil || item.RepresentationID != old.ID {
@@ -50,7 +50,7 @@ func TestPassageActivationRollbackSnapshotAndHistory(t *testing.T) {
 	if _, err := store.db.Exec(`DROP TRIGGER reject_passage`); err != nil {
 		t.Fatal(err)
 	}
-	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content); err != nil || action != "updated" {
+	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content, nil, ""); err != nil || action != "updated" {
 		t.Fatalf("replacement: %s %v", action, err)
 	}
 	if item, err := getLocalItem(ctx, tx, source.ID, "doc"); err != nil || item.RepresentationID != old.ID {
@@ -63,7 +63,7 @@ func TestPassageActivationRollbackSnapshotAndHistory(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content); err != nil || action != "unchanged" {
+	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content, nil, ""); err != nil || action != "unchanged" {
 		t.Fatalf("retry: %s %v", action, err)
 	}
 	if err := store.Close(); err != nil {
@@ -93,7 +93,7 @@ func TestPassageAbruptActivationAndRetry(t *testing.T) {
 	store := openLexicalStore(t)
 	path := store.path
 	source, old, content := prepareLocalRevision(t, store, "doc", "newterm evidence")
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, content); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", old.ID, content, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
@@ -115,7 +115,7 @@ func TestPassageAbruptActivationAndRetry(t *testing.T) {
 		t.Fatalf("crash changed current identity: %v %v", item, err)
 	}
 	_, next, _ := prepareLocalRevision(t, store, "doc", "newterm evidence", mousa.TextSegmentPassageV1)
-	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content); err != nil || action != "updated" {
+	if action, err := store.ActivateLocalItem(ctx, source.ID, "doc", next.ID, content, nil, ""); err != nil || action != "updated" {
 		t.Fatalf("crash retry: %s %v", action, err)
 	}
 }
@@ -132,13 +132,13 @@ func TestPassageActivationRejectsIncompleteSegmentSet(t *testing.T) {
 	if _, err := store.db.Exec(`DELETE FROM segments WHERE id = ?`, segments[1].ID[:]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", rep.ID, content); !IsCode(err, CodeIntegrity) {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", rep.ID, content, nil, ""); !IsCode(err, CodeIntegrity) {
 		t.Fatalf("incomplete activation: %v", err)
 	}
 	if err := store.PutSegment(ctx, segments[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", rep.ID, content); err != nil {
+	if _, err := store.ActivateLocalItem(ctx, source.ID, "doc", rep.ID, content, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 }
