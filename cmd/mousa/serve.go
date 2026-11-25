@@ -197,6 +197,7 @@ func (s *nativeService) routes() http.Handler {
 	mux.HandleFunc("POST /v1/moves", serveOperation(s, mousa.RequestOperationMove, nativeMaxSmallBody, s.handleMove))
 	mux.HandleFunc("GET /v1/requests", s.requestHistory)
 	mux.HandleFunc("GET /v1/requests/{request_id}", s.requestDetail)
+	mux.HandleFunc("GET /v1/recheck/{trail_id}", s.recheckTrail)
 	mux.HandleFunc("GET /v1/events", s.stageEvents)
 	installDashboard(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -653,6 +654,38 @@ func (s *nativeService) requestDetail(w http.ResponseWriter, r *http.Request) {
 		sqlite.RequestHistoryDetail
 		Content sqlite.RequestContent `json:"content"`
 	}{detail, content}, nil)
+}
+
+// recheckTrail releases a trail's packed segment text to any authenticated
+// principal whose read grants still cover every source the trail allowed. It
+// is a read like the other monitor reads: no request record is written.
+func (s *nativeService) recheckTrail(w http.ResponseWriter, r *http.Request) {
+	requestID := w.Header().Get("X-Mousa-Request-ID")
+	fail := func(status int, code string) {
+		_ = s.writeReply(w, status, requestID, nil, &nativeFailure{code: code})
+	}
+	principal, failure := s.authenticate(r)
+	if failure != nil {
+		fail(failure.status, failure.code)
+		return
+	}
+	id, err := mousa.ParseSHA256(r.PathValue("trail_id"))
+	if err != nil || id == (mousa.SHA256{}) {
+		fail(http.StatusBadRequest, "invalid_request")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), nativeHandlerBound)
+	defer cancel()
+	result, err := s.store.RecheckTrailText(ctx, mousa.SourceTrailID(id), principal.read)
+	if err != nil {
+		if sqlite.IsCode(err, sqlite.CodeNotFound) {
+			fail(http.StatusNotFound, "not_found")
+			return
+		}
+		fail(http.StatusInternalServerError, "internal")
+		return
+	}
+	_ = s.writeReply(w, http.StatusOK, requestID, result, nil)
 }
 
 // Request bodies are typed at the boundary. There is deliberately no caller,

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"flag"
 	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -13,8 +14,18 @@ func accessCommand(ctx context.Context, storePath string, args []string) error {
 	flags := newCommandFlags("access")
 	sourceID := flags.String("source", "", "external source ID instead of a directory root")
 	create := flags.Bool("create", false, "register the explicit JSONL source first; requires --source and allow")
+	history := flags.String("history", "", "retain retired segment text: on or off")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
+	}
+	var historySet bool
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "history" {
+			historySet = true
+		}
+	})
+	if historySet {
+		return historyCommand(ctx, storePath, *sourceID, *history, flags.Args(), *create)
 	}
 	positional := flags.Args()
 	if len(positional) == 0 {
@@ -54,6 +65,33 @@ func accessCommand(ctx context.Context, storePath string, args []string) error {
 		AccessEventID mousa.AccessEventID `json:"access_event_id"`
 		Changed       bool                `json:"changed"`
 	}{label, event.Access, event.ID, changed})
+}
+
+// historyCommand sets whether an existing source retains retiring segment
+// text. It grants no access: --history never takes allow, deny, or --create.
+func historyCommand(ctx context.Context, storePath, sourceID, setting string, positional []string, create bool) error {
+	if sourceID == "" || len(positional) != 0 || create || (setting != "on" && setting != "off") {
+		return usageError{"access requires exactly --source ID --history on|off"}
+	}
+	source, label, err := selectSource(sourceID, nil, "access")
+	if err != nil {
+		return err
+	}
+	store, err := sqlite.Open(ctx, storePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	id, changed, err := store.SetSourceHistory(ctx, source.ID, setting == "on", accessActor)
+	if err != nil {
+		return err
+	}
+	return emit(struct {
+		Source         string       `json:"source"`
+		History        string       `json:"history"`
+		HistoryEventID mousa.SHA256 `json:"history_event_id"`
+		Changed        bool         `json:"changed"`
+	}{label, setting, id, changed})
 }
 
 // accessActor is the actor this CLI records on the access events it appends.

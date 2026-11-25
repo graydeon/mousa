@@ -292,8 +292,45 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 	return action, nil
 }
 
+// removeRepresentationIndex drops a representation's search rows. When the
+// source's latest source-history event is on, each retiring segment's
+// verified indexed text is archived first, in the same transaction; an
+// already-archived segment must hold identical bytes.
 func removeRepresentationIndex(ctx context.Context, conn *sql.Conn, sourceID mousa.SourceID, id mousa.RepresentationID) error {
 	const rows = `SELECT lr.rowid FROM segment_lexical_rows AS lr JOIN segments AS s ON s.id = lr.segment_id WHERE s.representation_id = ?`
+	event, err := sourceHistoryAt(ctx, conn, sourceID, maxHistorySeq)
+	if err != nil {
+		return err
+	}
+	if event != nil && event.Enabled {
+		segments, err := lexicalSegments(ctx, conn, id)
+		if err != nil {
+			return err
+		}
+		for _, segment := range segments {
+			text, err := indexedSegmentText(ctx, conn, segment)
+			if err != nil {
+				return err
+			}
+			result, err := conn.ExecContext(ctx, `INSERT INTO segment_history(segment_id, text) VALUES(?, ?) ON CONFLICT(segment_id) DO NOTHING`, segment.ID[:], text)
+			if err != nil {
+				return classify("archive segment text", err)
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return classify("archive segment text", err)
+			}
+			if affected == 0 {
+				kept, err := keptSegmentText(ctx, conn, segment)
+				if err != nil {
+					return err
+				}
+				if kept == nil || *kept != text {
+					return integrity("archive segment text", "archived segment text disagrees with its index")
+				}
+			}
+		}
+	}
 	scope, err := getLexicalScope(ctx, conn, sourceID[:])
 	if err == nil {
 		if _, err := conn.ExecContext(ctx, `DELETE FROM `+scope.table()+` WHERE rowid IN (`+rows+`)`, id[:]); err != nil {

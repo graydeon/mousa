@@ -20,14 +20,17 @@ var logSQL string
 //go:embed paths.sql
 var pathsSQL string
 
+//go:embed history.sql
+var historySQL string
+
 const (
 	// applicationID ("MOSA" in the SQLite header) marks a store written with schema.sql.
 	applicationID = 0x4D4F5341
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 8
-	// migratableVersion is the one version `mousa migrate` upgrades in place.
+	schemaVersion = 9
+	// migratableVersion is the oldest version `mousa migrate` upgrades in place.
 	migratableVersion = 7
 )
 
@@ -49,6 +52,7 @@ var requiredObjects = []string{
 	"index:representation_inputs_representation_id_idx",
 	"index:segment_lexical_rows_scope_idx",
 	"index:segments_representation_id_idx",
+	"index:source_history_events_source_seq_idx",
 	"index:source_withdrawals_source_id_idx",
 	"table:access_events",
 	"table:artifacts",
@@ -69,6 +73,7 @@ var requiredObjects = []string{
 	"table:representations",
 	"table:request_admissions",
 	"table:request_outcomes",
+	"table:segment_history",
 	"table:segment_lexical_fts",
 	"table:segment_lexical_fts_config",
 	"table:segment_lexical_fts_content",
@@ -77,6 +82,7 @@ var requiredObjects = []string{
 	"table:segment_lexical_fts_idx",
 	"table:segment_lexical_rows",
 	"table:segments",
+	"table:source_history_events",
 	"table:source_ingest_state",
 	"table:source_withdrawals",
 	"table:sources",
@@ -118,7 +124,7 @@ func checkStoreIdentity(ctx context.Context, db *sql.DB) (empty bool, err error)
 	case id == applicationID && version == schemaVersion:
 		_, err := getStoreID(ctx, db)
 		return false, err
-	case id == applicationID && version == migratableVersion:
+	case id == applicationID && version >= migratableVersion && version < schemaVersion:
 		return false, wrap(CodeIncompatibleSchema, "open store",
 			fmt.Errorf("store was written by schema version %d; run `mousa migrate` on this store", version))
 	case id == applicationID && version > schemaVersion:
@@ -147,7 +153,7 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		}
 	}()
-	statements := schemaSQL + logSQL + pathsSQL + fmt.Sprintf("\nPRAGMA application_id = %d;\nPRAGMA user_version = %d;\n", applicationID, schemaVersion)
+	statements := schemaSQL + logSQL + pathsSQL + historySQL + fmt.Sprintf("\nPRAGMA application_id = %d;\nPRAGMA user_version = %d;\n", applicationID, schemaVersion)
 	if _, err := conn.ExecContext(ctx, statements); err != nil {
 		return startupError("apply schema", err)
 	}
@@ -235,6 +241,9 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 		}
 	}
 	if err := verifyQueryTrails(ctx, db); err != nil {
+		return err
+	}
+	if err := verifySegmentHistory(ctx, db); err != nil {
 		return err
 	}
 	return verifyLocalItemRecords(ctx, db)

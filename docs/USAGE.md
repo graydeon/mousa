@@ -121,12 +121,13 @@ open the source read-only, return JSON `record_counts` on success, and fail
 with a non-zero exit on damage. Whole-store verification checks an isolated
 SQLite page copy because the FTS5 integrity command requires write permission.
 
-A store written by a schema-7 binary is refused on open with a hint to run
-`mousa -store STORE migrate`. Migration rewrites the store in place to schema
-8 — stop any daemon holding it first and keep a verified backup — preserving
-every note, citation, trail and request record; run `verify` afterwards.
-Stores older than schema 7 are still refused without modification and must be
-rebuilt by re-syncing from their sources.
+A store written by a schema-7 or schema-8 binary is refused on open with a
+hint to run `mousa -store STORE migrate`. Migration rewrites the store in
+place to schema 9; stop any daemon holding it first and keep a verified
+backup. It preserves every note, citation, trail and request record, and
+prints `{"schema": 9}`; run `verify` afterwards. Stores older than schema 7
+are still refused without modification and must be rebuilt by re-syncing
+from their sources.
 
 ### CLI client example
 
@@ -171,6 +172,46 @@ not resume it.
 A source synced through the served store stays denied until the operator runs
 `mousa -store STORE access --source ID allow`. The service has no allow
 endpoint, on purpose: a client that can write a source cannot also release it.
+
+## History
+
+A source can retain the text each `sync` or `sync --source` update or delete
+retires. The setting is per source and off by default, including for stores
+carried through a migration, where retirement before opt-in is never
+recovered. `access --source ID --history on|off` changes the setting on an
+existing source; like any access change it runs offline against an explicit
+store, so stop a serving daemon first and keep a verified backup. The setting
+is logged. Repeating a recorded setting reports `changed: false`.
+
+```sh
+mousa -store local.sqlite access --source docs --history on
+mousa -store local.sqlite access --source docs --history off
+mousa -store local.sqlite recheck --trail TRAIL_ID --text
+mousa recheck --trail TRAIL_ID --text
+```
+
+History is never retroactive: turning it on keeps only later retirements,
+and turning it off again leaves the existing archive readable. There is no
+retention limit or purge. Archived text is verified against its canonical
+segment on every read and is never searchable: retired terms return no hits.
+
+`recheck --trail TRAIL_ID --text` adds a `released` list with each packed
+segment's status: `indexed` (still live), `kept` (served from the archive)
+or `not_kept` (retired before opt-in or while off). `--text` requires
+`--trail` and is the only form a served store accepts; the caller needs a
+current read grant on every allowed source the trail touched, so a denied or
+withdrawn source releases no text. Plain `recheck` reports staleness
+unchanged and never reads the archive.
+
+On a served store a document request's monitor detail also carries the
+revision text it touched: `previous` and `current` when they are kept,
+`previous_not_kept` when a former revision was never archived, and an empty
+content object when the source is denied or withdrawn. The requested
+revision's own text is shown, never a newer one in its place; an empty
+revision stays distinguishable from a missing one. `--open-monitor` needs no
+principal for monitor reads, but document text still requires the source to
+be allowed and not withdrawn. Open an update in the dashboard to see the
+line diff.
 
 ## Notes
 
@@ -329,13 +370,12 @@ appends a hashed leaf to an append-only log in the same transaction. Until signe
 exist, anyone who can write the SQLite file can forge a consistent history.
 The log detects accidental damage and partial edits, not a deliberate rewrite.
 
-Retention. Trails keep the query text, caller and prepared terms. Item replacement and explicit deletion remove the indexed
-text row, but its bytes can remain in SQLite free pages until `VACUUM`
-reclaims them. Withdrawal
-removes nothing: withdrawn text stays indexed in the store. Removal is not
-secure erasure: canonical records keep digests rather than old text, but copies
-can remain in free pages, WAL files, backups and previously released output.
-Retention limits and erasure are not handled yet.
+Retention. Trails keep the query text, caller and prepared terms. Item
+replacement and deletion remove the indexed text row. Sources with
+[history](#history) enabled also keep a separate copy of retired text.
+Withdrawal does not remove indexed or archived text. Removing a row is not
+secure erasure: copies can remain in free pages, WAL files, backups and
+previously released output. There is no retention limit or purge command.
 
 ## Local served store (opt-in)
 
@@ -450,7 +490,8 @@ An agent in a sandbox needs two things from it: a connection to the loopback
 endpoint, and read access to the client configuration and its token source.
 A sandbox that blocks either one must be configured to allow it.
 
-A served store supports only `query`, `remember`, and `sync --source`; the sync
+A served store supports `query`, `remember`, `sync --source`, `move`, and
+`recheck --trail TRAIL_ID --text`; the sync
 form posts each JSONL line on stdin as one request. The HTTP envelope carries
 the request ID; the CLI prints the result or a typed endpoint error with
 its request ID. If audit recording fails, `coverage_unavailable` indicates
@@ -470,14 +511,20 @@ and normally finished with one terminal outcome (`committed`, `no_op`,
 history with `next_after`/`more`; `GET /v1/requests/{request_id}` returns one
 entry's verified admission, outcome and evidence reference. Both are
 operator-only and carry metadata across all sources, never request or note
-bodies.
+bodies. `GET /v1/recheck/{trail_id}` is the served form of
+`recheck --trail --text`: any authenticated caller gets released segment
+text only for sources inside its read grants and `not_found` otherwise,
+and like the other reads it appends no audit record.
 
 `serve --open-monitor` serves these monitor reads, the stage stream and the
 dashboard without a credential, for a private deployment where everyone who
 can reach the listener may see every request. In this mode a request's
 detail also carries its query text with the passages returned, or its note
-text, across all sources. Query, note and document endpoints still require
-their bearer credential.
+text, across all sources; a document request's detail carries the revision
+text it touched. An allowed source releases the indexed current revision
+even with [history](#history) off, plus retained earlier text when it was
+kept; a denied or withdrawn source releases neither. Query, note
+and document endpoints still require their bearer credential.
 
 `GET /v1/events` streams live stage observations (`receive` through
 `response`) as SSE for up to 8 concurrent operator viewers, identified

@@ -290,8 +290,8 @@ func TestMigrateSchema7(t *testing.T) {
 		t.Fatalf("verify on schema 7 stderr = %q", stderr)
 	}
 	_, migrated := run.run(false, "migrate")
-	if migrated["schema"] != float64(8) {
-		t.Fatalf("migrate = %v, want schema 8", migrated)
+	if migrated["schema"] != float64(9) {
+		t.Fatalf("migrate = %v, want schema 9", migrated)
 	}
 	run.run(false, "verify")
 
@@ -386,7 +386,7 @@ func TestMigrateSchema7(t *testing.T) {
 	fresh, _ := setup(t)
 	fresh.run(false, "access", "--source", "docs", "--create", "allow")
 	_, again := fresh.run(false, "migrate")
-	if again["schema"] != float64(8) {
+	if again["schema"] != float64(9) {
 		t.Fatalf("current-store migrate = %v", again)
 	}
 }

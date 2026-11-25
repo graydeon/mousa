@@ -1,5 +1,6 @@
--- The append-only store log. Each receipt, access event, withdrawal, note, trail
--- and path move is one leaf, written in the same transaction as its record.
+-- The append-only store log. Each receipt, access event, withdrawal, note,
+-- trail, path move, request, and source-history event is one leaf, written in
+-- the same transaction as its record.
 -- seq runs 1, 2, 3 ... with no gaps; leaf_hash is the RFC 6962 leaf hash
 -- SHA-256(0x00 || record_json) of the record named by kind and record_id.
 CREATE TABLE log (
@@ -11,7 +12,7 @@ CREATE TABLE log (
     UNIQUE (kind, record_id),
     CHECK (CASE WHEN source_id IS NULL
         THEN kind IN ('trail', 'request_admission', 'request_outcome')
-        ELSE kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note', 'path_move')
+        ELSE kind IN ('ingest_receipt', 'access_event', 'item_change', 'source_withdrawal', 'note', 'path_move', 'source_history')
     END)
 ) STRICT;
 

@@ -20,6 +20,7 @@ const logCountsSQL = `
 	UNION ALL SELECT 'path_move', count(*) FROM path_moves
 	UNION ALL SELECT 'request_admission', count(*) FROM request_admissions
 	UNION ALL SELECT 'request_outcome', count(*) FROM request_outcomes
+	UNION ALL SELECT 'source_history', count(*) FROM source_history_events
 	UNION ALL SELECT 'source_withdrawal', count(*) FROM source_withdrawals
 	UNION ALL SELECT 'trail', count(*) FROM trails`
 

@@ -30,6 +30,7 @@ binary, until the scale probe passes at both sizes.
 | Atomic current-item activation | Yes | Both input forms | Transaction failure, reader snapshots, abrupt exit, retry |
 | Source-scoped lexical retrieval | Yes | `query` | Cross-source isolation and current-only evidence |
 | Source lifecycle (withdrawal) | Yes | `withdraw` | Withdrawn sources release no evidence; cross-source isolation |
+| Opt-in revision text history | Yes | `access --source ID --history on\|off`; `recheck --trail ID --text`; `GET /v1/recheck/{trail_id}`; open-monitor request detail | Per-source logged setting defaulting off, never retroactive, kept text verified against its canonical segment and never searchable, `indexed`/`kept`/`not_kept` release statuses, denied or withdrawn sources release no text, dashboard revision diff |
 | Per-source access decisions | Yes | `access <dir>|--source <id> allow|deny`; `sync --allow`; default deny with no event | Append-only events, default deny, no-op repeats, service-synced sources denied until native allow; see [Access](USAGE.md#access) |
 | Byte-budget evidence selection | Yes | `query --budget-bytes <positive>` | First-fit byte accounting, duplicate omission, and history reads. |
 | Canonical query trails | Yes | `query`; `trail` ID | Stable result digests, atomic leaf writes, corruption checks and caller-view masking. |
@@ -84,9 +85,11 @@ remain committed. An interruption rolls back the in-flight batch. Retrying the
 same input is supported. Concurrent syncs of the same source are not a
 source-wide snapshot protocol; serialize them.
 
-Canonical history retains identities, digests, and provenance, not a complete text
-archive. After deindexing, Mousa cannot reconstruct an old revision's text from its
-digest. Retain original source material separately if historical text is required.
+By default, canonical revision history retains identities, digests, and
+provenance, not retired text. A source that opts into [revision
+history](USAGE.md#history) retains each segment's verified text when an update
+or deletion retires it. Retained text is not indexed. Text retired before
+opt-in cannot be recovered from its digest.
 
 `status` distinguishes `active_items` from historical `observations`. Source collection state is separate: an active source can contain
 zero active items.
@@ -212,12 +215,12 @@ text unchanged.
 
 A store has one schema. Mousa marks it in the SQLite header (`application_id`
 and `user_version`) and checks that header before it reads or verifies any record.
-The current schema is 8. A store written by the previous version is refused on
+The current schema is 9. A store written by schema 7 or 8 is refused on
 open with an `incompatible_schema` error that names `mousa migrate`; that
 command upgrades the store in place inside one transaction, preserving notes,
-note citations, query trails and request history, and `verify` confirms the
-result. A store written before the schema was collapsed, or two or more
-versions back, is refused the same way without a migration path: export notes
+note citations, query trails and request history, prints `{"schema": 9}`,
+and `verify` confirms the result. Stores older than schema 7 are refused
+without a migration path. Export notes
 with the old binary before creating a new store, then import them under the
 same source ID and re-sync document sources. A SQLite file that is not a Mousa
 store and a store from a newer binary are refused the same way. A refused

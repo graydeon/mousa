@@ -274,5 +274,5 @@ CREATE TABLE access_events (
 
 CREATE INDEX access_events_source_id_idx ON access_events(source_id);
 
--- The append-only store log is created from log.sql: init and the schema-7
--- migration share that one definition so both produce the same table.
+-- The append-only store log is created from log.sql: init and the schema-7/8
+-- migrations share that one definition so both produce the same table.

@@ -125,7 +125,9 @@ func sourceHeadAt(ctx context.Context, q queryer, source mousa.SourceID, asOf ui
 	var head mousa.SourceHead
 	var kind string
 	var recordID, leafSource, hash, record, recordSource []byte
-	err := q.QueryRowContext(ctx, logRecordSQL+` WHERE l.source_id = ? AND l.seq <= ?
+	// Source-history toggles are setting evidence, not retrieval evidence:
+	// they never become the source head a trail pins.
+	err := q.QueryRowContext(ctx, logRecordSQL+` WHERE l.source_id = ? AND l.seq <= ? AND l.kind != 'source_history'
 		ORDER BY l.seq DESC LIMIT 1`, source[:], asOf).
 		Scan(&head.Seq, &kind, &recordID, &leafSource, &hash, &record, &recordSource)
 	if errors.Is(err, sql.ErrNoRows) {

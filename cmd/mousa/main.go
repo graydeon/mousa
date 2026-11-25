@@ -67,7 +67,7 @@ func main() {
 	var client *nativeClient
 	if *endpoint != "" {
 		switch command {
-		case "query", "remember", "sync", "move":
+		case "query", "remember", "sync", "move", "recheck":
 			var clientErr error
 			client, clientErr = newNativeClient(*endpoint, config)
 			if clientErr != nil {
@@ -75,7 +75,7 @@ func main() {
 				os.Exit(1)
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "mousa: a served store supports only query, remember, sync --source and move; use -store for %s\n", command)
+			fmt.Fprintf(os.Stderr, "mousa: a served store supports only query, remember, sync --source, move and recheck --trail --text; use -store for %s\n", command)
 			os.Exit(2)
 		}
 	}
@@ -104,7 +104,7 @@ func main() {
 	case "changes":
 		err = changesCommand(ctx, *storePath, rest)
 	case "recheck":
-		err = recheckCommand(ctx, *storePath, rest)
+		err = recheckCommand(ctx, *storePath, client, rest)
 	case "access":
 		err = accessCommand(ctx, *storePath, rest)
 	case "remember":
@@ -135,6 +135,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: mousa -store <path> <command> [args]
        mousa [-endpoint <url>] query|remember|sync|move --source <id>
+       mousa [-endpoint <url>] recheck --trail TRAIL_ID --text
        mousa agent add <name> --config <file> --source <id>
 
 commands:
@@ -148,7 +149,10 @@ commands:
                             manage a named set of sources; add/remove take --source ID NAME
   changes --since SEQ [--source ID|--collection NAME]
                             read new events for allowed sources
-  recheck --trail TRAIL_ID   check whether a trail's released evidence is still current
+  recheck --trail TRAIL_ID [--text]
+                            check whether a trail's released evidence is still
+                            current; --text also releases each packed segment's
+                            text when available, and is the only served form
   recheck --source ID NOTE_ID
                             check a durable note's current citation status
   status <dir>                report the source's ingest state (JSON)
@@ -158,8 +162,9 @@ commands:
                             list owner-visible trail metadata in log order (JSONL)
   verify [--log | --trail <trail-id> | --stdin]
                             verify the store, log, or named trails read-only (JSON)
-  migrate                   upgrade a schema-7 store to the current schema in
-                            place; takes no arguments, prints {"schema":8}
+  migrate                   upgrade a schema-7 or schema-8 store to the current
+                            schema in place; takes no arguments, prints
+                            {"schema":9}
   move <dir> | --source <id> --note ID|--item ID|--prefix P --to DEST
                             relocate one note, one document item, or every
                             item under a path prefix; --prefix and its --to
@@ -168,6 +173,9 @@ commands:
   access --source <id> allow|deny
                             a source with no access event is denied to every caller;
                             --create first registers an explicit JSONL source
+  access --source <id> --history on|off
+                            opt a source in or out of retaining retiring
+                            segment text; grants no access
   remember --source <id> [text]
                             store one durable note; exact stdin text when no
                             argument is given; --from TRAIL[:SEG,SEG] cites a

@@ -99,34 +99,43 @@ var nativeReplyCodes = map[string]bool{
 	"canceled": true, "coverage_unavailable": true, "internal": true,
 }
 
-// post sends one JSON request and returns the envelope's raw result. A
-// transport failure leaves the write outcome unknown; the error says so.
-func (c *nativeClient) post(ctx context.Context, route string, request any) (json.RawMessage, error) {
-	body, err := json.Marshal(request)
-	if err != nil {
-		return nil, err
+// send issues one request and returns the envelope's raw result. A transport
+// failure on a write leaves its outcome unknown; the error says so.
+func (c *nativeClient) send(ctx context.Context, method, route string, request any) (json.RawMessage, error) {
+	var body []byte
+	if request != nil {
+		data, err := json.Marshal(request)
+		if err != nil {
+			return nil, err
+		}
+		body = data
 	}
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+route, bytes.NewReader(body))
+	httpRequest, err := http.NewRequestWithContext(ctx, method, c.base+route, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Authorization", "Bearer "+c.token)
+	write := method == http.MethodPost
+	suffix := ""
+	if write {
+		suffix = "; outcome unknown"
+	}
 	response, err := c.http.Do(httpRequest)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("endpoint request did not complete; outcome unknown: %w", ctxErr)
+			return nil, fmt.Errorf("endpoint request did not complete%s: %w", suffix, ctxErr)
 		}
-		return nil, errors.New("endpoint request did not complete; outcome unknown")
+		return nil, errors.New("endpoint request did not complete" + suffix)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, nativeMaxResponseBytes+1))
 	if err != nil || len(data) > nativeMaxResponseBytes {
-		return nil, errors.New("endpoint response could not be read; outcome unknown")
+		return nil, errors.New("endpoint response could not be read" + suffix)
 	}
 	var reply nativeReply
 	if err := json.Unmarshal(data, &reply); err != nil {
-		return nil, errors.New("endpoint returned an unreadable reply; outcome unknown")
+		return nil, errors.New("endpoint returned an unreadable reply" + suffix)
 	}
 	if !mousa.ValidRequestID(reply.RequestID) {
 		reply.RequestID = ""
@@ -139,6 +148,16 @@ func (c *nativeClient) post(ctx context.Context, route string, request any) (jso
 		return nil, &nativeRequestError{code: code, requestID: reply.RequestID}
 	}
 	return reply.Result, nil
+}
+
+// post sends one JSON request and returns the envelope's raw result.
+func (c *nativeClient) post(ctx context.Context, route string, request any) (json.RawMessage, error) {
+	return c.send(ctx, http.MethodPost, route, request)
+}
+
+// get reads one endpoint and returns the envelope's raw result.
+func (c *nativeClient) get(ctx context.Context, route string) (json.RawMessage, error) {
+	return c.send(ctx, http.MethodGet, route, nil)
 }
 
 // emitRawResult prints a raw endpoint result in the same indented shape the

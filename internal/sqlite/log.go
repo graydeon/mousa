@@ -29,9 +29,9 @@ const logRecordSQL = `SELECT l.seq, l.kind, l.record_id, l.source_id, l.leaf_has
   CASE l.kind
     WHEN 'request_admission' THEN (SELECT record_json FROM request_admissions WHERE id = l.record_id)
     WHEN 'request_outcome' THEN (SELECT record_json FROM request_outcomes WHERE id = l.record_id)
-    ELSE coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json, p.record_json)
+    ELSE coalesce(r.record_json, a.record_json, i.record_json, w.record_json, n.record_json, t.record_json, p.record_json, h.record_json)
   END,
-  coalesce(r.source_id, a.source_id, i.source_id, w.source_id, n.source_id, p.source_id)
+  coalesce(r.source_id, a.source_id, i.source_id, w.source_id, n.source_id, p.source_id, h.source_id)
 FROM log l
 LEFT JOIN ingest_receipts r ON l.kind = 'ingest_receipt' AND r.observation_id = l.record_id
 LEFT JOIN access_events a ON l.kind = 'access_event' AND a.id = l.record_id
@@ -39,7 +39,8 @@ LEFT JOIN item_changes i ON l.kind = 'item_change' AND i.id = l.record_id
 LEFT JOIN source_withdrawals w ON l.kind = 'source_withdrawal' AND w.id = l.record_id
 LEFT JOIN notes n ON l.kind = 'note' AND n.id = l.record_id
 LEFT JOIN trails t ON l.kind = 'trail' AND t.id = l.record_id
-LEFT JOIN path_moves p ON l.kind = 'path_move' AND p.id = l.record_id`
+LEFT JOIN path_moves p ON l.kind = 'path_move' AND p.id = l.record_id
+LEFT JOIN source_history_events h ON l.kind = 'source_history' AND h.id = l.record_id AND h.seq = l.seq`
 
 func checkLeaf(kind string, sourceID, leaf, record, recordSource []byte) error {
 	if record == nil {
@@ -127,6 +128,11 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 					return nil, integrity("verify log", fmt.Sprintf("seq %d: path move old path disagrees with log history", seq))
 				}
 				pathHeads[key] = entry.NewPath
+			}
+		}
+		if kind == logKindSourceHistory {
+			if _, err := decodeSourceHistoryEvent(uint64(seq), recordID, recordSource, record); err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
 			}
 		}
 		if kind == mousa.LogKindRequestAdmission {

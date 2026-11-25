@@ -15,7 +15,7 @@ func migrateCommand(ctx context.Context, storePath string) error {
 	}
 	return emit(struct {
 		Schema int `json:"schema"`
-	}{Schema: 8})
+	}{Schema: 9})
 }
 
 // moveCommand relocates one note, one document item, or every item under a

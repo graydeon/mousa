@@ -45,6 +45,54 @@
 		return sorted[Math.floor(sorted.length / 2)];
 	}
 	function clock(usec) { return new Date(usec / 1000).toLocaleTimeString([], { hour12: false }); }
+
+	// lineDiff compares two revisions line by line and returns adjacent
+	// {kind, lines} runs with kind "same", "removed" or "added". Common
+	// prefix and suffix stay context; the middle gets a compact LCS.
+	// ponytail: the LCS table costs interior_a * interior_b cells, so above
+	// 1,000,000 cells the whole middle falls back to one removed block plus
+	// one added block — still correct, just not minimal.
+	function lineDiff(previous, current) {
+		const split = function (text) { return text === "" ? [] : text.replace(/\n$/, "").split("\n"); };
+		const a = split(previous), b = split(current);
+		let start = 0;
+		while (start < a.length && start < b.length && a[start] === b[start]) { start++; }
+		let endA = a.length, endB = b.length;
+		while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; }
+		const runs = [];
+		const push = function (kind, lines) {
+			if (!lines.length) { return; }
+			const last = runs[runs.length - 1];
+			if (last && last.kind === kind) { for (const line of lines) { last.lines.push(line); } return; }
+			runs.push({ kind: kind, lines: lines });
+		};
+		push("same", a.slice(0, start));
+		const midA = a.slice(start, endA), midB = b.slice(start, endB);
+		if (midA.length && midB.length && (midA.length + 1) * (midB.length + 1) <= 1000000) {
+			const height = midA.length, width = midB.length + 1;
+			const table = new Uint32Array((height + 1) * width);
+			for (let i = height - 1; i >= 0; i--) {
+				for (let j = midB.length - 1; j >= 0; j--) {
+					const k = i * width + j;
+					table[k] = midA[i] === midB[j] ? 1 + table[k + width + 1] : Math.max(table[k + width], table[k + 1]);
+				}
+			}
+			let i = 0, j = 0;
+			while (i < height && j < midB.length) {
+				const k = i * width + j;
+				if (midA[i] === midB[j]) { push("same", [midA[i]]); i++; j++; }
+				else if (table[k + width] >= table[k + 1]) { push("removed", [midA[i]]); i++; }
+				else { push("added", [midB[j]]); j++; }
+			}
+			push("removed", midA.slice(i));
+			push("added", midB.slice(j));
+		} else {
+			push("removed", midA);
+			push("added", midB);
+		}
+		push("same", a.slice(endA));
+		return runs;
+	}
 	function ago(usec) {
 		const seconds = Math.max(0, Math.round((Date.now() - usec / 1000) / 1000));
 		if (seconds < 60) { return "now"; }
@@ -196,6 +244,9 @@
 	const wanted = [];
 	let fetching = false;
 	function wantContent(item) {
+		// A document's full text is fetched only while its popup is open;
+		// nothing prefetches or holds text for a hundred history rows.
+		if (item.op === "document" && (!item.state || opened !== item)) { return; }
 		if (item.content || item.asked) { return; }
 		item.asked = true;
 		wanted.push(item);
@@ -206,17 +257,31 @@
 		fetching = true;
 		while (wanted.length) {
 			const item = wanted.pop(); // newest first
+			if (item.op === "document" && opened !== item) { item.asked = false; continue; }
 			try {
 				const response = await fetch("/v1/requests/" + encodeURIComponent(item.id), { headers: headers(), cache: "no-store" });
 				if (response.ok) {
 					const result = (await response.json()).result;
-					item.content = result.content || {};
+					// Evidence and outcome stay; a document's text attaches
+					// only if its popup is still the open one.
 					item.evidence = result.evidence || null;
 					item.outcome = result.outcome || null;
+					if (item.op !== "document" || opened === item) {
+						item.content = result.content || {};
+					}
 					paintRow(item);
 					repaint(item);
+				} else if (item.op === "document" && opened === item) {
+					item.content = { unavailable: true };
+					repaint(item);
 				}
-			} catch (err) { /* the row keeps its summary */ }
+			} catch (err) {
+				if (item.op === "document" && opened === item) {
+					item.content = { unavailable: true };
+					repaint(item);
+				}
+			}
+			if (item.op === "document") { item.asked = false; }
 		}
 		fetching = false;
 	}
@@ -263,6 +328,51 @@
 		paintAgents();
 	}
 
+	// renderDocument paints a document request's revision text: the diff when
+	// both neighbours are kept, the single revision otherwise, or the reason
+	// nothing can be shown.
+	function renderDocument(words, content, evidence) {
+		if (content.unavailable) {
+			words.appendChild(el("p", "hint", "Text unavailable."));
+			return;
+		}
+		if (content.previous_not_kept) {
+			words.appendChild(el("p", "hint", "Earlier text was not kept for this source."));
+			return;
+		}
+		const previous = content.previous, current = content.current;
+		if (typeof previous === "string" && typeof current === "string") {
+			words.appendChild(el("h3", "", "Changes"));
+			const diff = el("div", "diff");
+			const runs = lineDiff(previous, current);
+			if (runs.every(function (run) { return run.kind === "same"; }) && previous !== current) {
+				diff.appendChild(el("pre", "diff-same", current.endsWith("\n") ? "Final newline added." : "Final newline removed."));
+			}
+			runs.forEach(function (run) {
+				const prefix = run.kind === "same" ? "  " : run.kind === "removed" ? "- " : "+ ";
+				const text = run.lines.map(function (line) { return prefix + line; }).join("\n");
+				if (run.kind === "same" && run.lines.length > 3) {
+					const details = el("details");
+					details.append(el("summary", "", run.lines.length + " unchanged lines"), el("pre", "diff-same", text));
+					diff.appendChild(details);
+				} else {
+					diff.appendChild(el("pre", "diff-" + run.kind, text));
+				}
+			});
+			words.appendChild(diff);
+			return;
+		}
+		if (typeof current === "string") {
+			words.append(el("h3", "", "Document text"), el("p", "said", current));
+			return;
+		}
+		if (typeof previous === "string") {
+			// A delete has no current revision at all; an update whose next
+			// text is unretrievable still shows what it replaced.
+			words.append(el("h3", "", evidence.current ? "Earlier text" : "Deleted text"), el("p", "said", previous));
+		}
+	}
+
 	// --- one request: side panel (newest) and popup (the one clicked) ------
 	// The popup shows everything recorded for the request; the side panel
 	// shows the short form of the same thing.
@@ -281,6 +391,9 @@
 				moved.append(el("dt", "", "New path"), el("dd", "", entry.new_path));
 				words.appendChild(moved);
 			});
+		}
+		if (item.op === "document" && full && item.content) {
+			renderDocument(words, content, item.evidence || {});
 		}
 		if (item.op === "query" && item.content) {
 			const returned = content.returned || [];
@@ -329,6 +442,7 @@
 		opened = item;
 		item.tr.classList.add("picked");
 		detailTitle.textContent = (VERBS[item.op] || item.op) + " · " + item.who + " · " + clock(item.at);
+		if (item.op === "document") { item.content = null; item.asked = false; }
 		render(detailBody, item, true);
 		wantContent(item);
 		if (!detail.open) { detail.showModal(); }
@@ -338,8 +452,12 @@
 		if (opened === item && detail.open) { render(detailBody, item, true); }
 	}
 	detail.addEventListener("close", function () {
-		if (opened) { opened.tr.classList.remove("picked"); }
+		if (opened) {
+			opened.tr.classList.remove("picked");
+			if (opened.op === "document") { opened.content = null; }
+		}
 		opened = null;
+		detailBody.textContent = "";
 	});
 	// A click on the dimmed page outside the box closes it.
 	detail.addEventListener("click", function (event) { if (event.target === detail) { detail.close(); } });

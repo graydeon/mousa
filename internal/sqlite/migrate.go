@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 )
 
-// Migrate upgrades a schema-7 store to the current schema in place. The whole
-// migration is one immediate transaction: the header still names version 7 on
-// any failure, so a partial upgrade is impossible. A store at the current
-// version is a no-op; any older Mousa store keeps the re-sync refusal; a
-// missing file is never created.
+// Migrate upgrades a schema-7 or schema-8 store to the current schema in
+// place. The whole migration is one immediate transaction: the header still
+// names its old version on any failure, so a partial upgrade is impossible. A
+// store at the current version is a no-op; any older Mousa store keeps the
+// re-sync refusal; a missing file is never created.
 func Migrate(ctx context.Context, path string) error {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -76,8 +76,8 @@ func Migrate(ctx context.Context, path string) error {
 	if version == schemaVersion {
 		return nil
 	}
-	// Nothing in schema 7 references log by name, and no triggers or views may
-	// exist; refuse before rebuilding rather than after.
+	// Nothing references log by name, and no triggers or views may exist;
+	// refuse before rebuilding rather than after.
 	var extras int
 	if err := conn.QueryRowContext(ctx,
 		`SELECT count(*) FROM sqlite_schema WHERE type IN ('trigger','view')`).Scan(&extras); err != nil {
@@ -86,21 +86,30 @@ func Migrate(ctx context.Context, path string) error {
 	if extras != 0 {
 		return integrity("migrate store", "store contains triggers or views")
 	}
-	statements := []string{
-		`ALTER TABLE local_items ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
-		`UPDATE local_items SET path = CASE
-			WHEN EXISTS (SELECT 1 FROM notes n
-				WHERE n.source_id = local_items.source_id AND n.item_id = local_items.item_id)
-			THEN 'unsorted' ELSE item_id END`,
-		`ALTER TABLE log RENAME TO log_v7`,
+	// Schema 8 already carries paths; schema 7 still needs its path column
+	// and backfill before the shared log rebuild.
+	statements := []string{}
+	if version == 7 {
+		statements = append(statements,
+			`ALTER TABLE local_items ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
+			`UPDATE local_items SET path = CASE
+				WHEN EXISTS (SELECT 1 FROM notes n
+					WHERE n.source_id = local_items.source_id AND n.item_id = local_items.item_id)
+				THEN 'unsorted' ELSE item_id END`)
+	}
+	statements = append(statements,
+		`ALTER TABLE log RENAME TO log_old`,
 		`DROP INDEX log_source_kind_seq_idx`,
 		`DROP INDEX log_source_seq_idx`,
-		logSQL,
-		pathsSQL,
-		`INSERT INTO log SELECT * FROM log_v7 ORDER BY seq`,
-		`DROP TABLE log_v7`,
-		fmt.Sprintf("PRAGMA user_version = %d", schemaVersion),
+		logSQL)
+	if version == 7 {
+		statements = append(statements, pathsSQL)
 	}
+	statements = append(statements,
+		historySQL,
+		`INSERT INTO log SELECT * FROM log_old ORDER BY seq`,
+		`DROP TABLE log_old`,
+		fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
 	for _, statement := range statements {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
 			return startupError("migrate store", err)
@@ -113,13 +122,14 @@ func Migrate(ctx context.Context, path string) error {
 	return conn.Close()
 }
 
-// migratable accepts the current version as a no-op and the previous version
-// for upgrade; every other header gets the same refusal an open would give.
+// migratable accepts the current version as a no-op and every migratable
+// version for upgrade; every other header gets the same refusal an open
+// would give.
 func migratable(id, version int) error {
 	switch {
 	case id == applicationID && version == schemaVersion:
 		return nil
-	case id == applicationID && version == migratableVersion:
+	case id == applicationID && version >= migratableVersion && version < schemaVersion:
 		return nil
 	case id == applicationID && version > schemaVersion:
 		return wrap(CodeIncompatibleSchema, "migrate store", fmt.Errorf("schema version %d is newer than this binary's %d", version, schemaVersion))

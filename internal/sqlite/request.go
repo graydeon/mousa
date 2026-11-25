@@ -426,12 +426,16 @@ func (store *Store) RequestDetail(ctx context.Context, requestID string) (Reques
 }
 
 // RequestContent is what one served request asked for and what it was given:
-// a query's text with the passages released to the caller, or a note's text.
+// a query's text with the passages released to the caller, a note's text, a
+// move's entries, or the before/after text of one document revision.
 type RequestContent struct {
-	Query    string                `json:"query,omitempty"`
-	Returned []string              `json:"returned,omitempty"`
-	Note     string                `json:"note,omitempty"`
-	Moves    []mousa.PathMoveEntry `json:"moves,omitempty"`
+	Query           string                `json:"query,omitempty"`
+	Returned        []string              `json:"returned,omitempty"`
+	Note            string                `json:"note,omitempty"`
+	Moves           []mousa.PathMoveEntry `json:"moves,omitempty"`
+	Previous        *string               `json:"previous,omitempty"`
+	Current         *string               `json:"current,omitempty"`
+	PreviousNotKept bool                  `json:"previous_not_kept,omitempty"`
 }
 
 // RequestContent reads the content behind one completed request's evidence.
@@ -444,7 +448,7 @@ func (store *Store) RequestContent(ctx context.Context, requestID string) (Reque
 		return RequestContent{}, classify("begin request content", err)
 	}
 	defer tx.Rollback()
-	outcome, _, err := readRequestOutcome(ctx, tx, requestID)
+	outcome, seq, err := readRequestOutcome(ctx, tx, requestID)
 	if err != nil {
 		return RequestContent{}, err
 	}
@@ -489,6 +493,48 @@ func (store *Store) RequestContent(ctx context.Context, requestID string) (Reque
 			return RequestContent{}, err
 		}
 		content.Moves = move.Records
+	case evidence.ItemChangeID != nil:
+		change, err := readRequestItemChange(ctx, tx, *evidence.ItemChangeID, seq)
+		if err != nil {
+			return RequestContent{}, err
+		}
+		// Denied or withdrawn sources get an empty content rather than a
+		// misleading missing-evidence marker.
+		if err := requireAllowedSource(ctx, tx, change.SourceID); err != nil {
+			if IsCode(err, CodeAccessDenied) {
+				return RequestContent{}, nil
+			}
+			return RequestContent{}, err
+		}
+		// The retired revision is only resurrected when the source had
+		// opted in before the retirement logged; the current setting does
+		// not reach back, and off keeps archived bytes readable.
+		if change.Previous != nil {
+			event, err := sourceHistoryAt(ctx, tx, change.SourceID, change.Seq)
+			if err != nil {
+				return RequestContent{}, err
+			}
+			if event != nil && event.Enabled {
+				content.Previous, err = revisionText(ctx, tx, *change.Previous, false)
+				if err != nil {
+					return RequestContent{}, err
+				}
+			}
+			content.PreviousNotKept = content.Previous == nil
+		}
+		if change.Current != nil {
+			item, err := getLocalItem(ctx, tx, change.SourceID, change.ItemID)
+			if err != nil {
+				return RequestContent{}, lexicalStructuralError("request content item", err)
+			}
+			// The item may have advanced or deactivated since this change;
+			// only the live index serves it, otherwise the archive does.
+			indexed := item.Active && item.RepresentationID == *change.Current
+			content.Current, err = revisionText(ctx, tx, *change.Current, indexed)
+			if err != nil {
+				return RequestContent{}, err
+			}
+		}
 	}
 	return content, nil
 }
@@ -583,37 +629,9 @@ func requestEvidenceSummary(ctx context.Context, q queryer, admission mousa.Requ
 			CitedTrails: cited,
 		}, nil
 	case evidence.ItemChangeID != nil:
-		var seq int64
-		var kind string
-		var recordID, leafSource, leaf, record, recordSource []byte
-		err := q.QueryRowContext(ctx, logRecordSQL+` WHERE l.kind = 'item_change' AND l.record_id = ?`, evidence.ItemChangeID[:]).
-			Scan(&seq, &kind, &recordID, &leafSource, &leaf, &record, &recordSource)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, integrity("request evidence", "item change leaf is missing")
-		}
-		if err != nil {
-			return nil, classify("request evidence item change", err)
-		}
-		if err := checkLeaf(kind, leafSource, leaf, record, recordSource); err != nil {
-			return nil, wrap(CodeIntegrity, "request evidence item change", err)
-		}
-		change, err := readItemChange(uint64(seq), recordID, leafSource, record)
+		change, err := readRequestItemChange(ctx, q, *evidence.ItemChangeID, outcomeSeq)
 		if err != nil {
 			return nil, err
-		}
-		if change.Seq >= uint64(outcomeSeq) {
-			return nil, integrity("request evidence", "item change leaf does not precede the outcome")
-		}
-		// Each named representation must resolve through its source artifact
-		// to an observation of this source and item revision. Historical
-		// revisions need not remain active.
-		for _, ref := range []*mousa.RepresentationID{change.Previous, change.Current} {
-			if ref == nil {
-				continue
-			}
-			if err := verifyItemRevision(ctx, q, change, *ref); err != nil {
-				return nil, err
-			}
 		}
 		source, err := getSource(ctx, q, change.SourceID)
 		if err != nil {
@@ -661,6 +679,45 @@ func requestEvidenceSummary(ctx context.Context, q queryer, admission mousa.Requ
 		}, nil
 	}
 	return nil, nil
+}
+
+// readRequestItemChange verifies an outcome's item-change evidence: its leaf,
+// its decode, its place before the outcome, and both named revisions. Request
+// detail and request content share it.
+func readRequestItemChange(ctx context.Context, q queryer, id mousa.SHA256, outcomeSeq int64) (mousa.ItemChange, error) {
+	var seq int64
+	var kind string
+	var recordID, leafSource, leaf, record, recordSource []byte
+	err := q.QueryRowContext(ctx, logRecordSQL+` WHERE l.kind = 'item_change' AND l.record_id = ?`, id[:]).
+		Scan(&seq, &kind, &recordID, &leafSource, &leaf, &record, &recordSource)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mousa.ItemChange{}, integrity("request evidence", "item change leaf is missing")
+	}
+	if err != nil {
+		return mousa.ItemChange{}, classify("request evidence item change", err)
+	}
+	if err := checkLeaf(kind, leafSource, leaf, record, recordSource); err != nil {
+		return mousa.ItemChange{}, wrap(CodeIntegrity, "request evidence item change", err)
+	}
+	change, err := readItemChange(uint64(seq), recordID, leafSource, record)
+	if err != nil {
+		return mousa.ItemChange{}, err
+	}
+	if change.Seq >= uint64(outcomeSeq) {
+		return mousa.ItemChange{}, integrity("request evidence", "item change leaf does not precede the outcome")
+	}
+	// Each named representation must resolve through its source artifact
+	// to an observation of this source and item revision. Historical
+	// revisions need not remain active.
+	for _, ref := range []*mousa.RepresentationID{change.Previous, change.Current} {
+		if ref == nil {
+			continue
+		}
+		if err := verifyItemRevision(ctx, q, change, *ref); err != nil {
+			return mousa.ItemChange{}, err
+		}
+	}
+	return change, nil
 }
 
 // verifyItemRevision confirms one representation named by an item change

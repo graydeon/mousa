@@ -156,6 +156,14 @@ aside { position: sticky; top: 1rem; }
 
 .log tr:focus-visible { outline: 1px solid var(--live); outline-offset: -1px; }
 
+/* Revision diff inside the document popup. */
+.diff { background: var(--bed); border: 1px solid var(--line); border-radius: 4px; }
+.diff pre { margin: 0; padding: 0.2rem 0.65rem; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.82rem/1.5 var(--mono); }
+.diff-removed { background: #2a1216; color: #ffb3b8; }
+.diff-added { background: #122a1a; color: #a9e5bf; }
+.diff details { padding: 0.2rem 0; }
+.diff summary { padding: 0.15rem 0.65rem; color: var(--dim); font-size: 0.78rem; cursor: pointer; }
+
 /* Popup: everything recorded for the request that was clicked. */
 .detail {
 	width: min(72rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: 0;
@@ -187,7 +195,7 @@ aside { position: sticky; top: 1rem; }
 	.detail .pick { grid-template-columns: minmax(0, 1fr); }
 	.page { grid-template-columns: minmax(0, 1fr); padding: 0.75rem; }
 	aside { position: static; }
-	.stats { margin-left: 0; width: 100%; justify-content: space-between; gap: 0.75rem; }
+	.stats { margin-left: 0; width: 100%; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
 	.log th:nth-child(1), .log td:nth-child(1), .log th:nth-child(3), .log td:nth-child(3),
 	.log th:nth-child(6), .log td:nth-child(6) { display: none; }
 	.log th:nth-child(2) { width: 6.5rem; padding-left: 1rem; }
