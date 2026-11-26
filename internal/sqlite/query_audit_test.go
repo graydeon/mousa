@@ -227,6 +227,54 @@ func TestQueryRetriesWhenAllowIsRevokedBeforeTrailWrite(t *testing.T) {
 	}
 }
 
+func TestQueryPreparedStatementsCloseAndReopen(t *testing.T) {
+	ctx := t.Context()
+	s := openLexicalStore(t)
+	a, segment := seedAuditItem(t, s, "allowed", "harbor prepared evidence")
+	if _, _, err := s.SetSourceAccess(ctx, a, mousa.SourceAccessAllow, "test"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.Observed(nil).Query(ctx, auditRequest(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Observed(nil).Query(ctx, auditRequest(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Passages) != 1 || first.Passages[0].SegmentID != segment.ID {
+		t.Fatalf("query lost the seeded passage: %+v", first.Passages)
+	}
+	if !reflect.DeepEqual(first.Passages, second.Passages) || first.Trail.ResultSHA256 != second.Trail.ResultSHA256 {
+		t.Fatalf("repeated query changed the result: %+v vs %+v", first, second)
+	}
+	stmt := s.queryStmts[getSegmentSQL]
+	if stmt == nil {
+		t.Fatal("getSegmentSQL was not prepared at open")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := stmt.QueryRowContext(ctx, segment.ID[:]).Err(); err == nil {
+		t.Fatal("closed prepared statement still queries")
+	}
+	reopened, err := Open(ctx, s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if reopened.queryStmts[getSegmentSQL] == nil || reopened.queryStmts[getSegmentSQL] == stmt {
+		t.Fatal("reopen did not prepare a fresh handle")
+	}
+	again, err := reopened.Observed(nil).Query(ctx, auditRequest(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first.Passages, again.Passages) || first.Trail.ResultSHA256 != again.Trail.ResultSHA256 {
+		t.Fatalf("reopen changed the result: %+v vs %+v", first, again)
+	}
+}
+
 func TestQueryLimitAppliesAfterSourceScope(t *testing.T) {
 	s := openLexicalStore(t)
 	defer s.Close()

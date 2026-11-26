@@ -20,6 +20,16 @@ const (
 	syncWriteAttempts       = 20
 )
 
+// Hot read statements prepared once at open and bound per query snapshot.
+const (
+	getSegmentSQL           = `SELECT representation_id, selector_start, selector_end, record_json FROM segments WHERE id = ?`
+	getRepresentationSQL    = `SELECT record_json FROM representations WHERE id = ?`
+	representationInputsSQL = `SELECT ordinal, input_kind, artifact_id, input_representation_id FROM representation_inputs WHERE representation_id = ? ORDER BY ordinal`
+	getArtifactSQL          = `SELECT observation_id, record_json FROM artifacts WHERE id = ?`
+	getObservationSQL       = `SELECT source_id, record_json FROM observations WHERE id = ?`
+	getSourceSQL            = `SELECT record_json FROM sources WHERE id = ?`
+)
+
 type queryRower interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
@@ -60,7 +70,7 @@ func (store *Store) GetSource(ctx context.Context, id mousa.SourceID) (mousa.Sou
 
 func getSource(ctx context.Context, q queryRower, id mousa.SourceID) (mousa.Source, error) {
 	var data []byte
-	if err := q.QueryRowContext(ctx, `SELECT record_json FROM sources WHERE id = ?`, id[:]).Scan(&data); err != nil {
+	if err := q.QueryRowContext(ctx, getSourceSQL, id[:]).Scan(&data); err != nil {
 		return mousa.Source{}, readError("get source", err)
 	}
 	record, err := decodeCanonical(data, mousa.DecodeSource, mousa.EncodeSource)
@@ -108,7 +118,7 @@ func (store *Store) GetObservation(ctx context.Context, id mousa.ObservationID) 
 func getObservation(ctx context.Context, q queryRower, id mousa.ObservationID) (mousa.Observation, error) {
 	var sourceID []byte
 	var data []byte
-	if err := q.QueryRowContext(ctx, `SELECT source_id, record_json FROM observations WHERE id = ?`, id[:]).Scan(&sourceID, &data); err != nil {
+	if err := q.QueryRowContext(ctx, getObservationSQL, id[:]).Scan(&sourceID, &data); err != nil {
 		return mousa.Observation{}, readError("get observation", err)
 	}
 	return decodeObservationProjection(id, sourceID, data)
@@ -160,7 +170,7 @@ func (store *Store) GetArtifact(ctx context.Context, id mousa.ArtifactID) (mousa
 func getArtifact(ctx context.Context, q queryRower, id mousa.ArtifactID) (mousa.Artifact, error) {
 	var observationID []byte
 	var data []byte
-	if err := q.QueryRowContext(ctx, `SELECT observation_id, record_json FROM artifacts WHERE id = ?`, id[:]).Scan(&observationID, &data); err != nil {
+	if err := q.QueryRowContext(ctx, getArtifactSQL, id[:]).Scan(&observationID, &data); err != nil {
 		return mousa.Artifact{}, readError("get artifact", err)
 	}
 	return decodeArtifactProjection(id, observationID, data)
@@ -211,7 +221,7 @@ func (store *Store) PutRepresentation(ctx context.Context, record mousa.Represen
 				return classify("put representation", err)
 			}
 			var existing []byte
-			if queryErr := conn.QueryRowContext(ctx, `SELECT record_json FROM representations WHERE id = ?`, record.ID[:]).Scan(&existing); queryErr != nil {
+			if queryErr := conn.QueryRowContext(ctx, getRepresentationSQL, record.ID[:]).Scan(&existing); queryErr != nil {
 				return classify("put representation", err)
 			}
 			if !bytes.Equal(existing, data) {
@@ -243,7 +253,7 @@ func (store *Store) GetRepresentation(ctx context.Context, id mousa.Representati
 
 func getRepresentation(ctx context.Context, q queryer, id mousa.RepresentationID) (mousa.Representation, error) {
 	var data []byte
-	if err := q.QueryRowContext(ctx, `SELECT record_json FROM representations WHERE id = ?`, id[:]).Scan(&data); err != nil {
+	if err := q.QueryRowContext(ctx, getRepresentationSQL, id[:]).Scan(&data); err != nil {
 		return mousa.Representation{}, readError("get representation", err)
 	}
 	record, err := decodeCanonical(data, mousa.DecodeRepresentation, mousa.EncodeRepresentation)
@@ -276,7 +286,7 @@ func verifyInputProjection(ctx context.Context, q queryer, record mousa.Represen
 	if err != nil {
 		return wrap(CodeIntegrity, "get representation inputs", err)
 	}
-	rows, err := q.QueryContext(ctx, `SELECT ordinal, input_kind, artifact_id, input_representation_id FROM representation_inputs WHERE representation_id = ? ORDER BY ordinal`, record.ID[:])
+	rows, err := q.QueryContext(ctx, representationInputsSQL, record.ID[:])
 	if err != nil {
 		return classify("get representation inputs", err)
 	}
@@ -360,7 +370,7 @@ func (store *Store) GetSegment(ctx context.Context, id mousa.SegmentID) (mousa.S
 
 func getSegment(ctx context.Context, q queryRower, id mousa.SegmentID) (mousa.Segment, error) {
 	var representationID, start, end, data []byte
-	if err := q.QueryRowContext(ctx, `SELECT representation_id, selector_start, selector_end, record_json FROM segments WHERE id = ?`, id[:]).Scan(&representationID, &start, &end, &data); err != nil {
+	if err := q.QueryRowContext(ctx, getSegmentSQL, id[:]).Scan(&representationID, &start, &end, &data); err != nil {
 		return mousa.Segment{}, readError("get segment", err)
 	}
 	return decodeSegmentProjection(id, representationID, start, end, data)

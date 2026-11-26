@@ -25,6 +25,8 @@ type Store struct {
 	// observe reports stage observations for one served request; nil for
 	// direct store use.
 	observe func(mousa.StageObservation)
+	// Read-only after Open, so Observed clones can share it.
+	queryStmts map[string]*sql.Stmt
 }
 
 // Open opens or creates a writable canonical record store.
@@ -66,7 +68,20 @@ func open(ctx context.Context, path string, readOnly bool) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db, path: absolute}, nil
+	store := &Store{db: db, path: absolute, queryStmts: make(map[string]*sql.Stmt)}
+	// A statement that fails to prepare here stays uncached: its callers
+	// still prepare it inline at the point of use, where the failure lands
+	// on the existing classified error path instead of a new open-time one.
+	for _, statement := range []string{
+		getSegmentSQL, getRepresentationSQL, representationInputsSQL,
+		getArtifactSQL, getObservationSQL, getSourceSQL,
+		indexedSegmentTextSQL, noteSupersessionEffectSQL,
+	} {
+		if stmt, err := db.PrepareContext(ctx, statement); err == nil {
+			store.queryStmts[statement] = stmt
+		}
+	}
+	return store, nil
 }
 
 func connect(ctx context.Context, absolute string, readOnly bool) (*sql.DB, error) {
@@ -142,10 +157,15 @@ func initializeReadOnly(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// Close releases the store connection.
+// Close releases the prepared statements and the store connection.
 func (store *Store) Close() error {
 	if store == nil || store.db == nil {
 		return nil
 	}
-	return store.db.Close()
+	errs := make([]error, 0, len(store.queryStmts)+1)
+	for _, stmt := range store.queryStmts {
+		errs = append(errs, stmt.Close())
+	}
+	errs = append(errs, store.db.Close())
+	return errors.Join(errs...)
 }

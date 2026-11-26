@@ -163,6 +163,26 @@ func finishTrailOutcome(ctx context.Context, conn *sql.Conn, admission *mousa.Re
 	return finishRequest(ctx, conn, *admission, state, code, mousa.RequestEvidence{TrailID: &trail.ID})
 }
 
+// preparedQuery uses store-owned statements inside a read snapshot.
+type preparedQuery struct {
+	*sql.Tx
+	statements map[string]*sql.Stmt
+}
+
+func (q preparedQuery) QueryRowContext(ctx context.Context, statement string, args ...any) *sql.Row {
+	if stmt := q.statements[statement]; stmt != nil {
+		return stmt.QueryRowContext(ctx, args...)
+	}
+	return q.Tx.QueryRowContext(ctx, statement, args...)
+}
+
+func (q preparedQuery) QueryContext(ctx context.Context, statement string, args ...any) (*sql.Rows, error) {
+	if stmt := q.statements[statement]; stmt != nil {
+		return stmt.QueryContext(ctx, args...)
+	}
+	return q.Tx.QueryContext(ctx, statement, args...)
+}
+
 func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailRequest, grants, noteGrants map[mousa.SourceID]bool) (mousa.QueryResult, error) {
 	finishQueue := store.StartStage(mousa.StageQueue)
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -171,7 +191,12 @@ func (store *Store) readQuerySnapshot(ctx context.Context, req mousa.TrailReques
 		return mousa.QueryResult{}, classify("begin query snapshot", err)
 	}
 	defer tx.Rollback()
-	result, err := store.querySnapshot(ctx, tx, req, grants, noteGrants)
+	// The transaction owns these bindings; the store owns the parent statements.
+	q := preparedQuery{Tx: tx, statements: make(map[string]*sql.Stmt, len(store.queryStmts))}
+	for statement, stmt := range store.queryStmts {
+		q.statements[statement] = tx.StmtContext(ctx, stmt)
+	}
+	result, err := store.querySnapshot(ctx, q, req, grants, noteGrants)
 	if err != nil {
 		return mousa.QueryResult{}, err
 	}
@@ -443,13 +468,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 	return passages, nil
 }
 
-// noteSupersessionEffect checks whether one candidate segment's note was
-// already superseded at asOf. The replacement IDs come from the projection
-// but are trusted only after each canonical record and its log leaf confirm
-// the edge; a projection row that disagrees with the durable record fails
-// integrity. It returns nil for documents and unmodified notes.
-func noteSupersessionEffect(ctx context.Context, q queryer, sourceID mousa.SourceID, reprID mousa.RepresentationID, segmentID mousa.SegmentID, asOf uint64) (*mousa.SupersessionEffect, error) {
-	rows, err := q.QueryContext(ctx, `SELECT n.id, r.id, r.record_json, l.source_id, l.leaf_hash
+const noteSupersessionEffectSQL = `SELECT n.id, r.id, r.record_json, l.source_id, l.leaf_hash
 		FROM local_items li
 		JOIN notes n ON n.source_id = li.source_id AND n.item_id = li.item_id
 		JOIN note_supersessions ns ON ns.target_id = n.id
@@ -457,7 +476,15 @@ func noteSupersessionEffect(ctx context.Context, q queryer, sourceID mousa.Sourc
 		LEFT JOIN log l ON l.kind = 'note' AND l.record_id = r.id
 		WHERE li.source_id = ? AND li.representation_id = ? AND li.active = 1
 			AND (l.seq IS NULL OR l.seq <= ?)
-		ORDER BY r.id`, sourceID[:], reprID[:], asOf)
+		ORDER BY r.id`
+
+// noteSupersessionEffect checks whether one candidate segment's note was
+// already superseded at asOf. The replacement IDs come from the projection
+// but are trusted only after each canonical record and its log leaf confirm
+// the edge; a projection row that disagrees with the durable record fails
+// integrity. It returns nil for documents and unmodified notes.
+func noteSupersessionEffect(ctx context.Context, q queryer, sourceID mousa.SourceID, reprID mousa.RepresentationID, segmentID mousa.SegmentID, asOf uint64) (*mousa.SupersessionEffect, error) {
+	rows, err := q.QueryContext(ctx, noteSupersessionEffectSQL, sourceID[:], reprID[:], asOf)
 	if err != nil {
 		return nil, classify("note supersession effect", err)
 	}
