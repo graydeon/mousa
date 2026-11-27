@@ -29,7 +29,7 @@ const (
 	// preReworkApplicationID ("MOUS") marks a store written by the earlier numbered migrations.
 	preReworkApplicationID = 0x4D4F5553
 	// schemaVersion is stored in user_version. A store at any other version is refused.
-	schemaVersion = 9
+	schemaVersion = 10
 	// migratableVersion is the oldest version `mousa migrate` upgrades in place.
 	migratableVersion = 7
 )

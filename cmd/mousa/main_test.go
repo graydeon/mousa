@@ -475,25 +475,29 @@ func openRawStore(t *testing.T, path string) *sql.DB {
 	return db
 }
 
-// tableDigest reports one table's row count and a digest of every column, so a test compares the
-// exact stored bytes rather than a count alone.
-func tableDigest(t *testing.T, path, table string) (int, string) {
+// tableDigest reports one table's row count and a digest of the selected columns, so a test compares the
+// exact stored bytes rather than a count alone. No column list means every column.
+func tableDigest(t *testing.T, path, table string, columns ...string) (int, string) {
 	t.Helper()
 	db := openRawStore(t, path)
-	rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY 1`)
+	selected := "*"
+	if len(columns) != 0 {
+		selected = strings.Join(columns, ",")
+	}
+	rows, err := db.Query(`SELECT ` + selected + ` FROM ` + table + ` ORDER BY 1`)
 	if err != nil {
 		t.Fatalf("scan %s: %v", table, err)
 	}
 	defer rows.Close()
-	columns, err := rows.Columns()
+	columnNames, err := rows.Columns()
 	if err != nil {
 		t.Fatal(err)
 	}
 	hash := sha256.New()
 	count := 0
 	for rows.Next() {
-		values := make([]any, len(columns))
-		pointers := make([]any, len(columns))
+		values := make([]any, len(columnNames))
+		pointers := make([]any, len(columnNames))
 		for index := range values {
 			pointers[index] = &values[index]
 		}

@@ -13,19 +13,25 @@ import (
 	"github.com/graydeon/mousa/internal/mousa"
 )
 
-// localItemPath reads the projected location of one item without the full
-// canonical ancestry check GetLocalItem performs. The move writer uses it
-// inside its own transaction; the query reader uses it in the same snapshot
-// that selected a passage.
-func localItemPath(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID string) (string, error) {
+// localItemLocation reads the projected location and activation evidence of
+// one item without the full canonical ancestry check GetLocalItem performs.
+func localItemLocation(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID string) (string, uint64, error) {
 	var path string
-	if err := q.QueryRowContext(ctx, `SELECT path FROM local_items WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID).Scan(&path); err != nil {
-		return "", readError("get local item path", err)
+	var activationSeq uint64
+	if err := q.QueryRowContext(ctx, `SELECT path, coalesce(activation_seq, 0) FROM local_items WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID).Scan(&path, &activationSeq); err != nil {
+		return "", 0, readError("get local item path", err)
 	}
 	if !validStoredPath(path, itemID) {
-		return "", integrity("get local item path", "invalid item path projection")
+		return "", 0, integrity("get local item path", "invalid item path projection")
 	}
-	return path, nil
+	return path, activationSeq, nil
+}
+
+// localItemPath reads the projected location of one item. The move writer uses
+// it inside its own transaction; the query reader uses localItemLocation.
+func localItemPath(ctx context.Context, q queryer, sourceID mousa.SourceID, itemID string) (string, error) {
+	path, _, err := localItemLocation(ctx, q, sourceID, itemID)
+	return path, err
 }
 
 // moveEntries resolves one validated selector into the ordered move records

@@ -86,3 +86,28 @@ store:
     # throwaway principal config and post one query
     gzip -n -c $S > schema8_fixture.sqlite.gz
     $M -store $S notes export --source fixture-notes > schema8_notes.jsonl
+
+`schema9_fixture.sqlite.gz` — a schema-9 store captured from the unmodified
+schema-9 baseline binary. Contents, all synthetic:
+
+- source `fixture-docs` (JSONL and served writes): offline item
+  `docs/unknown` without served activation proof, and served item
+  `docs/served` activated as `Cedar evidence restored.`, changed to other
+  text, then restored to the original text so its latest change has a
+  committed document outcome at the next log sequence
+- source `fixture-notes` (JSONL): one note citing an offline fixture trail
+- two offline query trails and the served document request admissions and
+  outcomes
+
+## Regenerating schema9_fixture.sqlite.gz
+
+Use the unmodified schema-9 baseline binary confirmed by `go version -m`.
+Seed a temporary store with the commands and loopback-only daemon sequence
+above, using only throwaway paths, tokens, and configuration. Stop the daemon
+by its own process ID, run `verify`, then write the closed database with
+gzip using a zero modification time:
+
+    gzip -n -c store.sqlite > schema9_fixture.sqlite.gz
+
+No token, client configuration, host-specific path, or live endpoint is part
+of the fixture.

@@ -15,7 +15,7 @@ func TestStartupVerificationReleasesSnapshotsAndRechecksDamage(t *testing.T) {
 		{"canonical", verifyCanonicalRecords, `UPDATE artifacts SET record_json = CAST(record_json || char(10) AS BLOB)`},
 		{"canonical inputs", verifyCanonicalRecords, `DELETE FROM representation_inputs`},
 		{"ingest", verifyIngestRecords, `UPDATE source_ingest_state SET last_captured_at_usec = last_captured_at_usec + 1`},
-		{"local items", verifyLocalItemRecords, `UPDATE local_items SET active = 0`},
+		{"local items", verifyLocalItemRecords, `UPDATE local_items SET active = 0, activation_seq = NULL`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := t.Context()

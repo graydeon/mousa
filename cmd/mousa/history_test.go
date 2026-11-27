@@ -573,12 +573,13 @@ func TestMigrateSchema8(t *testing.T) {
 
 	tables := []string{"log", "local_items", "path_moves", "note_supersessions", "notes",
 		"note_citations", "trails", "request_admissions", "request_outcomes", "segments"}
+	legacyColumns := map[string][]string{"local_items": {"source_id", "item_id", "representation_id", "active", "path"}}
 	before := make(map[string]struct {
 		count  int
 		digest string
 	})
 	for _, table := range tables {
-		count, digest := tableDigest(t, fixture, table)
+		count, digest := tableDigest(t, fixture, table, legacyColumns[table]...)
 		before[table] = struct {
 			count  int
 			digest string
@@ -590,13 +591,13 @@ func TestMigrateSchema8(t *testing.T) {
 		t.Fatalf("verify on schema 8 stderr = %q", stderr)
 	}
 	_, migrated := run.run(false, "migrate")
-	if migrated["schema"] != float64(9) {
-		t.Fatalf("migrate = %v, want schema 9", migrated)
+	if migrated["schema"] != float64(10) {
+		t.Fatalf("migrate = %v, want schema 10", migrated)
 	}
 	run.run(false, "verify")
 
 	for _, table := range tables {
-		count, digest := tableDigest(t, fixture, table)
+		count, digest := tableDigest(t, fixture, table, legacyColumns[table]...)
 		want := before[table]
 		if count != want.count || digest != want.digest {
 			t.Fatalf("%s changed across migration: %d rows %s -> %d rows %s", table, want.count, want.digest, count, digest)

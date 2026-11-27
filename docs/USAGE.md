@@ -64,11 +64,13 @@ before upgrading an existing directory store or retaining sensitive material.
 
 A query prints one JSON object on one line by default. The object has `trail`,
 the ID of the recorded `mousa.trail.v1` record, and `passages` in packed order.
-Each passage has `path`, `kind`, and `text`; notes also have `date` (the note
-creation date in the local time zone of the CLI process), `author`, and `note`
-(the note ID). `stale` and `superseded` appear only when true.
-Documents have no current sync time in the store and therefore no `date`.
-`kind` is `note`, `document`, or `item`.
+Each passage has `path`, `kind`, and `text`. A note's `date` is its creation
+date; a document's `date` is when its current revision was activated. Updating
+or restoring a revision records a fresh activation time, while a no-change
+re-sync or path-only move keeps the existing one. Dates use the local time zone
+of the CLI process and are omitted when the store has no activation proof.
+Notes also have `author` and `note` (the note ID). `stale` and `superseded`
+appear only when true. `kind` is `note`, `document`, or `item`.
 
 ```json
 {"trail":"<trail-id>","passages":[{"path":"notes/cedar","date":"2026-01-02","kind":"note","author":"agent","note":"<note-id>","text":"Cedar note.","stale":true}]}
@@ -84,7 +86,9 @@ across equivalent requests against the same state. Lexical is the only
 supported mode.
 
 `--full` prints the previous indented query result, including passage
-coordinates, digests and note lineage. Local queries include the canonical
+coordinates, digests and note lineage. A document passage carries optional
+integer `activated_at_usec` when its activation time is recorded or proven;
+the HTTP response uses the same field. Local queries include the canonical
 trail. Served queries include the HTTP caller view. The stored trail is an
 append-only log leaf. It records the request, per-source access, snapshot
 index, allowed source heads, candidate scores and ranks, and packing decisions.
@@ -162,11 +166,11 @@ open the source read-only, return JSON `record_counts` on success, and fail
 with a non-zero exit on damage. Whole-store verification checks an isolated
 SQLite page copy because the FTS5 integrity command requires write permission.
 
-A store written by a schema-7 or schema-8 binary is refused on open with a
-hint to run `mousa -store STORE migrate`. Migration rewrites the store in
-place to schema 9; stop any daemon holding it first and keep a verified
-backup. It preserves every note, citation, trail and request record, and
-prints `{"schema": 9}`; run `verify` afterwards. Stores older than schema 7
+A store written by a schema-7, schema-8, or schema-9 binary is refused on
+open with a hint to run `mousa -store STORE migrate`. Migration rewrites the
+store in place to schema 10; stop any daemon holding it first and keep a
+verified backup. It preserves every note, citation, trail and request record,
+and prints `{"schema": 10}`; run `verify` afterwards. Stores older than schema 7
 are still refused without modification and must be rebuilt by re-syncing
 from their sources.
 
@@ -292,15 +296,16 @@ the record and exact text, rejects foreign sources or bad digests, is atomic,
 and treats identical imports as no-ops. If an imported citation's trail is
 absent, recall reports `citation_unverifiable`.
 
-Lexical query's compact output reports a stored note's ID, author, local creation
-date, and true `stale` or `superseded` flags. `--full` surfaces it as ordinary
-evidence plus a `note` object carrying its ID, author, creation time, lineage
-and a `stale` array. Each stale entry names the affected `trail_id` (and
-`segment_id` when a single segment retired) with a reason of `source_denied`,
-`source_withdrawn` or `segment_retired`; no cited text is released. Notes follow
-the same per-source access rules as document evidence: a denied or withdrawn
-note source releases nothing, and later access changes do not redact note bytes
-already released.
+Lexical query's compact output reports a stored note's ID, author, local
+creation date, and true `stale` or `superseded` flags. A document's compact
+date is its current revision activation date, omitted when unknown. `--full`
+surfaces a note as ordinary evidence plus a `note` object carrying its ID,
+author, creation time, lineage and a `stale` array. Each stale entry names
+the affected `trail_id` (and `segment_id` when a single segment retired) with
+a reason of `source_denied`, `source_withdrawn` or `segment_retired`; no cited
+text is released. Notes follow the same per-source access rules as document
+evidence: a denied or withdrawn note source releases nothing, and later access
+changes do not redact note bytes already released.
 `sync` refuses a source holding notes, and `remember` refuses
 a document source, including one whose items are all inactive.
 

@@ -58,6 +58,7 @@ type QueryResult struct {
 }
 
 type Passage struct {
+	ActivatedAtUsec      int64            `json:"activated_at_usec,omitzero"`
 	SourceID             SourceID         `json:"source_id"`
 	Item                 string           `json:"item"`
 	SegmentID            SegmentID        `json:"segment_id"`

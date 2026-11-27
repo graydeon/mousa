@@ -162,9 +162,9 @@ commands:
                             list owner-visible trail metadata in log order (JSONL)
   verify [--log | --trail <trail-id> | --stdin]
                             verify the store, log, or named trails read-only (JSON)
-  migrate                   upgrade a schema-7 or schema-8 store to the current
+  migrate                   upgrade a schema-7 through schema-9 store to the current
                             schema in place; takes no arguments, prints
-                            {"schema":9}
+                            {"schema":10}
   move <dir> | --source <id> --note ID|--item ID|--prefix P --to DEST
                             relocate one note, one document item, or every
                             item under a path prefix; --prefix and its --to

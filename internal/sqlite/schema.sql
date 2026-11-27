@@ -206,6 +206,7 @@ CREATE TABLE local_items (
   item_id TEXT NOT NULL CHECK (length(item_id) > 0),
   representation_id BLOB NOT NULL REFERENCES representations(id) ON DELETE RESTRICT,
   active INTEGER NOT NULL CHECK (active IN (0, 1)),
+  activation_seq INTEGER REFERENCES log(seq) CHECK (activation_seq IS NULL OR (activation_seq > 0 AND active = 1)),
   path TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (source_id, item_id)
 ) STRICT;

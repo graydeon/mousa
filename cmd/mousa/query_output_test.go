@@ -69,8 +69,10 @@ func TestCompactQueryLocal(t *testing.T) {
 	raw, _ = run.run(false, "query", "--source", "notes", "updated")
 	exactCompactLine(t, raw, `{"trail":"%s","passages":[{"path":"notes/cedar","date":"`+updatedDate+`","kind":"note","author":"mousa-local.cli","note":"`+updatedID+`","text":"Cedar note updated."}]}`+"\n")
 
+	_, documentFull := run.run(false, "query", "--full", root, "replacement")
+	documentDate := time.UnixMicro(documentActivation(t, documentFull)).Local().Format(time.DateOnly)
 	raw, _ = run.run(false, "query", root, "replacement")
-	exactCompactLine(t, raw, `{"trail":"%s","passages":[{"path":"doc.md","kind":"document","text":"Cedar trail replacement."}]}`+"\n")
+	exactCompactLine(t, raw, `{"trail":"%s","passages":[{"path":"doc.md","date":"`+documentDate+`","kind":"document","text":"Cedar trail replacement."}]}`+"\n")
 
 	run.run(false, "access", "--source", "notes", "deny")
 	raw, _ = run.run(false, "query", "--source", "notes", "updated")

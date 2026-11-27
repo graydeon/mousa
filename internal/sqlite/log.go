@@ -73,6 +73,7 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	accessTimes := make(map[mousa.SourceID]int64)
 	itemHeads := make(map[localItemKey]localItemHead)
 	pathHeads := make(map[localItemKey]string)
+	var lastChange mousa.ItemChange
 	var want int64 = 1
 	for rows.Next() {
 		var seq int64
@@ -108,6 +109,7 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 			if err := applyVerifiedItemChange(itemHeads, change); err != nil {
 				return nil, err
 			}
+			lastChange = change
 		}
 		if kind == mousa.LogKindPathMove {
 			move, err := decodePathMoveLeaf(uint64(seq), kind, recordID, sourceID, leaf, record, recordSource)
@@ -158,6 +160,12 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 			}
 			if _, err := requestEvidenceSummary(ctx, tx, admission, outcome, seq); err != nil {
 				return nil, err
+			}
+			if legacyActivationTime(lastChange, admission, outcome) != 0 {
+				key := localItemKey{lastChange.SourceID, lastChange.ItemID}
+				head := itemHeads[key]
+				head.activationSeq = lastChange.Seq
+				itemHeads[key] = head
 			}
 		}
 		counts[kind]++

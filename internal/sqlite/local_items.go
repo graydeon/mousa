@@ -280,7 +280,7 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 		if err := removeRepresentationIndex(ctx, conn, sourceID, item.RepresentationID); err != nil {
 			return err
 		}
-		if _, err := conn.ExecContext(ctx, `UPDATE local_items SET active = 0 WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID); err != nil {
+		if _, err := conn.ExecContext(ctx, `UPDATE local_items SET active = 0, activation_seq = NULL WHERE source_id = ? AND item_id = ?`, sourceID[:], itemID); err != nil {
 			return classify("deactivate local item", err)
 		}
 		action = "deleted"

@@ -614,11 +614,12 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 		SourceID: id, Item: item, SegmentID: candidate.SegmentID, Range: candidate.Range,
 		ContentSHA256: candidate.ContentSHA256, Text: row.text, Path: mousa.DefaultNotePath,
 	}
+	var activationSeq uint64
 	if isItem {
-		stored, err := localItemPath(ctx, q, id, item)
+		stored, seq, err := localItemLocation(ctx, q, id, item)
 		switch {
 		case err == nil:
-			passage.Path = stored
+			passage.Path, activationSeq = stored, seq
 		case IsCode(err, CodeNotFound):
 		default:
 			return mousa.Passage{}, err
@@ -638,6 +639,11 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 	}
 	if passage.SegmentPolicy == mousa.TextSegmentNoteV1 {
 		passage.Note, err = queryNoteEvidence(ctx, q, id, item, noteGrants)
+		if err != nil {
+			return mousa.Passage{}, err
+		}
+	} else if activationSeq != 0 && (passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1) {
+		passage.ActivatedAtUsec, err = readItemActivationTime(ctx, q, activationSeq, id, item, repr.ID)
 		if err != nil {
 			return mousa.Passage{}, err
 		}

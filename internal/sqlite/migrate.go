@@ -8,7 +8,30 @@ import (
 	"path/filepath"
 )
 
-// Migrate upgrades a schema-7 or schema-8 store to the current schema in
+// legacyActivationBackfillSQL projects only schema-9 activations proven by a
+// committed served document outcome at the next log sequence. Offline records
+// and unproven rows stay NULL rather than acquiring a guessed date.
+const legacyActivationBackfillSQL = `WITH latest AS MATERIALIZED (
+  SELECT i.source_id, json_extract(CAST(i.record_json AS TEXT), '$.item_id') AS item_id, max(l.seq) AS seq
+  FROM item_changes i JOIN log l ON l.kind = 'item_change' AND l.record_id = i.id
+  GROUP BY i.source_id, item_id
+)
+UPDATE local_items AS li SET activation_seq = head.seq
+FROM latest head
+JOIN log cl ON cl.seq = head.seq
+JOIN item_changes c ON c.id = cl.record_id
+JOIN log ol ON ol.seq = head.seq + 1 AND ol.kind = 'request_outcome'
+JOIN request_outcomes o ON o.id = ol.record_id
+JOIN request_admissions a ON a.id = ol.record_id
+WHERE li.source_id = head.source_id AND li.item_id = head.item_id AND li.active = 1
+  AND json_extract(CAST(c.record_json AS TEXT), '$.schema') = 'mousa.item_change.v1'
+  AND json_extract(CAST(c.record_json AS TEXT), '$.current') = lower(hex(li.representation_id))
+  AND json_extract(CAST(o.record_json AS TEXT), '$.state') = 'committed'
+  AND json_extract(CAST(o.record_json AS TEXT), '$.evidence.item_change_id') = lower(hex(c.id))
+  AND json_extract(CAST(a.record_json AS TEXT), '$.operation') = 'document'
+  AND json_extract(CAST(o.record_json AS TEXT), '$.finished_at_usec') > json_extract(CAST(a.record_json AS TEXT), '$.received_at_usec')`
+
+// Migrate upgrades a schema-7, schema-8, or schema-9 store to the current schema in
 // place. The whole migration is one immediate transaction: the header still
 // names its old version on any failure, so a partial upgrade is impossible. A
 // store at the current version is a no-op; any older Mousa store keeps the
@@ -87,28 +110,34 @@ func Migrate(ctx context.Context, path string) error {
 		return integrity("migrate store", "store contains triggers or views")
 	}
 	// Schema 8 already carries paths; schema 7 still needs its path column
-	// and backfill before the shared log rebuild.
+	// and backfill before the shared log rebuild. Schema 9 keeps both its log
+	// and history tables byte for byte.
 	statements := []string{}
-	if version == 7 {
+	if version < 9 {
+		if version == 7 {
+			statements = append(statements,
+				`ALTER TABLE local_items ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
+				`UPDATE local_items SET path = CASE
+					WHEN EXISTS (SELECT 1 FROM notes n
+						WHERE n.source_id = local_items.source_id AND n.item_id = local_items.item_id)
+					THEN 'unsorted' ELSE item_id END`)
+		}
 		statements = append(statements,
-			`ALTER TABLE local_items ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
-			`UPDATE local_items SET path = CASE
-				WHEN EXISTS (SELECT 1 FROM notes n
-					WHERE n.source_id = local_items.source_id AND n.item_id = local_items.item_id)
-				THEN 'unsorted' ELSE item_id END`)
+			`ALTER TABLE log RENAME TO log_old`,
+			`DROP INDEX log_source_kind_seq_idx`,
+			`DROP INDEX log_source_seq_idx`,
+			logSQL)
+		if version == 7 {
+			statements = append(statements, pathsSQL)
+		}
+		statements = append(statements,
+			historySQL,
+			`INSERT INTO log SELECT * FROM log_old ORDER BY seq`,
+			`DROP TABLE log_old`)
 	}
 	statements = append(statements,
-		`ALTER TABLE log RENAME TO log_old`,
-		`DROP INDEX log_source_kind_seq_idx`,
-		`DROP INDEX log_source_seq_idx`,
-		logSQL)
-	if version == 7 {
-		statements = append(statements, pathsSQL)
-	}
-	statements = append(statements,
-		historySQL,
-		`INSERT INTO log SELECT * FROM log_old ORDER BY seq`,
-		`DROP TABLE log_old`,
+		`ALTER TABLE local_items ADD COLUMN activation_seq INTEGER REFERENCES log(seq) CHECK (activation_seq IS NULL OR (activation_seq > 0 AND active = 1))`,
+		legacyActivationBackfillSQL,
 		fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
 	for _, statement := range statements {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {

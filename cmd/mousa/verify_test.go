@@ -56,7 +56,7 @@ func TestVerifyCorruptionMatrix(t *testing.T) {
 		{"deleted leaf", `DELETE FROM log WHERE kind = 'trail'`, true, true},
 		{"access leaves swapped", `UPDATE log SET seq = 100 WHERE seq = 3; UPDATE log SET seq = 3 WHERE seq = 4; UPDATE log SET seq = 4 WHERE seq = 100`, false, true},
 		{"item change bytes", `UPDATE item_changes SET record_json = X'00'`, false, true},
-		{"item change disagrees with active projection", `UPDATE local_items SET active = 0 WHERE source_id IN (SELECT source_id FROM trail_sources)`, false, true},
+		{"item change disagrees with active projection", `UPDATE local_items SET active = 0, activation_seq = NULL WHERE source_id IN (SELECT source_id FROM trail_sources)`, false, true},
 		{"trail source lookup", `DELETE FROM trail_sources`, true, false},
 		{"trail segment lookup", `DELETE FROM trail_segments`, true, false},
 		{"FTS content", `UPDATE segment_lexical_fts_content SET c0 = 'different'`, true, false},

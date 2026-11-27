@@ -6,23 +6,25 @@ import (
 	"errors"
 )
 
-const ItemChangeSchema = "mousa.item_change.v1"
+const ItemChangeSchemaV1 = "mousa.item_change.v1"
+const ItemChangeSchema = "mousa.item_change.v2"
 const LogKindItemChange = "item_change"
 
 // ItemChange records an atomic change to the searchable revision of an item.
 // The log index distinguishes two separate activations of the same revision.
 type ItemChange struct {
-	Current  *RepresentationID `json:"current,omitempty"`
-	ID       SHA256            `json:"id,omitzero"`
-	ItemID   string            `json:"item_id"`
-	Previous *RepresentationID `json:"previous,omitempty"`
-	Schema   string            `json:"schema"`
-	Seq      uint64            `json:"seq"`
-	SourceID SourceID          `json:"source_id"`
+	ActivatedAtUsec int64             `json:"activated_at_usec,omitzero"`
+	Current         *RepresentationID `json:"current,omitempty"`
+	ID              SHA256            `json:"id,omitzero"`
+	ItemID          string            `json:"item_id"`
+	Previous        *RepresentationID `json:"previous,omitempty"`
+	Schema          string            `json:"schema"`
+	Seq             uint64            `json:"seq"`
+	SourceID        SourceID          `json:"source_id"`
 }
 
-func NewItemChange(source SourceID, item string, seq uint64, previous, current *RepresentationID) (ItemChange, error) {
-	change := ItemChange{SourceID: source, ItemID: item, Seq: seq, Schema: ItemChangeSchema, Previous: previous, Current: current}
+func NewItemChange(source SourceID, item string, seq uint64, previous, current *RepresentationID, activatedAtUsec int64) (ItemChange, error) {
+	change := ItemChange{SourceID: source, ItemID: item, Seq: seq, Schema: ItemChangeSchema, Previous: previous, Current: current, ActivatedAtUsec: activatedAtUsec}
 	if err := change.validate(); err != nil {
 		return ItemChange{}, err
 	}
@@ -39,12 +41,24 @@ func (change ItemChange) validate() error {
 		return err
 	}
 	previous, current := change.Previous, change.Current
-	if change.Schema != ItemChangeSchema || change.SourceID == (SourceID{}) || change.Seq == 0 ||
+	if change.SourceID == (SourceID{}) || change.Seq == 0 ||
 		change.Seq > maxJSONSafeInteger || (current == nil && previous == nil) ||
 		(current != nil && *current == (RepresentationID{})) ||
 		(previous != nil && *previous == (RepresentationID{})) ||
 		(previous != nil && current != nil && *previous == *current) {
 		return errors.New("invalid item change")
+	}
+	switch change.Schema {
+	case ItemChangeSchemaV1:
+		if change.ActivatedAtUsec != 0 {
+			return errors.New("legacy item change has an activation time")
+		}
+	case ItemChangeSchema:
+		if change.ActivatedAtUsec < 0 || change.ActivatedAtUsec > maxJSONSafeInteger || (change.ActivatedAtUsec != 0) != (current != nil) {
+			return errors.New("invalid item activation time")
+		}
+	default:
+		return errors.New("unknown item change schema")
 	}
 	return nil
 }

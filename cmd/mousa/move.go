@@ -7,7 +7,7 @@ import (
 	"github.com/graydeon/mousa/internal/sqlite"
 )
 
-// migrateCommand upgrades a schema-7 store to the current schema in place.
+// migrateCommand upgrades a migratable store to the current schema in place.
 // It takes no arguments and reports the resulting schema version.
 func migrateCommand(ctx context.Context, storePath string) error {
 	if err := sqlite.Migrate(ctx, storePath); err != nil {
@@ -15,7 +15,7 @@ func migrateCommand(ctx context.Context, storePath string) error {
 	}
 	return emit(struct {
 		Schema int `json:"schema"`
-	}{Schema: 9})
+	}{Schema: 10})
 }
 
 // moveCommand relocates one note, one document item, or every item under a

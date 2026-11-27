@@ -164,6 +164,9 @@ func emitCompactQuery(id mousa.SourceTrailID, passages []mousa.Passage, denied b
 			compact.Superseded = len(note.SupersededBy) != 0
 		case passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1:
 			compact.Kind = "document"
+			if passage.ActivatedAtUsec != 0 {
+				compact.Date = time.UnixMicro(passage.ActivatedAtUsec).Local().Format(time.DateOnly)
+			}
 		}
 		reply.Passages = append(reply.Passages, compact)
 	}

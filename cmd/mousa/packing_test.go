@@ -53,7 +53,17 @@ func TestFirstFitPackingSuppressionAndHistory(t *testing.T) {
 			writeFile(t, root, retained["item"].(string), "amber amber")
 			run.run(false, "sync", "--segment-policy", policy, root)
 			_, restored := run.run(false, "query", "--full", "--budget-bytes", "33", root, "amber")
-			if !reflect.DeepEqual(hits(restored), hits(result)) {
+			restoredHits := hits(restored)
+			originalHits := hits(result)
+			if len(restoredHits) != len(originalHits) || len(restoredHits) == 0 {
+				t.Fatalf("restoration returned %d passages, want %d", len(restoredHits), len(originalHits))
+			}
+			if passageActivation(t, restoredHits[0].(map[string]any)) <= passageActivation(t, originalHits[0].(map[string]any)) {
+				t.Fatal("restoration did not record a fresh activation time")
+			}
+			delete(restoredHits[0].(map[string]any), "activated_at_usec")
+			delete(originalHits[0].(map[string]any), "activated_at_usec")
+			if !reflect.DeepEqual(restoredHits, originalHits) {
 				t.Fatal("restoration changed the released passages")
 			}
 			if trailOf(restored)["result_sha256"] == trailOf(result)["result_sha256"] {

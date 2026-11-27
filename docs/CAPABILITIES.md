@@ -63,7 +63,11 @@ a revision reuses its accepted delivery receipt, including the original capture 
 Timestamps and hash ordering do not select the current revision.
 
 The current-item relationship is separate from revision history. Its activation and
-lexical index rows change in one transaction:
+lexical index rows change in one transaction. Activation records the store clock
+for a new, changed, or restored revision; deleting and re-adding an item records
+a fresh time even when the bytes are identical. A no-change re-sync or path-only
+move keeps the prior activation time. Schema-9 stores keep the time unset unless
+a committed served document outcome proves it:
 
 | Prior state | Input | Reported action | Searchable state after success |
 |---|---|---|---|
@@ -215,10 +219,10 @@ text unchanged.
 
 A store has one schema. Mousa marks it in the SQLite header (`application_id`
 and `user_version`) and checks that header before it reads or verifies any record.
-The current schema is 9. A store written by schema 7 or 8 is refused on
+The current schema is 10. A store written by schema 7, 8 or 9 is refused on
 open with an `incompatible_schema` error that names `mousa migrate`; that
 command upgrades the store in place inside one transaction, preserving notes,
-note citations, query trails and request history, prints `{"schema": 9}`,
+note citations, query trails and request history, prints `{"schema": 10}`,
 and `verify` confirms the result. Stores older than schema 7 are refused
 without a migration path. Export notes
 with the old binary before creating a new store, then import them under the
@@ -329,10 +333,14 @@ input, which has its own explicit record bounds.
 
 A query returns passages and records one `trail` (`mousa.trail.v1`). The CLI's
 default compact output carries the trail ID and passage text, path, kind, and
-note summary fields. Rich passage metadata is available through CLI `--full`
-or the HTTP query API. The trail is an append-only log leaf. It records the
-request, per-source access, snapshot index,
-allowed source heads, candidate scores and ranks, and packing decisions.
+note summary fields. The compact `date` is the note's creation date or the
+current document revision's activation date, in the CLI's local time zone.
+Documents without proof of activation omit `date`. Rich passage metadata is
+available through CLI `--full` or the HTTP query API.
+
+The trail is an append-only log leaf. It records the request, per-source
+access, snapshot index, allowed source heads, candidate scores and ranks, and
+packing decisions.
 `trail.id` identifies this record; `trail.result_sha256` compares results across
 equivalent requests against the same state. Lexical is the only supported mode.
 
