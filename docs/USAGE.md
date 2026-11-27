@@ -333,6 +333,9 @@ both changes updates the text and moves it in the same commit, and omitting
 Queries report each passage's current `path`. Paths describe locations only:
 they never rename an item ID or a note ID.
 
+Paths starting with `_` are for meta documents. Collection queries leave them
+out. Query the source directly with `--source` to read one.
+
 ## Move
 
 `mousa move` relocates stored items without re-syncing them. One selector is

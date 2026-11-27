@@ -338,6 +338,9 @@ current document revision's activation date, in the CLI's local time zone.
 Documents without proof of activation omit `date`. Rich passage metadata is
 available through CLI `--full` or the HTTP query API.
 
+Paths starting with `_` are for meta documents. Collection queries leave them
+out. Query the source directly with `--source` to read one.
+
 The trail is an append-only log leaf. It records the request, per-source
 access, snapshot index, allowed source heads, candidate scores and ranks, and
 packing decisions.

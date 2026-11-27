@@ -323,6 +323,7 @@ type queryCandidate struct {
 	candidate mousa.Candidate
 	paths     []mousa.EvidencePath
 	text      string
+	location  passageLocation
 }
 
 func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mousa.Trail, allowed []mousa.SourceID, allowedSet, noteGrants map[mousa.SourceID]bool) ([]mousa.Passage, error) {
@@ -410,18 +411,33 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		return nil, wrap(CodeIntegrity, "rank candidates", err)
 	}
 	finishPack := store.StartStage(mousa.StagePack)
-	// Single-source candidates that are superseded notes get an exclusion
-	// effect; rejected candidates already stay out of packing on their own.
+	// Record snapshot exclusions without changing the ranked candidates.
 	supersession := []mousa.SupersessionEffect{}
 	var marked map[mousa.SegmentID][]mousa.SHA256
 	if req.IncludeSuperseded {
 		marked = make(map[mousa.SegmentID][]mousa.SHA256)
 	}
-	for _, row := range candidates {
-		if len(row.candidate.Rejected) != 0 || len(row.candidate.SourceIDs) != 1 {
+	for i := range rows {
+		candidate := &rows[i]
+		if len(candidate.Rejected) != 0 {
 			continue
 		}
-		effect, err := noteSupersessionEffect(ctx, q, row.candidate.SourceIDs[0], row.candidate.RepresentationID, row.candidate.SegmentID, trail.AsOf)
+		if req.Scope.Kind == "collection" {
+			row := candidates[candidate.SegmentID]
+			location, err := queryPassageLocation(ctx, q, row)
+			if err != nil {
+				finishPack(err)
+				return nil, err
+			}
+			row.location = location
+			if strings.HasPrefix(location.path, "_") {
+				candidate.Omitted = mousa.MetaPathV1
+			}
+		}
+		if len(candidate.SourceIDs) != 1 {
+			continue
+		}
+		effect, err := noteSupersessionEffect(ctx, q, candidate.SourceIDs[0], candidate.RepresentationID, candidate.SegmentID, trail.AsOf)
 		if err != nil {
 			finishPack(err)
 			return nil, err
@@ -584,7 +600,12 @@ func evidenceSourceIDs(paths []mousa.EvidencePath) []mousa.SourceID {
 
 func compareSourceIDs(a, b mousa.SourceID) int { return bytes.Compare(a[:], b[:]) }
 
-func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrants map[mousa.SourceID]bool) (mousa.Passage, error) {
+type passageLocation struct {
+	item, path    string
+	activationSeq uint64
+}
+
+func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (passageLocation, error) {
 	candidate := row.candidate
 	id := candidate.SourceIDs[0]
 	var path mousa.EvidencePath
@@ -596,34 +617,48 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 	}
 	observation, err := getObservation(ctx, q, path.ObservationID)
 	if err != nil {
-		return mousa.Passage{}, err
+		return passageLocation{}, err
 	}
 	item := observation.ExternalObservationID
 	isItem := strings.HasPrefix(item, "item/")
 	if rest, ok := strings.CutPrefix(item, "item/"); ok {
 		artifact, err := getArtifact(ctx, q, path.ArtifactID)
 		if err != nil {
-			return mousa.Passage{}, err
+			return passageLocation{}, err
 		}
 		item, ok = strings.CutSuffix(rest, localRevisionSuffix(artifact.ContentSHA256))
 		if !ok || item == "" {
-			return mousa.Passage{}, integrity("query passage item", "item revision identity disagrees with artifact")
+			return passageLocation{}, integrity("query passage item", "item revision identity disagrees with artifact")
 		}
 	}
-	passage := mousa.Passage{
-		SourceID: id, Item: item, SegmentID: candidate.SegmentID, Range: candidate.Range,
-		ContentSHA256: candidate.ContentSHA256, Text: row.text, Path: mousa.DefaultNotePath,
-	}
-	var activationSeq uint64
+	location := passageLocation{item: item, path: mousa.DefaultNotePath}
 	if isItem {
 		stored, seq, err := localItemLocation(ctx, q, id, item)
 		switch {
 		case err == nil:
-			passage.Path, activationSeq = stored, seq
+			location.path, location.activationSeq = stored, seq
 		case IsCode(err, CodeNotFound):
 		default:
+			return passageLocation{}, err
+		}
+	}
+	return location, nil
+}
+
+func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrants map[mousa.SourceID]bool) (mousa.Passage, error) {
+	candidate := row.candidate
+	location := row.location
+	if location.item == "" {
+		var err error
+		location, err = queryPassageLocation(ctx, q, row)
+		if err != nil {
 			return mousa.Passage{}, err
 		}
+	}
+	id := candidate.SourceIDs[0]
+	passage := mousa.Passage{
+		SourceID: id, Item: location.item, SegmentID: candidate.SegmentID, Range: candidate.Range,
+		ContentSHA256: candidate.ContentSHA256, Text: row.text, Path: location.path,
 	}
 	repr, err := getRepresentation(ctx, q, candidate.RepresentationID)
 	if err != nil {
@@ -638,12 +673,12 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 		return mousa.Passage{}, wrap(CodeIntegrity, "read query passage policy", err)
 	}
 	if passage.SegmentPolicy == mousa.TextSegmentNoteV1 {
-		passage.Note, err = queryNoteEvidence(ctx, q, id, item, noteGrants)
+		passage.Note, err = queryNoteEvidence(ctx, q, id, location.item, noteGrants)
 		if err != nil {
 			return mousa.Passage{}, err
 		}
-	} else if activationSeq != 0 && (passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1) {
-		passage.ActivatedAtUsec, err = readItemActivationTime(ctx, q, activationSeq, id, item, repr.ID)
+	} else if location.activationSeq != 0 && (passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1) {
+		passage.ActivatedAtUsec, err = readItemActivationTime(ctx, q, location.activationSeq, id, location.item, repr.ID)
 		if err != nil {
 			return mousa.Passage{}, err
 		}

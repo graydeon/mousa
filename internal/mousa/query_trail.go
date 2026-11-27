@@ -166,6 +166,9 @@ type Candidate struct {
 	SourceIDs        []SourceID       `json:"source_ids"`
 }
 
+// MetaPathV1 records a collection candidate whose snapshot path starts with _.
+const MetaPathV1 = "meta-path-v1"
+
 type ByteRange struct {
 	End   uint64 `json:"end"`
 	Start uint64 `json:"start"`
@@ -543,6 +546,9 @@ func (trail Trail) validateRetrieval(allowed map[SourceID]bool) error {
 			!slices.Contains([]string{"content_mismatch", "source_withdrawn", "source_state_missing"}, candidate.Rejected[0])) {
 			return errors.New("invalid candidate rejection")
 		}
+		if candidate.Omitted == MetaPathV1 && trail.Request.Scope.Kind != "collection" {
+			return errors.New("meta path omission requires collection scope")
+		}
 		if len(candidate.Scores) == 0 {
 			return errors.New("candidate has no scores")
 		}
@@ -695,7 +701,8 @@ func RankCandidates(candidates []Candidate, branchCount int) error {
 // ApplyFirstFit packs whole segments, skipping over budget omissions and
 // suppressing duplicates of segments already packed. Every segment a
 // supersession effect names is omitted; callers pass nil when the request
-// asked for superseded passages.
+// asked for superseded passages. MetaPathV1 is a recorded snapshot decision
+// and is not recomputed by packing; all other omissions are derived.
 func ApplyFirstFit(candidates []Candidate, budget uint64, supersession []SupersessionEffect) Packing {
 	excluded := make(map[SegmentID]bool, len(supersession))
 	for _, effect := range supersession {
@@ -705,8 +712,13 @@ func ApplyFirstFit(candidates []Candidate, budget uint64, supersession []Superse
 	packed := make(map[SHA256]SegmentID)
 	for i := range candidates {
 		c := &candidates[i]
+		metaPath := c.Omitted == MetaPathV1
 		c.Packed, c.Omitted, c.DuplicateOf, c.Cost = "none", "", SegmentID{}, 0
 		if len(c.Rejected) != 0 {
+			continue
+		}
+		if metaPath {
+			c.Omitted = MetaPathV1
 			continue
 		}
 		if excluded[c.SegmentID] {

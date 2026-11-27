@@ -297,3 +297,138 @@ func TestQueryLimitAppliesAfterSourceScope(t *testing.T) {
 		t.Fatalf("limit let a source outside the scope crowd out evidence: %+v, %v", result, err)
 	}
 }
+
+func TestCollectionOmitsMetaPath(t *testing.T) {
+	s := openLexicalStore(t)
+	defer s.Close()
+	ctx := t.Context()
+	a, meta := seedAuditItem(t, s, "layout", "harbor harbor")
+	_, regular := seedAuditItem(t, s, "normal", "harbor with many unrelated words in the passage")
+	allowSource(t, s, a)
+	moved, err := s.SetDocumentPath(ctx, a, "layout", "_guide/index", "test")
+	if err != nil || !moved {
+		t.Fatalf("move layout to meta path: moved=%t err=%v", moved, err)
+	}
+	moved, err = s.SetDocumentPath(ctx, a, "normal", "topics/_guide", "test")
+	if err != nil || !moved {
+		t.Fatalf("move normal below an underscore segment: moved=%t err=%v", moved, err)
+	}
+	if err := s.CreateCollection(ctx, "fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCollectionSource(ctx, "fleet", a, true); err != nil {
+		t.Fatal(err)
+	}
+	b := testPushBatch(t, "peer", nil)
+	if err := s.ApplyIngest(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	allowSource(t, s, b.Source.ID)
+
+	req := auditRequest(a)
+	sourceResult, err := s.Query(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectionReq := req
+	collectionReq.Scope = mousa.Scope{Collection: "fleet"}
+	collectionResult, err := s.Query(ctx, collectionReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listReq := req
+	listReq.Scope = mousa.Scope{Sources: []mousa.SourceID{a, b.Source.ID}}
+	listResult, err := s.Query(ctx, listReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name   string
+		result mousa.QueryResult
+	}{
+		{"source", sourceResult},
+		{"list", listResult},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.result.Passages) != 2 {
+				t.Fatalf("passages = %+v, want two", tt.result.Passages)
+			}
+			first := tt.result.Passages[0]
+			if first.SegmentID != meta.ID || first.Path != "_guide/index" || first.Rank != 1 {
+				t.Fatalf("first passage = %+v, want meta at _guide/index rank 1", first)
+			}
+		})
+	}
+
+	if len(collectionResult.Passages) != 1 {
+		t.Fatalf("collection passages = %+v, want only the regular passage", collectionResult.Passages)
+	}
+	released := collectionResult.Passages[0]
+	if released.SegmentID != regular.ID || released.Path != "topics/_guide" || released.Rank != 2 {
+		t.Fatalf("collection passage = %+v, want regular at topics/_guide rank 2", released)
+	}
+	if len(collectionResult.Trail.Candidates) != 2 {
+		t.Fatalf("collection candidates = %+v, want two", collectionResult.Trail.Candidates)
+	}
+	omitted := collectionResult.Trail.Candidates[0]
+	if omitted.SegmentID != meta.ID || omitted.Omitted != "meta-path-v1" || omitted.Packed != "none" || omitted.Cost != 0 || omitted.Rank != 1 {
+		t.Fatalf("meta candidate = %+v, want rank 1 omitted as meta-path-v1 at no cost", omitted)
+	}
+	if !reflect.DeepEqual(collectionResult.Trail.Retrieval, sourceResult.Trail.Retrieval) {
+		t.Fatalf("collection retrieval changed:\ncollection %+v\nsource %+v", collectionResult.Trail.Retrieval, sourceResult.Trail.Retrieval)
+	}
+	if len(sourceResult.Trail.Candidates) != 2 {
+		t.Fatalf("source candidates = %+v, want two", sourceResult.Trail.Candidates)
+	}
+	for i := range collectionResult.Trail.Candidates {
+		if collectionResult.Trail.Candidates[i].SegmentID != sourceResult.Trail.Candidates[i].SegmentID ||
+			!reflect.DeepEqual(collectionResult.Trail.Candidates[i].Scores, sourceResult.Trail.Candidates[i].Scores) {
+			t.Fatalf("candidate %d order or scores changed:\ncollection %+v\nsource %+v", i, collectionResult.Trail.Candidates[i], sourceResult.Trail.Candidates[i])
+		}
+	}
+
+	limitedReq := collectionReq
+	limitedReq.Limit = 1
+	limitedResult, err := s.Query(ctx, limitedReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limitedResult.Passages) != 0 || len(limitedResult.Trail.Candidates) != 1 {
+		t.Fatalf("limited collection backfilled or lost candidates: passages=%+v candidates=%+v", limitedResult.Passages, limitedResult.Trail.Candidates)
+	}
+	if limitedResult.Trail.Candidates[0].SegmentID != meta.ID || limitedResult.Trail.Candidates[0].Omitted != "meta-path-v1" {
+		t.Fatalf("limited candidate = %+v, want the first meta candidate omitted", limitedResult.Trail.Candidates[0])
+	}
+
+	moved, err = s.SetDocumentPath(ctx, a, "layout", "docs/layout", "test")
+	if err != nil || !moved {
+		t.Fatalf("move layout out of meta path: moved=%t err=%v", moved, err)
+	}
+	movedResult, err := s.Query(ctx, collectionReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(movedResult.Passages) != 2 || len(movedResult.Trail.Candidates) != 2 {
+		t.Fatalf("moved collection result = passages %+v candidates %+v, want two of each", movedResult.Passages, movedResult.Trail.Candidates)
+	}
+	packed := 0
+	for _, candidate := range movedResult.Trail.Candidates {
+		if candidate.Packed == "full" {
+			packed++
+		}
+	}
+	if packed != 2 || movedResult.Passages[0].SegmentID != meta.ID || movedResult.Passages[0].Path != "docs/layout" {
+		t.Fatalf("moved collection packed %d passages %+v, want two packed with docs/layout first", packed, movedResult.Passages)
+	}
+	if _, err := s.Verify(ctx); err != nil {
+		t.Fatalf("verify after path move: %v", err)
+	}
+	recheck, err := s.RecheckTrailText(ctx, collectionResult.Trail.ID, nil)
+	if err != nil {
+		t.Fatalf("recheck historical collection trail: %v", err)
+	}
+	if recheck.Released == nil || len(*recheck.Released) != 1 || (*recheck.Released)[0].SegmentID != regular.ID {
+		t.Fatalf("historical released = %+v, want only regular", recheck.Released)
+	}
+}
