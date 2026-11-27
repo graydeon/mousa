@@ -23,7 +23,7 @@ import (
 // representation id, or empty strings when nothing matched.
 func pathOfQuery(t *testing.T, run testRun, source, text string) (path, representation string) {
 	t.Helper()
-	_, result := run.run(false, "query", "--source", source, text)
+	_, result := run.run(false, "query", "--full", "--source", source, text)
 	passages, _ := result["passages"].([]any)
 	if len(passages) == 0 {
 		return "", ""
@@ -136,7 +136,7 @@ func TestPathRoundTrip(t *testing.T) {
 	if lenOf(dirMoved, "moved") != 1 {
 		t.Fatalf("directory move = %v", dirMoved)
 	}
-	_, dirQuery := run.run(false, "query", dir, "anchors")
+	_, dirQuery := run.run(false, "query", "--full", dir, "anchors")
 	dirPassages, _ := dirQuery["passages"].([]any)
 	if len(dirPassages) == 0 || dirPassages[0].(map[string]any)["path"] != "catalog/note" {
 		t.Fatalf("directory query = %v", dirQuery)
@@ -153,7 +153,7 @@ func TestMoveAudit(t *testing.T) {
 			`{"id":"x1","text":"team alpha entry","path":"team/a"}`+"\n"+
 			`{"id":"x2","text":"team beta entry","path":"team/b"}`+"\n", false,
 		"sync", "--source", "docs", "--allow")
-	_, trailHolder := run.run(false, "query", "--source", "docs", "alpha")
+	_, trailHolder := run.run(false, "query", "--full", "--source", "docs", "alpha")
 	trailID, _ := trailHolder["trail"].(map[string]any)
 	trail, _ := trailID["id"].(string)
 	_, note := run.run(false, "remember", "--source", "notes", "--from", trail, "movable cited note")

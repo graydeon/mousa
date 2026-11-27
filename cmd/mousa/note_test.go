@@ -105,7 +105,7 @@ func TestMemoryCLI(t *testing.T) {
 	// A: document evidence trail a note can cite.
 	writeFile(t, root, "doc.md", "The harbor inspection is on Friday.\n")
 	run.run(false, "sync", "--allow", root)
-	_, query := run.run(false, "query", root, "harbor inspection")
+	_, query := run.run(false, "query", "--full", root, "harbor inspection")
 	if lenOf(query, "passages") != 1 {
 		t.Fatalf("document query returned no evidence: %v", query)
 	}
@@ -155,7 +155,7 @@ func TestMemoryCLI(t *testing.T) {
 
 	// Explicit selection can repeat one segment across distinct trails; each
 	// citation is a (trail, segment) pair and both trails must survive.
-	_, secondQuery := run.run(false, "query", root, "harbor inspection")
+	_, secondQuery := run.run(false, "query", "--full", root, "harbor inspection")
 	trail2ID := trailIDOf(secondQuery)
 	if trail2ID == trailID {
 		t.Fatalf("second query did not produce a distinct trail: %v", secondQuery)
@@ -262,7 +262,7 @@ func TestMemoryCLI(t *testing.T) {
 	run.run(false, "access", "--source", "memory", "allow")
 
 	// A budget below one note omits the whole note; a note is never split.
-	_, tiny := run.run(false, "query", "--source", "memory", "--budget-bytes", "4", "harbor")
+	_, tiny := run.run(false, "query", "--full", "--source", "memory", "--budget-bytes", "4", "harbor")
 	if lenOf(tiny, "passages") != 0 {
 		t.Fatalf("tiny budget released a partial note: %v", tiny)
 	}
@@ -315,7 +315,7 @@ func TestMemoryRememberRejects(t *testing.T) {
 	writeFile(t, root, "doc.md", "The harbor inspection is on Friday.\n")
 	writeFile(t, root, "second.md", "Harbor budgets shrink annually.\n")
 	run.run(false, "sync", "--allow", root)
-	_, query := run.run(false, "query", root, "harbor")
+	_, query := run.run(false, "query", "--full", root, "harbor")
 	trailID := trailIDOf(query)
 	run.run(false, "access", "--source", "memory", "--create", "allow")
 	before := memoryCounts(t, run.store)
@@ -341,7 +341,7 @@ func TestMemoryRememberRejects(t *testing.T) {
 
 	// Denied historical trail: issue a query while denied, then restore access.
 	run.run(false, "access", root, "deny")
-	_, deniedQuery := run.run(false, "query", root, "harbor")
+	_, deniedQuery := run.run(false, "query", "--full", root, "harbor")
 	deniedTrail := trailIDOf(deniedQuery)
 	run.run(false, "access", root, "allow")
 	reject("denied historical trail", "--source", "memory", "--from", deniedTrail, "Denied history.")
@@ -360,7 +360,7 @@ func TestMemoryRememberRejects(t *testing.T) {
 	reject("withdrawn cited source", "--source", "memory", "--from", streamTrail, "Withdrawn lineage.")
 
 	// A candidate the trail omitted (budget) cannot be cited.
-	_, omittedQuery := run.run(false, "query", "--budget-bytes", "1", root, "harbor")
+	_, omittedQuery := run.run(false, "query", "--full", "--budget-bytes", "1", root, "harbor")
 	omittedTrail := trailIDOf(omittedQuery)
 	_, inspection := run.run(false, "trail", omittedTrail)
 	var omittedSegment string
@@ -462,7 +462,7 @@ func TestMemoryIntegrityTamper(t *testing.T) {
 			run, root := setup(t)
 			writeFile(t, root, "doc.md", "Harbor seals bask at noon.\n")
 			run.run(false, "sync", "--allow", root)
-			_, query := run.run(false, "query", root, "harbor seals")
+			_, query := run.run(false, "query", "--full", root, "harbor seals")
 			run.run(false, "access", "--source", "memory", "--create", "allow")
 			run.run(false, "remember", "--source", "memory", "--from", trailIDOf(query), "Seals at noon.")
 
@@ -482,7 +482,7 @@ func TestCLINotesImportRoundTrip(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "doc.md", "The harbor audit is Thursday.\n")
 	run.run(false, "sync", "--allow", root)
-	_, query := run.run(false, "query", root, "harbor audit")
+	_, query := run.run(false, "query", "--full", root, "harbor audit")
 	trailID := trailIDOf(query)
 	run.run(false, "access", "--source", "memory", "--create", "allow")
 	_, note := run.run(false, "remember", "--source", "memory", "--from", trailID, "Harbor audit scheduled.")

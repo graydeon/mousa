@@ -13,7 +13,7 @@ func TestCollectionPersistentScope(t *testing.T) {
 	run.run(false, "access", "--source", "second", "deny")
 	run.run(true, "query", "--collection", "fleet", "harbor")
 	run.run(false, "collection", "create", "fleet")
-	_, empty := run.run(false, "query", "--collection", "fleet", "harbor")
+	_, empty := run.run(false, "query", "--full", "--collection", "fleet", "harbor")
 	if len(hits(empty)) != 0 || len(trailOf(empty)["sources"].([]any)) != 0 {
 		t.Fatalf("an empty collection released evidence or source decisions: %v", empty)
 	}
@@ -25,8 +25,8 @@ func TestCollectionPersistentScope(t *testing.T) {
 		t.Fatalf("collection membership did not persist: %v", list)
 	}
 	for _, args := range [][]string{
-		{"query", "--collection", "fleet", "harbor"},
-		{"query", "--source", "first", "--source", "second", "harbor"},
+		{"query", "--full", "--collection", "fleet", "harbor"},
+		{"query", "--full", "--source", "first", "--source", "second", "harbor"},
 	} {
 		_, query := run.run(false, args...)
 		passages := hits(query)
@@ -38,7 +38,7 @@ func TestCollectionPersistentScope(t *testing.T) {
 	run.run(true, "query", "--collection", "fleet", "--source", "first", "harbor")
 	run.run(false, "collection", "remove", "--source", "second", "fleet")
 	run.run(false, "collection", "remove", "--source", "second", "fleet")
-	_, query := run.run(false, "query", "--collection", "fleet", "harbor")
+	_, query := run.run(false, "query", "--full", "--collection", "fleet", "harbor")
 	if len(trailOf(query)["sources"].([]any)) != 1 {
 		t.Fatalf("remove did not change the resolved scope: %v", query)
 	}
@@ -60,7 +60,7 @@ func TestDeniedCorpusDoesNotShiftScores(t *testing.T) {
 	jsonlSync(t, run, "first", record("one", "harbor pilot weather")+"\n"+record("two", "harbor pilot tides")+"\n")
 	run.runInput(record("old", "harbor harbor")+"\n", false, "sync", "--source", "second")
 	run.run(false, "access", "--source", "second", "deny")
-	args := []string{"query", "--source", "first", "--source", "second", "harbor pilot"}
+	args := []string{"query", "--full", "--source", "first", "--source", "second", "harbor pilot"}
 	_, before := run.run(false, args...)
 	run.runInput(record("old", "harbor pilot pilot pilot")+"\n"+record("new", "tides tides")+"\n", false, "sync", "--source", "second")
 	_, after := run.run(false, args...)

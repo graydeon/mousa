@@ -327,11 +327,14 @@ input, which has its own explicit record bounds.
 
 ## Query policy, packing, and tracing
 
-A query returns `passages` and one `trail` (`mousa.trail.v1`). The trail is an
-append-only log leaf. It records the request, per-source access, snapshot index,
-allowed source heads, candidate scores and ranks, and packing decisions. `trail.id`
-identifies this record; `trail.result_sha256` compares results across equivalent
-requests against the same state. Lexical is the only supported mode.
+A query returns passages and records one `trail` (`mousa.trail.v1`). The CLI's
+default compact output carries the trail ID and passage text, path, kind, and
+note summary fields. Rich passage metadata is available through CLI `--full`
+or the HTTP query API. The trail is an append-only log leaf. It records the
+request, per-source access, snapshot index,
+allowed source heads, candidate scores and ranks, and packing decisions.
+`trail.id` identifies this record; `trail.result_sha256` compares results across
+equivalent requests against the same state. Lexical is the only supported mode.
 
 `--budget-bytes` defaults to 8,192. It covers released text, not JSON or model
 tokens. First-fit packing skips passages that do not fit and omits exact-content
@@ -348,7 +351,7 @@ head sequence numbers, branch drop counts, and denied-source details other than
 
 ### Verify a selected passage's location
 
-Each selected passage includes:
+In a `--full` CLI result or HTTP query reply, each selected passage includes:
 
 | Field | Meaning |
 |---|---|

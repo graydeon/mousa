@@ -280,7 +280,7 @@ func TestServeCLIAndSourceGrants(t *testing.T) {
 	}
 
 	// Query returns evidence only inside the writer's granted scope.
-	code, stdout, stderr = runEndpoint(t, endpoint, writerToken, "", "query", "--source", "docs", "walruses")
+	code, stdout, stderr = runEndpoint(t, endpoint, writerToken, "", "query", "--full", "--source", "docs", "walruses")
 	if code != 0 {
 		t.Fatalf("endpoint query failed: %d %s", code, stderr)
 	}
@@ -317,7 +317,7 @@ func TestServeCLIAndSourceGrants(t *testing.T) {
 	if updated["source_id"] != added["source_id"] || updated["representation_id"] == added["representation_id"] {
 		t.Fatalf("revision changed item identity or reused representation:\n%s\n%s", added, updated)
 	}
-	_, queryOut, _ := runEndpoint(t, endpoint, writerToken, "", "query", "--source", "docs", "expanded")
+	_, queryOut, _ := runEndpoint(t, endpoint, writerToken, "", "query", "--full", "--source", "docs", "expanded")
 	var revision map[string]any
 	if err := json.Unmarshal([]byte(queryOut), &revision); err != nil || firstItem(t, revision) != "b.md" {
 		t.Fatalf("revised document not retrievable: %s", queryOut)
@@ -371,11 +371,11 @@ func TestServeCLIAndSourceGrants(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &gone); err != nil {
 		t.Fatalf("withdrawn query is not JSON: %s", stdout)
 	}
-	if len(hits(gone)) != 0 {
-		t.Fatalf("withdrawn source released evidence: %s", stdout)
+	if len(hits(gone)) != 0 || gone["access"] != "deny" {
+		t.Fatalf("withdrawn source was not a compact denial: %s", stdout)
 	}
-	if decision := sourceDecision(t, gone); decision["outcome"] != "deny" {
-		t.Fatalf("withdrawn source decision = %v", decision)
+	if trail, _ := gone["trail"].(string); trail == "" {
+		t.Fatalf("withdrawn source compact denial has no trail string: %s", stdout)
 	}
 	code, _, denyErr := runEndpoint(t, endpoint, writerToken, record("w.md", "write into withdrawn")+"\n", "sync", "--source", "gone")
 	if code == 0 || !strings.Contains(denyErr, "source_denied") {

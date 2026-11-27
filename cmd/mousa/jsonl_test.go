@@ -39,7 +39,7 @@ func jsonlSync(t *testing.T, run testRun, sourceID, stream string) map[string]an
 
 func querySource(t *testing.T, run testRun, sourceID, query string) map[string]any {
 	t.Helper()
-	_, report := run.runInput("", false, "query", "--source", sourceID, query)
+	_, report := run.runInput("", false, "query", "--full", "--source", sourceID, query)
 	return report
 }
 
@@ -327,7 +327,7 @@ func TestJSONLSourceCannotCollideWithDirectoryPath(t *testing.T) {
 	writeFile(t, root, "doc", "Directory walruses.")
 	run.run(false, "sync", "--all-text", "--allow", root)
 	jsonlSync(t, run, root, record("doc@draft", "Stream ferrets."))
-	_, directory := run.run(false, "query", root, "walruses ferrets")
+	_, directory := run.run(false, "query", "--full", root, "walruses ferrets")
 	if firstItem(t, directory) != "doc" || len(hits(directory)) != 1 {
 		t.Fatalf("directory source mixed with stream source: %v", directory)
 	}

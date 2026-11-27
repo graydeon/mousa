@@ -238,7 +238,7 @@ def mousa_adapter(binary, store, directory, prefix):
     so they match question-set sources. The CLI budget is in bytes; ask generously and
     let the harness cap by tokens."""
     def run(q, budget):
-        out = subprocess.run([binary, "-store", store, "query", "--budget-bytes", str(budget * 8),
+        out = subprocess.run([binary, "-store", store, "query", "--full", "--budget-bytes", str(budget * 8),
                               directory, q["question"]], capture_output=True, text=True, check=True).stdout
         return [{"source": prefix + e["item"], "text": e["text"],
                  "byte_start": e["range"]["start"], "byte_end": e["range"]["end"]}

@@ -86,7 +86,7 @@ def probe(binary, n, doc_bytes, nq, seed, workdir=None):
         qs = []
         for _ in range(nq):
             terms = rng.sample(rng.choice(sample), 3)
-            qs.append(run(binary, store, "query", "--source", SOURCE, " ".join(terms))[0])
+            qs.append(run(binary, store, "query", "--full", "--source", SOURCE, " ".join(terms))[0])
         size = os.path.getsize(store)
     qs.sort()
     open_s = statistics.median(opens)
@@ -130,7 +130,7 @@ def equality(binary, n, doc_bytes, nq, seed):
         def trails():
             out = []
             for q in qs:
-                trail = json.loads(run(binary, store, "query", "--source", "A", q)[1])["trail"]
+                trail = json.loads(run(binary, store, "query", "--full", "--source", "A", q)[1])["trail"]
                 checked = json.loads(run(binary, store, "trail", trail["id"])[1])
                 if checked != trail:
                     raise RuntimeError("stored trail disagrees with query response")

@@ -16,8 +16,8 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	text := required + strings.Repeat("Ordinary background material without the recovery keyword.\n\n", 60)
 	writeFile(t, root, "runbook.md", text)
 	run.run(false, "sync", "--allow", root)
-	_, old := run.run(false, "query", root, "amber")
-	_, omitted := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
+	_, old := run.run(false, "query", "--full", root, "amber")
+	_, omitted := run.run(false, "query", "--full", "--budget-bytes", "1024", root, "amber")
 	if len(hits(omitted)) != 0 || packingOf(omitted)["used"] != float64(0) {
 		t.Fatalf("fixed evidence unexpectedly fits: %v", omitted)
 	}
@@ -25,7 +25,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	if lenOf(changed, "updated") != 1 {
 		t.Fatalf("policy change was not an update: %v", changed)
 	}
-	_, got := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
+	_, got := run.run(false, "query", "--full", "--budget-bytes", "1024", root, "amber")
 	if len(hits(got)) != 1 || !strings.Contains(hits(got)[0].(map[string]any)["text"].(string), required) || packingOf(got)["used"].(float64) > 1024 {
 		t.Fatalf("missing complete bounded passage: %v", got)
 	}
@@ -41,7 +41,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	run.run(false, "sync", "--segment-policy", "passage-v1", root)
-	_, deleted := run.run(false, "query", root, "amber")
+	_, deleted := run.run(false, "query", "--full", root, "amber")
 	if len(hits(deleted)) != 0 {
 		t.Fatalf("deleted passage released: %v", deleted)
 	}
@@ -50,7 +50,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	if lenOf(restored, "restored") != 1 {
 		t.Fatalf("restore: %v", restored)
 	}
-	_, again := run.run(false, "query", "--budget-bytes", "1024", root, "amber")
+	_, again := run.run(false, "query", "--full", "--budget-bytes", "1024", root, "amber")
 	if hits(again)[0].(map[string]any)["segment_id"] != hits(got)[0].(map[string]any)["segment_id"] {
 		t.Fatal("restore changed passage identity")
 	}
@@ -58,7 +58,7 @@ func TestPassagePolicyResyncAndHistory(t *testing.T) {
 	if lenOf(fixed, "updated") != 1 {
 		t.Fatalf("default did not restore fixed policy: %v", fixed)
 	}
-	_, back := run.run(false, "query", root, "amber")
+	_, back := run.run(false, "query", "--full", root, "amber")
 	if hits(back)[0].(map[string]any)["segment_id"] != hits(old)[0].(map[string]any)["segment_id"] {
 		t.Fatal("historical fixed identity changed")
 	}
@@ -74,7 +74,7 @@ func TestPassageJSONLAccessAndWithdrawal(t *testing.T) {
 		return result
 	}
 	sync(original)
-	_, tiny := run.run(false, "query", "--source", source, "--budget-bytes", "1", "café")
+	_, tiny := run.run(false, "query", "--full", "--source", source, "--budget-bytes", "1", "café")
 	if len(hits(tiny)) != 0 || packingOf(tiny)["used"] != float64(0) {
 		t.Fatalf("tiny budget released a fragment: %v", tiny)
 	}
@@ -95,7 +95,7 @@ func TestPassageJSONLAccessAndWithdrawal(t *testing.T) {
 			run.run(false, "withdraw", "--source", source)
 			sync(revised)
 		}
-		raw, denied := run.run(false, "query", "--source", source, "café")
+		raw, denied := run.run(false, "query", "--full", "--source", source, "café")
 		if len(hits(denied)) != 0 || sourceDecision(t, denied)["outcome"] != "deny" || len(candidatesOf(denied)) != 0 {
 			t.Fatalf("restricted evidence released: %v", denied)
 		}
@@ -115,7 +115,7 @@ func TestEvidenceNormalizedLocations(t *testing.T) {
 			normalized := strings.ReplaceAll(strings.ReplaceAll(strings.TrimPrefix(raw, "\ufeff"), "\r\n", "\n"), "\r", "\n")
 			writeFile(t, root, "locations.md", raw)
 			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
-			_, result := run.run(false, "query", "--budget-bytes", "16384", root, "amber")
+			_, result := run.run(false, "query", "--full", "--budget-bytes", "16384", root, "amber")
 			if len(hits(result)) < 2 {
 				t.Fatalf("expected multiple selected segments: %v", result)
 			}

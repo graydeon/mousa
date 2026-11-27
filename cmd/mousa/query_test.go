@@ -20,7 +20,7 @@ func TestQueryBudgetAndCanonicalTrail(t *testing.T) {
 	if firstItem(t, original) != "b" {
 		t.Fatalf("repetition did not contribute to the ranking: %v", original)
 	}
-	_, packed := run.run(false, "query", "--budget-bytes", "5", "--source", source, "apple banana banana")
+	_, packed := run.run(false, "query", "--full", "--budget-bytes", "5", "--source", source, "apple banana banana")
 	if len(hits(packed)) != 1 || firstItem(t, packed) != "a" || packingOf(packed)["used"] != float64(5) {
 		t.Fatalf("packing did not skip the oversized first candidate and continue: %v", packed)
 	}
@@ -48,11 +48,11 @@ func TestQueryBudgetAndCanonicalTrail(t *testing.T) {
 		t.Fatalf("trail packed %d candidates for a one-segment release", packedCount)
 	}
 	jsonlSync(t, run, source, record("unicode", "é"))
-	_, tooSmall := run.run(false, "query", "--budget-bytes", "1", "--source", source, "é")
+	_, tooSmall := run.run(false, "query", "--full", "--budget-bytes", "1", "--source", source, "é")
 	if len(hits(tooSmall)) != 0 || packingOf(tooSmall)["used"] != float64(0) {
 		t.Fatalf("byte budget was treated as a character budget: %v", tooSmall)
 	}
-	_, fits := run.run(false, "query", "--budget-bytes", "2", "--source", source, "é")
+	_, fits := run.run(false, "query", "--full", "--budget-bytes", "2", "--source", source, "é")
 	if firstItem(t, fits) != "unicode" || packingOf(fits)["used"] != float64(2) {
 		t.Fatalf("exact UTF-8 byte boundary did not fit: %v", fits)
 	}
@@ -71,13 +71,13 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 	const newText = "Cedar launch moved to Friday."
 	writeFile(t, root, "schedule.md", oldText)
 	run.run(false, "sync", "--allow", root)
-	_, original := run.run(false, "query", root, "cedar")
+	_, original := run.run(false, "query", "--full", root, "cedar")
 	oldHit := hits(original)[0].(map[string]any)
 	trailID := trailIDOf(original)
 	jsonlSync(t, run, "peer", record("peer-note", "Cedar peer collection."))
 	writeFile(t, root, "schedule.md", newText)
 	run.run(false, "sync", root)
-	_, revised := run.run(false, "query", root, "cedar")
+	_, revised := run.run(false, "query", "--full", root, "cedar")
 	if len(hits(revised)) != 1 || hits(revised)[0].(map[string]any)["text"] != newText {
 		t.Fatalf("revision query mixed stale or peer-source evidence: %v", revised)
 	}
@@ -90,7 +90,7 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 		t.Fatalf("history was confused with current activation or archived text: %v", inspected)
 	}
 	run.run(false, "access", root, "deny")
-	deniedJSON, denied := run.run(false, "query", root, "cedar")
+	deniedJSON, denied := run.run(false, "query", "--full", root, "cedar")
 	if sourceDecision(t, denied)["outcome"] != "deny" || len(hits(denied)) != 0 || len(candidatesOf(denied)) != 0 {
 		t.Fatalf("source denial did not stop retrieval: %v", denied)
 	}
@@ -120,7 +120,7 @@ func TestTrailAuthorizationHistoryAndWithdrawal(t *testing.T) {
 	}
 	run.run(false, "withdraw", root)
 	run.run(false, "access", root, "allow")
-	_, withdrawn := run.run(false, "query", root, "cedar")
+	_, withdrawn := run.run(false, "query", "--full", root, "cedar")
 	decision := sourceDecision(t, withdrawn)
 	reasons, _ := decision["reasons"].([]any)
 	if decision["outcome"] != "deny" || len(hits(withdrawn)) != 0 || !slices.Contains(reasons, any("source_withdrawn")) {

@@ -161,6 +161,8 @@ def evolving_example(runner, binary, work, policy="fixed-v1"):
     def call(stage, *args, records=None, expected_code=0):
         if args[0] == "sync" and "--segment-policy" not in args:
             args = (args[0], "--segment-policy", policy, *args[1:])
+        elif args[0] == "query":
+            args = (args[0], "--full", *args[1:])
         response, row = runner.run("mousa_example", stage, 0, [*prefix, *args],
                                    records=records, expected_code=expected_code)
         row["segment_policy"] = policy
@@ -364,7 +366,7 @@ def comparison(runner, args, work):
                     require(row["correct"], f"{engine} no-op did not preserve all current documents")
             def query(stage, term, budget):
                 if engine == "mousa":
-                    command = [args.mousa, "-store", store, "query", "--budget-bytes", str(budget), root, term]
+                    command = [args.mousa, "-store", store, "query", "--full", "--budget-bytes", str(budget), root, term]
                 elif engine == "sqlite":
                     command = [sys.executable, Path(__file__).resolve(), "sqlite", store, "query", root, term]
                 else:

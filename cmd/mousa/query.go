@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"slices"
+	"time"
 
 	"github.com/graydeon/mousa/internal/mousa"
 	"github.com/graydeon/mousa/internal/sqlite"
@@ -24,6 +29,7 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 	budget := flags.Uint64("budget-bytes", 8<<10, "positive released-text byte budget")
 	mode := flags.String("mode", string(mousa.QueryLexical), "query mode: lexical")
 	includeSuperseded := flags.Bool("include-superseded", false, "pack superseded passages instead of omitting them")
+	full := flags.Bool("full", false, "show the full trail and passage metadata")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err.Error()}
 	}
@@ -38,7 +44,7 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 		return usageError{"query requires a source and query text"}
 	}
 	if client != nil {
-		return runEndpointQuery(ctx, client, externalSources, *collection, *budget, *includeSuperseded, positional)
+		return runEndpointQuery(ctx, client, externalSources, *collection, *budget, *includeSuperseded, *full, positional)
 	}
 	var sources []mousa.SourceID
 	for _, external := range externalSources {
@@ -82,12 +88,16 @@ func queryCommand(ctx context.Context, storePath string, client *nativeClient, a
 	if err != nil {
 		return err
 	}
-	return emit(result)
+	if *full {
+		return emit(result)
+	}
+	state, _ := mousa.RequestTrailState(result.Trail)
+	return emitCompactQuery(result.Trail.ID, result.Passages, state == mousa.RequestStateDenied)
 }
 
 // runEndpointQuery sends the query to the served store. Directory scopes have
 // no external identifier and stay offline.
-func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources []string, collection string, budget uint64, includeSuperseded bool, positional []string) error {
+func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources []string, collection string, budget uint64, includeSuperseded, full bool, positional []string) error {
 	scope := nativeScope{Collection: collection}
 	switch {
 	case collection != "" || len(externalSources) != 0:
@@ -110,5 +120,54 @@ func runEndpointQuery(ctx context.Context, client *nativeClient, externalSources
 	if err != nil {
 		return err
 	}
-	return emitRawResult(result)
+	if full {
+		return emitRawResult(result)
+	}
+	var reply nativeQueryResult
+	if err := json.Unmarshal(result, &reply); err != nil {
+		return fmt.Errorf("decode endpoint query result: %w", err)
+	}
+	denied := len(reply.Trail.Sources) != 0 && !slices.ContainsFunc(reply.Trail.Sources, func(source mousa.CallerSource) bool {
+		return source.Outcome != "deny"
+	})
+	return emitCompactQuery(reply.Trail.ID, reply.Passages, denied)
+}
+
+type compactPassage struct {
+	Path       string `json:"path"`
+	Date       string `json:"date,omitempty"`
+	Kind       string `json:"kind"`
+	Author     string `json:"author,omitempty"`
+	Note       string `json:"note,omitempty"`
+	Text       string `json:"text"`
+	Stale      bool   `json:"stale,omitzero"`
+	Superseded bool   `json:"superseded,omitzero"`
+}
+
+func emitCompactQuery(id mousa.SourceTrailID, passages []mousa.Passage, denied bool) error {
+	reply := struct {
+		Trail    mousa.SourceTrailID `json:"trail"`
+		Passages []compactPassage    `json:"passages"`
+		Access   mousa.SourceAccess  `json:"access,omitempty"`
+	}{Trail: id, Passages: make([]compactPassage, 0, len(passages))}
+	if denied {
+		reply.Access = mousa.SourceAccessDeny
+	}
+	for _, passage := range passages {
+		compact := compactPassage{Path: passage.Path, Text: passage.Text, Kind: "item"}
+		switch {
+		case passage.Note != nil:
+			note := passage.Note
+			compact.Kind, compact.Author, compact.Note = "note", note.Author, note.ID.String()
+			compact.Date = time.UnixMicro(note.CreatedAtUsec).Local().Format(time.DateOnly)
+			compact.Stale = len(note.Stale) != 0
+			compact.Superseded = len(note.SupersededBy) != 0
+		case passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1:
+			compact.Kind = "document"
+		}
+		reply.Passages = append(reply.Passages, compact)
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(reply)
 }

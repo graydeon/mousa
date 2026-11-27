@@ -57,7 +57,7 @@ func TestSourceRevisionHistory(t *testing.T) {
 		record("big", long)+"\n")
 
 	// With the default (unset) setting every retirement drops its text.
-	_, beforeGone := run.run(false, "query", "--source", "histdocs", "habitat")
+	_, beforeGone := run.run(false, "query", "--full", "--source", "histdocs", "habitat")
 	goneTrail := trailIDOf(beforeGone)
 	jsonlSync(t, run, "histdocs", record("gone", "Replacement otter habitat notes.")+"\n"+
 		record("small", "Otters dive for shellfish at dusk.")+"\n")
@@ -121,9 +121,9 @@ func TestSourceRevisionHistory(t *testing.T) {
 
 	var smallTrail string
 	t.Run("kept update and delete", func(t *testing.T) {
-		_, smallV2 := run.run(false, "query", "--source", "histdocs", "dusk")
+		_, smallV2 := run.run(false, "query", "--full", "--source", "histdocs", "dusk")
 		smallTrail = trailIDOf(smallV2)
-		_, bigV1 := run.run(false, "query", "--source", "histdocs", "riverbank")
+		_, bigV1 := run.run(false, "query", "--full", "--source", "histdocs", "riverbank")
 		bigTrail := trailIDOf(bigV1)
 		jsonlSync(t, run, "histdocs", record("small", "Otters dive for shellfish at noon.")+"\n"+
 			record("big", "Herons wade the estuary at low tide.")+"\n")
@@ -145,7 +145,7 @@ func TestSourceRevisionHistory(t *testing.T) {
 			t.Fatalf("multi-segment kept text did not rebuild the retired item")
 		}
 
-		_, goneV2 := run.run(false, "query", "--source", "histdocs", "replacement")
+		_, goneV2 := run.run(false, "query", "--full", "--source", "histdocs", "replacement")
 		goneV2Trail := trailIDOf(goneV2)
 		run.runInput(`{"id":"gone","deleted":true}`+"\n", false, "sync", "--source", "histdocs")
 		deleted := recheckReleased(t, run, goneV2Trail)
@@ -156,9 +156,9 @@ func TestSourceRevisionHistory(t *testing.T) {
 
 	t.Run("off again keeps old archive only", func(t *testing.T) {
 		historyResult(t, run, "histdocs", "off")
-		_, smallV3 := run.run(false, "query", "--source", "histdocs", "noon")
+		_, smallV3 := run.run(false, "query", "--full", "--source", "histdocs", "noon")
 		smallV3Trail := trailIDOf(smallV3)
-		_, bigV2 := run.run(false, "query", "--source", "histdocs", "herons")
+		_, bigV2 := run.run(false, "query", "--full", "--source", "histdocs", "herons")
 		bigV2Trail := trailIDOf(bigV2)
 		jsonlSync(t, run, "histdocs", record("small", "Otters dive for shellfish at midnight.")+"\n")
 		run.runInput(`{"id":"big","deleted":true}`+"\n", false, "sync", "--source", "histdocs")
@@ -199,7 +199,7 @@ func TestRevisionHistoryTamper(t *testing.T) {
 	run, _ := setup(t)
 	jsonlSync(t, run, "docs", record("doc", "Otters guard their shells.")+"\n")
 	run.run(false, "access", "--source", "docs", "--history", "on")
-	_, before := run.run(false, "query", "--source", "docs", "shells")
+	_, before := run.run(false, "query", "--full", "--source", "docs", "shells")
 	trailID := trailIDOf(before)
 
 	// A served update request gives request content a revision to resolve.

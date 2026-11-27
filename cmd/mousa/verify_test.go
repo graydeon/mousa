@@ -11,7 +11,7 @@ func TestVerifyReadOnlyScopes(t *testing.T) {
 	run, root := setup(t)
 	writeFile(t, root, "doc.md", "Harbor pilot checks the seal.")
 	run.run(false, "sync", "--allow", root)
-	_, query := run.run(false, "query", root, "harbor")
+	_, query := run.run(false, "query", "--full", root, "harbor")
 	id := trailIDOf(query)
 	read := func() []byte {
 		t.Helper()
@@ -70,7 +70,7 @@ func TestVerifyCorruptionMatrix(t *testing.T) {
 			run.run(false, "sync", "--allow", root)
 			run.run(false, "access", root, "deny")
 			run.run(false, "access", root, "allow")
-			_, query := run.run(false, "query", root, "harbor")
+			_, query := run.run(false, "query", "--full", root, "harbor")
 			run.run(false, "access", "--source", "memory", "--create", "allow")
 			run.run(false, "remember", "--source", "memory", "Seal rules.")
 			rawExec(t, run.store, tc.damage)

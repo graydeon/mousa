@@ -203,6 +203,8 @@ client configuration ($MOUSA_CONFIG, else <user config dir>/mousa/client.json):
   array whose output is the token); {harness} in either expands to MOUSA_HARNESS
 
 query options (before positional arguments):
+  default                    one-line JSON with trail ID and passages
+  --full                     show the full trail and passage metadata
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
   --mode lexical             query mode; only lexical is available
   --include-superseded       pack passages whose notes were superseded

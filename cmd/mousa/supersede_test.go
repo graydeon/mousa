@@ -46,7 +46,7 @@ func TestNoteSupersession(t *testing.T) {
 	oldA := noteIDOf(t, orig)
 	_, second := run.run(false, "remember", "--source", "notes", "dock second")
 	oldB := noteIDOf(t, second)
-	_, beforeQuery := run.run(false, "query", "--source", "notes", "dock")
+	_, beforeQuery := run.run(false, "query", "--full", "--source", "notes", "dock")
 	preTrail, _ := beforeQuery["trail"].(map[string]any)["id"].(string)
 
 	// A new note can supersede both old ones.
@@ -56,7 +56,7 @@ func TestNoteSupersession(t *testing.T) {
 
 	// The default query returns only the replacement, and the stored trail
 	// names each old note ID, its segment and the replacement.
-	_, queried := run.run(false, "query", "--source", "notes", "dock")
+	_, queried := run.run(false, "query", "--full", "--source", "notes", "dock")
 	ids, marked := passageNoteIDs(t, queried)
 	if !slices.Equal(ids, []string{newID}) {
 		t.Fatalf("default query note ids = %v, want only %s", ids, newID)
@@ -95,7 +95,7 @@ func TestNoteSupersession(t *testing.T) {
 
 	// --include-superseded returns the old notes, each marked, packed when
 	// the budget admits them.
-	_, included := run.run(false, "query", "--source", "notes", "--include-superseded", "dock")
+	_, included := run.run(false, "query", "--full", "--source", "notes", "--include-superseded", "dock")
 	ids, marked = passageNoteIDs(t, included)
 	if len(ids) != 3 {
 		t.Fatalf("include-superseded note ids = %v, want all three", ids)
@@ -184,12 +184,12 @@ func TestNoteSupersession(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &imported); err != nil || imported["imported"] != float64(3) {
 		t.Fatalf("import with repeat line = %v, want 3 notes", out)
 	}
-	_, freshQuery := fresh.run(false, "query", "--source", "notes", "dock")
+	_, freshQuery := fresh.run(false, "query", "--full", "--source", "notes", "dock")
 	ids, _ = passageNoteIDs(t, freshQuery)
 	if !slices.Equal(ids, []string{newID}) {
 		t.Fatalf("imported query note ids = %v, want only %s", ids, newID)
 	}
-	_, freshInclude := fresh.run(false, "query", "--source", "notes", "--include-superseded", "dock")
+	_, freshInclude := fresh.run(false, "query", "--full", "--source", "notes", "--include-superseded", "dock")
 	ids, marked = passageNoteIDs(t, freshInclude)
 	if len(ids) != 3 || len(marked[oldA]) != 1 || len(marked[oldB]) != 1 {
 		t.Fatalf("imported include query = %v marked %v", ids, marked)
@@ -280,7 +280,7 @@ func TestServedNoteSupersession(t *testing.T) {
 	}
 
 	// The served CLI flag shows the same marked old note.
-	code, cliOut, cliErr := runEndpoint(t, endpoint, writerToken, "", "query", "--source", "notes", "--include-superseded", "dock")
+	code, cliOut, cliErr := runEndpoint(t, endpoint, writerToken, "", "query", "--full", "--source", "notes", "--include-superseded", "dock")
 	if code != 0 || !strings.Contains(cliOut, old) || !strings.Contains(cliOut, "superseded_by") {
 		t.Fatalf("served CLI include query = %d %s %s", code, cliOut, cliErr)
 	}

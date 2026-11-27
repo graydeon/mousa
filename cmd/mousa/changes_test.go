@@ -9,7 +9,7 @@ func TestChangesAndRecheckAfterWithdrawal(t *testing.T) {
 	run, _ := setup(t)
 	jsonlSync(t, run, "alpha", record("ship", "harbor plan")+"\n"+record("old", "retire this item")+"\n")
 	run.run(false, "access", "--source", "beta", "--create", "allow")
-	_, query := run.run(false, "query", "--source", "alpha", "harbor")
+	_, query := run.run(false, "query", "--full", "--source", "alpha", "harbor")
 	trailID := trailIDOf(query)
 	_, note := run.run(false, "remember", "--source", "beta", "--from", trailID, "Harbor plan approved.")
 	noteID := note["id"].(string)

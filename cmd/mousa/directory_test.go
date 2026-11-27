@@ -36,7 +36,7 @@ func TestDirectoryPreviewAndScopeChanges(t *testing.T) {
 		t.Fatalf("preview opened or created the store: %v", err)
 	}
 	run.run(false, "sync", "--exclude", "notes/draft.txt", "--allow", root)
-	_, queried := run.run(false, "query", root, "cedar")
+	_, queried := run.run(false, "query", "--full", root, "cedar")
 	want := map[string]bool{"notes/note.txt": true, "public.md": true}
 	for _, value := range hits(queried) {
 		item := value.(map[string]any)["item"].(string)
@@ -49,17 +49,17 @@ func TestDirectoryPreviewAndScopeChanges(t *testing.T) {
 		t.Fatalf("sync omitted selected items: %v", want)
 	}
 	run.run(false, "sync", "--include", "public.md", root)
-	_, narrowed := run.run(false, "query", root, "cedar")
+	_, narrowed := run.run(false, "query", "--full", root, "cedar")
 	if len(hits(narrowed)) != 1 || firstItem(t, narrowed) != "public.md" {
 		t.Fatalf("narrowing scope retained old activation outside that scope: %v", narrowed)
 	}
 	run.run(false, "sync", "--all-text", "--include", ".env", "--include", "*.json", "--exclude", ".env", root)
-	_, overridden := run.run(false, "query", root, "cedar")
+	_, overridden := run.run(false, "query", "--full", root, "cedar")
 	if len(hits(overridden)) != 1 || firstItem(t, overridden) != "settings.json" {
 		t.Fatalf("explicit selection failed or exclusion did not win: %v", overridden)
 	}
 	run.run(false, "sync", "--all-text", "--include", ".env", root)
-	_, hidden := run.run(false, "query", root, "hidden")
+	_, hidden := run.run(false, "query", "--full", root, "hidden")
 	if firstItem(t, hidden) != ".env" {
 		t.Fatalf("deliberate hidden-file override did not select its input: %v", hidden)
 	}
@@ -75,7 +75,7 @@ func TestDirectoryValidationFailurePreservesActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	run.run(true, "sync", root)
-	_, retained := run.run(false, "query", root, "cedar")
+	_, retained := run.run(false, "query", "--full", root, "cedar")
 	if len(hits(retained)) != 1 || hits(retained)[0].(map[string]any)["text"] != "Cedar accepted revision." {
 		t.Fatalf("invalid selected content removed the previous activation: %v", retained)
 	}
@@ -101,7 +101,7 @@ func TestDirectoryRootsAndLinkEscapes(t *testing.T) {
 		t.Fatalf("directory walk followed a symbolic link: %v", preview)
 	}
 	run.run(false, "sync", "--all-text", root)
-	_, escaped := run.run(false, "query", root, "forbidden")
+	_, escaped := run.run(false, "query", "--full", root, "forbidden")
 	if len(hits(escaped)) != 0 {
 		t.Fatalf("sync imported content outside its root: %v", escaped)
 	}

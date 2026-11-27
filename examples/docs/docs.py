@@ -110,7 +110,7 @@ def directory_source_id(root):
 
 def ask(binary, store, directory, question, budget, timeout, arguments=()):
     manifest, documents, digest = load_corpus(directory)
-    response = invoke(binary, store, ["query", "--budget-bytes", str(budget), *arguments,
+    response = invoke(binary, store, ["query", "--full", "--budget-bytes", str(budget), *arguments,
                       str(directory), question], timeout)
     trail = response["trail"]
     request = trail["request"]

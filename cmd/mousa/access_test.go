@@ -141,7 +141,7 @@ func TestAccessSyncAllowAndPreviewUsageError(t *testing.T) {
 	if synced["access"] != "allow" || synced["access_event_id"] == "" {
 		t.Fatalf("sync --allow = %v", synced)
 	}
-	_, allowed := run.run(false, "query", root, "cedar")
+	_, allowed := run.run(false, "query", "--full", root, "cedar")
 	decision := sourceDecision(t, allowed)
 	if decision["outcome"] != "allow" || decision["access_event_id"] != synced["access_event_id"] || len(hits(allowed)) == 0 {
 		t.Fatalf("sync --allow source not retrievable: %v", allowed)

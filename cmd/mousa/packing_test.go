@@ -17,7 +17,7 @@ func TestFirstFitPackingSuppressionAndHistory(t *testing.T) {
 			writeFile(t, root, "copy-b.md", "amber amber")
 			writeFile(t, root, "repair.md", "amber repair code ZX17")
 			run.run(false, "sync", "--segment-policy", policy, "--allow", root)
-			_, result := run.run(false, "query", "--budget-bytes", "33", root, "amber")
+			_, result := run.run(false, "query", "--full", "--budget-bytes", "33", root, "amber")
 			if packingOf(result)["used"] != float64(33) || len(hits(result)) != 2 {
 				t.Fatalf("first-fit packing: %v", result)
 			}
@@ -43,7 +43,7 @@ func TestFirstFitPackingSuppressionAndHistory(t *testing.T) {
 				t.Fatal(err)
 			}
 			run.run(false, "sync", "--segment-policy", policy, root)
-			_, deleted := run.run(false, "query", "--budget-bytes", "33", root, "amber")
+			_, deleted := run.run(false, "query", "--full", "--budget-bytes", "33", root, "amber")
 			if packingOf(deleted)["used"] != float64(33) || hits(deleted)[0].(map[string]any)["segment_id"] == retained["segment_id"] {
 				t.Fatalf("deleted packed passage suppressed its surviving copy: %v", deleted)
 			}
@@ -52,14 +52,14 @@ func TestFirstFitPackingSuppressionAndHistory(t *testing.T) {
 			}
 			writeFile(t, root, retained["item"].(string), "amber amber")
 			run.run(false, "sync", "--segment-policy", policy, root)
-			_, restored := run.run(false, "query", "--budget-bytes", "33", root, "amber")
+			_, restored := run.run(false, "query", "--full", "--budget-bytes", "33", root, "amber")
 			if !reflect.DeepEqual(hits(restored), hits(result)) {
 				t.Fatal("restoration changed the released passages")
 			}
 			if trailOf(restored)["result_sha256"] == trailOf(result)["result_sha256"] {
 				t.Fatal("restoration did not advance the source history")
 			}
-			_, repeated := run.run(false, "query", "--budget-bytes", "33", root, "amber")
+			_, repeated := run.run(false, "query", "--full", "--budget-bytes", "33", root, "amber")
 			if trailOf(restored)["result_sha256"] != trailOf(repeated)["result_sha256"] {
 				t.Fatal("an unchanged restored source did not repeat its result digest")
 			}

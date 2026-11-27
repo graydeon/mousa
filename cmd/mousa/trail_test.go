@@ -12,9 +12,9 @@ func TestTrailListFiltersReleasedSegments(t *testing.T) {
 	run, _ := setup(t)
 	jsonlSync(t, run, "alpha", record("a", "harbor pilot")+"\n"+record("b", "harbor tides")+"\n")
 	jsonlSync(t, run, "beta", record("c", "harbor bell")+"\n")
-	_, first := run.run(false, "query", "--budget-bytes", "12", "--source", "alpha", "harbor")
-	_, other := run.run(false, "query", "--source", "beta", "harbor")
-	_, last := run.run(false, "query", "--source", "alpha", "harbor")
+	_, first := run.run(false, "query", "--full", "--budget-bytes", "12", "--source", "alpha", "harbor")
+	_, other := run.run(false, "query", "--full", "--source", "beta", "harbor")
+	_, last := run.run(false, "query", "--full", "--source", "alpha", "harbor")
 	var omitted string
 	for _, raw := range trailOf(first)["candidates"].([]any) {
 		candidate := raw.(map[string]any)

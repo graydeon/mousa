@@ -62,11 +62,33 @@ Deletion is explicit; omission does not delete. Failed input retains its committ
 prefix and emits no success result. See the [input and recovery contract](CAPABILITIES.md)
 before upgrading an existing directory store or retaining sensitive material.
 
-A query returns `passages` and one `trail` (`mousa.trail.v1`). The trail is an
-append-only log leaf. It records the request, per-source access, snapshot index,
-allowed source heads, candidate scores and ranks, and packing decisions. `trail.id`
-identifies this record; `trail.result_sha256` compares results across equivalent
-requests against the same state. Lexical is the only supported mode.
+A query prints one JSON object on one line by default. The object has `trail`,
+the ID of the recorded `mousa.trail.v1` record, and `passages` in packed order.
+Each passage has `path`, `kind`, and `text`; notes also have `date` (the note
+creation date in the local time zone of the CLI process), `author`, and `note`
+(the note ID). `stale` and `superseded` appear only when true.
+Documents have no current sync time in the store and therefore no `date`.
+`kind` is `note`, `document`, or `item`.
+
+```json
+{"trail":"<trail-id>","passages":[{"path":"notes/cedar","date":"2026-01-02","kind":"note","author":"agent","note":"<note-id>","text":"Cedar note.","stale":true}]}
+```
+
+Compact output does not HTML-escape `<`, `>`, or `&`.
+
+`access:"deny"` appears only when at least one source resolves and all resolved
+sources deny retrieval. It does not appear when a query merely has no matches,
+when a collection is empty, or when some sources allow access. The full trail is
+recorded for either output form, and `trail.result_sha256` compares results
+across equivalent requests against the same state. Lexical is the only
+supported mode.
+
+`--full` prints the previous indented query result, including passage
+coordinates, digests and note lineage. Local queries include the canonical
+trail. Served queries include the HTTP caller view. The stored trail is an
+append-only log leaf. It records the request, per-source access, snapshot
+index, allowed source heads, candidate scores and ranks, and packing decisions.
+`trail.id` identifies this record.
 
 `--budget-bytes` defaults to 8,192. It covers released text, not JSON or model
 tokens. First-fit packing skips passages that do not fit and omits exact-content
@@ -77,6 +99,8 @@ an empty candidate list.
 
 `mousa -store STORE trail TRAIL_ID` reads the full canonical record by `trail.id`
 without writing. This is an owner interface, not a way to retrieve historical text.
+Use `recheck --trail TRAIL_ID` to check whether its evidence is still current;
+a served store requires `--text`.
 The caller view carried by a served query reply omits `as_of`,
 head sequence numbers, branch drop counts, and denied-source details other than
 `source_id` and `outcome`.
@@ -268,13 +292,15 @@ the record and exact text, rejects foreign sources or bad digests, is atomic,
 and treats identical imports as no-ops. If an imported citation's trail is
 absent, recall reports `citation_unverifiable`.
 
-Lexical query surfaces a stored note as ordinary evidence plus a `note` object
-carrying its ID, author, creation time, lineage and a `stale` array. Each
-stale entry names the affected `trail_id` (and `segment_id` when a single
-segment retired) with a reason of `source_denied`, `source_withdrawn` or
-`segment_retired`; no cited text is released. Notes follow the same per-source
-access rules as document evidence: a denied or withdrawn note source releases
-nothing, and later access changes do not redact note bytes already released.
+Lexical query's compact output reports a stored note's ID, author, local creation
+date, and true `stale` or `superseded` flags. `--full` surfaces it as ordinary
+evidence plus a `note` object carrying its ID, author, creation time, lineage
+and a `stale` array. Each stale entry names the affected `trail_id` (and
+`segment_id` when a single segment retired) with a reason of `source_denied`,
+`source_withdrawn` or `segment_retired`; no cited text is released. Notes follow
+the same per-source access rules as document evidence: a denied or withdrawn
+note source releases nothing, and later access changes do not redact note bytes
+already released.
 `sync` refuses a source holding notes, and `remember` refuses
 a document source, including one whose items are all inactive.
 
