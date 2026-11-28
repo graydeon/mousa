@@ -261,7 +261,7 @@ func TestSearchLexicalGrammarOrderingAndBounds(t *testing.T) {
 		expression string
 		limit      int
 	}{
-		{"", 1}, {invalidUTF8, 1}, {"a\x00b", 1}, {strings.Repeat("a", 4097), 1}, {"alpha", 0}, {"alpha", 101}, {`"unterminated`, 1},
+		{"", 1}, {invalidUTF8, 1}, {"a\x00b", 1}, {strings.Repeat("a", 4097), 1}, {"alpha", 0}, {"alpha", 201}, {`"unterminated`, 1},
 	} {
 		if got, err := store.SearchLexical(ctx, invalid.expression, invalid.limit); got != nil || !IsCode(err, CodeInvalidQuery) {
 			t.Fatalf("invalid query (%q,%d) = %#v, %v", invalid.expression, invalid.limit, got, err)

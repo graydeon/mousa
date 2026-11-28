@@ -336,6 +336,13 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 	if len(req.Texts) > 1 {
 		retrieval.Fusion = "rrf-k60-v1"
 	}
+	reader := lexicalEvidenceReader{
+		q:               q,
+		representations: make(map[mousa.RepresentationID]mousa.Representation),
+		artifacts:       make(map[mousa.ArtifactID]mousa.Artifact),
+		observations:    make(map[mousa.ObservationID]mousa.Observation),
+		sources:         make(map[mousa.SourceID]mousa.Source),
+	}
 	candidates := make(map[mousa.SegmentID]*queryCandidate)
 	finishRetrieval := store.StartStage(mousa.StageRetrieval)
 	for i, text := range req.Texts {
@@ -371,7 +378,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		for _, proposed := range proposals {
 			row, exists := candidates[proposed.SegmentID]
 			if !exists {
-				row, err = checkProposal(ctx, q, proposed.SegmentID, allowedSet)
+				row, err = reader.checkProposal(ctx, proposed.SegmentID, allowedSet)
 				switch {
 				case IsCode(err, CodeNotFound):
 					branch.DroppedUnknown++
@@ -424,7 +431,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 		}
 		if req.Scope.Kind == "collection" {
 			row := candidates[candidate.SegmentID]
-			location, err := queryPassageLocation(ctx, q, row)
+			location, err := reader.queryPassageLocation(ctx, row)
 			if err != nil {
 				finishPack(err)
 				return nil, err
@@ -469,7 +476,7 @@ func (store *Store) retrieveForTrail(ctx context.Context, q queryer, trail *mous
 			continue
 		}
 		row := candidates[candidate.SegmentID]
-		passage, err := queryPassage(ctx, q, row, noteGrants)
+		passage, err := reader.queryPassage(ctx, row, noteGrants)
 		if err != nil {
 			finishPack(err)
 			return nil, err
@@ -543,12 +550,12 @@ func noteSupersessionEffect(ctx context.Context, q queryer, sourceID mousa.Sourc
 	return &mousa.SupersessionEffect{NoteID: targetID, SegmentID: segmentID, SupersededBy: supersededBy}, nil
 }
 
-func checkProposal(ctx context.Context, q queryer, id mousa.SegmentID, allowed map[mousa.SourceID]bool) (*queryCandidate, error) {
-	segment, err := getSegment(ctx, q, id)
+func (r lexicalEvidenceReader) checkProposal(ctx context.Context, id mousa.SegmentID, allowed map[mousa.SourceID]bool) (*queryCandidate, error) {
+	segment, err := getSegment(ctx, r.q, id)
 	if err != nil {
 		return nil, err
 	}
-	paths, err := queryEvidencePaths(ctx, q, segment)
+	paths, err := r.queryEvidencePaths(ctx, segment)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +573,7 @@ func checkProposal(ctx context.Context, q queryer, id mousa.SegmentID, allowed m
 		ContentSHA256: segment.ContentSHA256, SegmentID: segment.ID, RepresentationID: segment.RepresentationID,
 		SourceIDs: sources, Range: mousa.ByteRange{End: rangeInRepr.End, Start: rangeInRepr.Start},
 	}}
-	text, err := indexedSegmentText(ctx, q, segment)
+	text, err := indexedSegmentText(ctx, r.q, segment)
 	if IsCode(err, CodeIntegrity) || (err == nil && uint64(len(text)) != rangeInRepr.End-rangeInRepr.Start) {
 		row.candidate.Rejected = []string{"content_mismatch"}
 		return row, nil
@@ -579,14 +586,18 @@ func checkProposal(ctx context.Context, q queryer, id mousa.SegmentID, allowed m
 }
 
 func queryEvidencePaths(ctx context.Context, q queryer, segment mousa.Segment) ([]mousa.EvidencePath, error) {
-	repr, err := getRepresentation(ctx, q, segment.RepresentationID)
+	return (lexicalEvidenceReader{q: q}).queryEvidencePaths(ctx, segment)
+}
+
+func (r lexicalEvidenceReader) queryEvidencePaths(ctx context.Context, segment mousa.Segment) ([]mousa.EvidencePath, error) {
+	repr, err := r.representation(ctx, segment.RepresentationID)
 	if err != nil {
 		return nil, lexicalStructuralError("verify query representation", err)
 	}
 	if err := segment.ValidateAgainst(repr); err != nil {
 		return nil, wrap(CodeIntegrity, "verify query coordinates", err)
 	}
-	return lexicalEvidencePaths(ctx, q, segment)
+	return r.paths(ctx, segment)
 }
 
 func evidenceSourceIDs(paths []mousa.EvidencePath) []mousa.SourceID {
@@ -606,6 +617,10 @@ type passageLocation struct {
 }
 
 func queryPassageItem(ctx context.Context, q queryer, paths []mousa.EvidencePath, id mousa.SourceID) (string, bool, error) {
+	return (lexicalEvidenceReader{q: q}).queryPassageItem(ctx, paths, id)
+}
+
+func (r lexicalEvidenceReader) queryPassageItem(ctx context.Context, paths []mousa.EvidencePath, id mousa.SourceID) (string, bool, error) {
 	var path mousa.EvidencePath
 	for _, p := range paths {
 		if p.SourceID == id {
@@ -613,14 +628,14 @@ func queryPassageItem(ctx context.Context, q queryer, paths []mousa.EvidencePath
 			break
 		}
 	}
-	observation, err := getObservation(ctx, q, path.ObservationID)
+	observation, err := r.observation(ctx, path.ObservationID)
 	if err != nil {
 		return "", false, err
 	}
 	item := observation.ExternalObservationID
 	rest, isItem := strings.CutPrefix(item, "item/")
 	if isItem {
-		artifact, err := getArtifact(ctx, q, path.ArtifactID)
+		artifact, err := r.artifact(ctx, path.ArtifactID)
 		if err != nil {
 			return "", false, err
 		}
@@ -633,16 +648,16 @@ func queryPassageItem(ctx context.Context, q queryer, paths []mousa.EvidencePath
 	return item, isItem, nil
 }
 
-func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (passageLocation, error) {
+func (r lexicalEvidenceReader) queryPassageLocation(ctx context.Context, row *queryCandidate) (passageLocation, error) {
 	candidate := row.candidate
 	id := candidate.SourceIDs[0]
-	item, isItem, err := queryPassageItem(ctx, q, row.paths, id)
+	item, isItem, err := r.queryPassageItem(ctx, row.paths, id)
 	if err != nil {
 		return passageLocation{}, err
 	}
 	location := passageLocation{item: item, path: mousa.DefaultNotePath}
 	if isItem {
-		stored, seq, err := localItemLocation(ctx, q, id, item)
+		stored, seq, err := localItemLocation(ctx, r.q, id, item)
 		switch {
 		case err == nil:
 			location.path, location.activationSeq = stored, seq
@@ -654,12 +669,12 @@ func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (
 	return location, nil
 }
 
-func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrants map[mousa.SourceID]bool) (mousa.Passage, error) {
+func (r lexicalEvidenceReader) queryPassage(ctx context.Context, row *queryCandidate, noteGrants map[mousa.SourceID]bool) (mousa.Passage, error) {
 	candidate := row.candidate
 	location := row.location
 	if location.item == "" {
 		var err error
-		location, err = queryPassageLocation(ctx, q, row)
+		location, err = r.queryPassageLocation(ctx, row)
 		if err != nil {
 			return mousa.Passage{}, err
 		}
@@ -669,7 +684,7 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 		SourceID: id, Item: location.item, SegmentID: candidate.SegmentID, Range: candidate.Range,
 		ContentSHA256: candidate.ContentSHA256, Text: row.text, Path: location.path,
 	}
-	repr, err := getRepresentation(ctx, q, candidate.RepresentationID)
+	repr, err := r.representation(ctx, candidate.RepresentationID)
 	if err != nil {
 		return mousa.Passage{}, err
 	}
@@ -682,12 +697,12 @@ func queryPassage(ctx context.Context, q queryer, row *queryCandidate, noteGrant
 		return mousa.Passage{}, wrap(CodeIntegrity, "read query passage policy", err)
 	}
 	if passage.SegmentPolicy == mousa.TextSegmentNoteV1 {
-		passage.Note, err = queryNoteEvidence(ctx, q, id, location.item, noteGrants)
+		passage.Note, err = queryNoteEvidence(ctx, r.q, id, location.item, noteGrants)
 		if err != nil {
 			return mousa.Passage{}, err
 		}
 	} else if location.activationSeq != 0 && (passage.SegmentPolicy == mousa.TextSegmentFixedV1 || passage.SegmentPolicy == mousa.TextSegmentPassageV1) {
-		passage.ActivatedAtUsec, err = readItemActivationTime(ctx, q, location.activationSeq, id, location.item, repr.ID)
+		passage.ActivatedAtUsec, err = readItemActivationTime(ctx, r.q, location.activationSeq, id, location.item, repr.ID)
 		if err != nil {
 			return mousa.Passage{}, err
 		}

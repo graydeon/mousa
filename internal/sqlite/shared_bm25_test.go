@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
@@ -461,7 +462,9 @@ func TestScopeFusionSingleScopeDigest(t *testing.T) {
 	if _, _, err := s.setSourceAccess(ctx, a, mousa.SourceAccessAllow, "test", false, 100); err != nil {
 		t.Fatal(err)
 	}
-	result, err := s.Query(ctx, auditRequest(a))
+	request := auditRequest(a)
+	request.Limit = 100
+	result, err := s.Query(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,5 +564,103 @@ func TestScopeFusionLegacyTrail(t *testing.T) {
 	counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{result.Trail.ID})
 	if err != nil || counts.RecordCounts["trail"] != 1 {
 		t.Fatalf("legacy trail verify = %v, %v", counts, err)
+	}
+}
+
+// TestSharedBM25CandidateLimit: the candidate limit caps each text's merged
+// proposals. An omitted limit uses the default maximum, and the trail records
+// the cap actually used, even when fewer candidates match.
+func TestSharedBM25CandidateLimit(t *testing.T) {
+	s := openLexicalStore(t)
+	defer s.Close()
+	ctx := t.Context()
+	docs := []sharedDoc{}
+	for i := range 201 {
+		docs = append(docs, sharedDoc{fmt.Sprintf("doc-%03d", i), fmt.Sprintf("harbor memo %d", i)})
+	}
+	harbor, _, _ := seedSharedPeer(t, s, "harbor-corpus", 100, docs...)
+	peer, _, _ := seedSharedPeer(t, s, "peer-sparse", 200, sharedDoc{"sparse", "rareword ledger filing"})
+	sources := []mousa.SourceID{harbor, peer}
+
+	omitted, err := s.Query(ctx, sharedRequest(sources, 0, "harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := omitted.Trail.Retrieval.Branches[0]
+	if branch.Proposed != 200 || len(omitted.Trail.Candidates) != 200 || omitted.Trail.Request.Limit != 200 {
+		t.Fatalf("omitted limit: proposed = %d, candidates = %d, request limit = %d; want 200 each",
+			branch.Proposed, len(omitted.Trail.Candidates), omitted.Trail.Request.Limit)
+	}
+
+	hundred, err := s.Query(ctx, sharedRequest(sources, 100, "harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch = hundred.Trail.Retrieval.Branches[0]
+	if branch.Proposed != 100 || len(hundred.Trail.Candidates) != 100 || hundred.Trail.Request.Limit != 100 {
+		t.Fatalf("explicit 100: proposed = %d, candidates = %d, request limit = %d; want 100 each",
+			branch.Proposed, len(hundred.Trail.Candidates), hundred.Trail.Request.Limit)
+	}
+
+	twoHundred, err := s.Query(ctx, sharedRequest(sources, 200, "harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if twoHundred.Trail.Retrieval.Branches[0].Proposed != 200 || twoHundred.Trail.Request.Limit != 200 {
+		t.Fatalf("explicit 200: proposed = %d, request limit = %d; want 200 each",
+			twoHundred.Trail.Retrieval.Branches[0].Proposed, twoHundred.Trail.Request.Limit)
+	}
+
+	if _, err := s.Query(ctx, sharedRequest(sources, 201, "harbor")); !IsCode(err, CodeInvalidQuery) {
+		t.Fatalf("limit 201 error = %v, want CodeInvalidQuery", err)
+	}
+
+	for _, trail := range []mousa.Trail{omitted.Trail, hundred.Trail, twoHundred.Trail} {
+		counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{trail.ID})
+		if err != nil || counts.RecordCounts["trail"] != 1 {
+			t.Fatalf("trail %s verify = %v, %v", trail.ID, counts, err)
+		}
+	}
+
+	// The default matches the explicit resolved cap even below 100: a sparse
+	// omitted-limit trail records 200 and matches an explicit-200 request
+	// byte for byte apart from the volatile request fields.
+	explicit, err := s.Query(ctx, sharedRequest(sources, 200, "rareword"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sparse, err := s.Query(ctx, sharedRequest(sources, 0, "rareword"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Trail.Request.Limit != 200 || sparse.Trail.Request.Limit != 200 {
+		t.Fatalf("sparse request limits = %d / %d, want 200 each",
+			explicit.Trail.Request.Limit, sparse.Trail.Request.Limit)
+	}
+	digestA, digestB := explicit.Trail.ResultSHA256, sparse.Trail.ResultSHA256
+	if digestA != digestB {
+		t.Fatalf("sparse default result digest = %s, explicit-200 digest = %s", digestB, digestA)
+	}
+	restamped := sparse.Trail
+	restamped.Request.RequestID = explicit.Trail.Request.RequestID
+	restamped.Request.RequestedAtUsec = explicit.Trail.Request.RequestedAtUsec
+	restamped.AsOf = explicit.Trail.AsOf
+	sealed, err := mousa.NewTrail(restamped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sealed.ID != explicit.Trail.ID {
+		t.Fatalf("re-stamped sparse trail = %s, want explicit-200 trail %s", sealed.ID, explicit.Trail.ID)
+	}
+	passagesA, err := json.Marshal(explicit.Passages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passagesB, err := json.Marshal(sparse.Passages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(passagesA, passagesB) {
+		t.Fatalf("sparse passages differ:\n%s\n%s", passagesA, passagesB)
 	}
 }

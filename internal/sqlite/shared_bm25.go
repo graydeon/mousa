@@ -106,8 +106,9 @@ const maxBM25JSONSafe = 1<<53 - 1
 // sharedProposals rescores each eligible shard's local BM25 hits with the
 // statistics shared across all eligible shards, then merges by that score,
 // ties by segment ID, at the request limit. Statistics are always computed
-// for a mixed query, even when no shard returns a hit. Memory stays bounded
-// by the per-shard limit, not the shard count.
+// for a mixed query, even when no shard returns a hit. The store reader can
+// prefetch the next shard while the independent scratch index rescores;
+// memory stays bounded by a fixed number of shortlists.
 func sharedProposals(ctx context.Context, q queryer, scopes []lexicalScope, quoted []string, limit int) ([]proposal, *mousa.BM25Stats, error) {
 	stats, err := readBM25Stats(ctx, q, scopes, quoted)
 	if err != nil {
@@ -118,6 +119,29 @@ func sharedProposals(ctx context.Context, q queryer, scopes []lexicalScope, quot
 		return nil, nil, integrity("score shared lexical proposals", err.Error())
 	}
 	expression := strings.Join(quoted, " OR ")
+	ctx, cancel := context.WithCancel(ctx)
+	type shardBatch struct {
+		rows []proposal
+		err  error
+	}
+	batches := make(chan shardBatch, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer close(batches)
+		for _, scope := range scopes {
+			rows, err := scopedProposals(ctx, q, scope, expression, limit, true)
+			select {
+			case batches <- shardBatch{rows, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	defer func() { cancel(); <-done }()
 	var best []proposal
 	var scratch *bm25Scratch
 	var phrases [][]string
@@ -126,11 +150,11 @@ func sharedProposals(ctx context.Context, q queryer, scopes []lexicalScope, quot
 			scratch.close()
 		}
 	}()
-	for _, scope := range scopes {
-		rows, err := scopedProposals(ctx, q, scope, expression, limit, true)
-		if err != nil {
-			return nil, nil, err
+	for batch := range batches {
+		if batch.err != nil {
+			return nil, nil, batch.err
 		}
+		rows := batch.rows
 		if len(rows) == 0 {
 			continue
 		}
@@ -151,6 +175,9 @@ func sharedProposals(ctx context.Context, q queryer, scopes []lexicalScope, quot
 			return cmp.Or(cmp.Compare(a.Score, b.Score), bytes.Compare(a.SegmentID[:], b.SegmentID[:]))
 		})
 		best = best[:min(len(best), limit)]
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
 	return best, stats, nil
 }

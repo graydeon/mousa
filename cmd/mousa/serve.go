@@ -701,6 +701,7 @@ type nativeQuery struct {
 	Scope             nativeScope `json:"scope"`
 	Text              string      `json:"text"`
 	BudgetBytes       uint64      `json:"budget_bytes,omitzero"`
+	Limit             int         `json:"limit,omitzero"`
 	IncludeSuperseded bool        `json:"include_superseded,omitempty"`
 }
 
@@ -821,6 +822,7 @@ func (s *nativeService) handleQuery(ctx context.Context, principal *nativePrinci
 		Texts:             []string{request.Text},
 		Mode:              mousa.QueryLexical,
 		Budget:            mousa.Budget{Unit: mousa.BudgetBytes, Limit: budget},
+		Limit:             request.Limit,
 		PermittedSources:  principal.read,
 		IncludeSuperseded: request.IncludeSuperseded,
 	}, admission)

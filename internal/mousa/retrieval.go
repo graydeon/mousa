@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	maxLexicalCandidates      = 100
 	maxEvidencePaths          = 4096
 	maxPathRepresentations    = 4096
 	maxSourceLifecycleRecords = 4096
@@ -70,8 +69,8 @@ type VerifiedLexicalCandidate struct {
 
 // RankAndVerifyLexicalCandidates validates, ranks, and applies restrictive source lifecycle policy.
 func RankAndVerifyLexicalCandidates(candidates []LexicalCandidateEvidence) ([]VerifiedLexicalCandidate, error) {
-	if len(candidates) > maxLexicalCandidates {
-		return nil, retrievalValidationError("candidates", ValidationCodeInvalidRange, "must contain at most 100 candidates")
+	if len(candidates) > MaxQueryCandidates {
+		return nil, retrievalValidationError("candidates", ValidationCodeInvalidRange, fmt.Sprintf("must contain at most %d candidates", MaxQueryCandidates))
 	}
 	verified := make([]VerifiedLexicalCandidate, len(candidates))
 	seenSegments := make(map[SegmentID]struct{}, len(candidates))

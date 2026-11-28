@@ -10,6 +10,52 @@ import (
 
 const maxLexicalEvidence = 4096
 
+// lexicalEvidenceReader memoizes canonical record reads inside one snapshot.
+// The cache is admission-bounded in count and record size; it never replaces
+// a check and never outlives its transaction.
+type lexicalEvidenceReader struct {
+	q               queryer
+	representations map[mousa.RepresentationID]mousa.Representation
+	artifacts       map[mousa.ArtifactID]mousa.Artifact
+	observations    map[mousa.ObservationID]mousa.Observation
+	sources         map[mousa.SourceID]mousa.Source
+}
+
+func readLexicalRecord[Q any, K comparable, V any](ctx context.Context, q Q, cache map[K]V, id K, read func(context.Context, Q, K) (V, error), small func(V) bool) (V, error) {
+	if record, found := cache[id]; found {
+		return record, nil
+	}
+	record, err := read(ctx, q, id)
+	if err == nil && cache != nil && len(cache) < 1024 && small(record) {
+		cache[id] = record
+	}
+	return record, err
+}
+
+func (r lexicalEvidenceReader) representation(ctx context.Context, id mousa.RepresentationID) (mousa.Representation, error) {
+	return readLexicalRecord(ctx, r.q, r.representations, id, getRepresentation, func(v mousa.Representation) bool {
+		return len(v.Inputs) <= 16 && len(v.ProcessorID)+len(v.ProcessorVersion)+len(v.MediaType) <= 4096
+	})
+}
+
+func (r lexicalEvidenceReader) artifact(ctx context.Context, id mousa.ArtifactID) (mousa.Artifact, error) {
+	return readLexicalRecord[queryRower](ctx, r.q, r.artifacts, id, getArtifact, func(v mousa.Artifact) bool {
+		return len(v.ArtifactKey)+len(v.MediaType) <= 4096
+	})
+}
+
+func (r lexicalEvidenceReader) observation(ctx context.Context, id mousa.ObservationID) (mousa.Observation, error) {
+	return readLexicalRecord[queryRower](ctx, r.q, r.observations, id, getObservation, func(v mousa.Observation) bool {
+		return len(v.ExternalObservationID) <= 4096
+	})
+}
+
+func (r lexicalEvidenceReader) source(ctx context.Context, id mousa.SourceID) (mousa.Source, error) {
+	return readLexicalRecord[queryRower](ctx, r.q, r.sources, id, getSource, func(v mousa.Source) bool {
+		return len(v.Namespace)+len(v.ExternalSourceID) <= 4096
+	})
+}
+
 // SearchVerifiedLexical returns raw lexical candidates with canonical ancestry and restrictive lifecycle decisions.
 func (store *Store) SearchVerifiedLexical(ctx context.Context, expression string, limit int) ([]mousa.VerifiedLexicalCandidate, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -73,11 +119,19 @@ func verifyLexicalEvidence(ctx context.Context, q queryer, raw []LexicalCandidat
 }
 
 func lexicalEvidencePaths(ctx context.Context, q queryer, segment mousa.Segment) ([]mousa.EvidencePath, error) {
+	return (lexicalEvidenceReader{q: q}).paths(ctx, segment)
+}
+
+func (r lexicalEvidenceReader) paths(ctx context.Context, segment mousa.Segment) ([]mousa.EvidencePath, error) {
 	visited := 0
-	return lexicalRepresentationPaths(ctx, q, segment.RepresentationID, nil, make(map[mousa.RepresentationID]struct{}), &visited)
+	return r.representationPaths(ctx, segment.RepresentationID, nil, make(map[mousa.RepresentationID]struct{}), &visited)
 }
 
 func lexicalRepresentationPaths(ctx context.Context, q queryer, id mousa.RepresentationID, chain []mousa.RepresentationID, visiting map[mousa.RepresentationID]struct{}, visited *int) ([]mousa.EvidencePath, error) {
+	return (lexicalEvidenceReader{q: q}).representationPaths(ctx, id, chain, visiting, visited)
+}
+
+func (r lexicalEvidenceReader) representationPaths(ctx context.Context, id mousa.RepresentationID, chain []mousa.RepresentationID, visiting map[mousa.RepresentationID]struct{}, visited *int) ([]mousa.EvidencePath, error) {
 	if _, cycle := visiting[id]; cycle {
 		return nil, integrity("load lexical ancestry", "representation ancestry contains a cycle")
 	}
@@ -85,7 +139,7 @@ func lexicalRepresentationPaths(ctx context.Context, q queryer, id mousa.Represe
 	if *visited > maxLexicalEvidence {
 		return nil, wrap(CodeResourceLimit, "load lexical ancestry", errors.New("visited representation count exceeds 4096"))
 	}
-	representation, err := getRepresentation(ctx, q, id)
+	representation, err := r.representation(ctx, id)
 	if err != nil {
 		return nil, lexicalStructuralError("load lexical representation", err)
 	}
@@ -102,7 +156,7 @@ func lexicalRepresentationPaths(ctx context.Context, q queryer, id mousa.Represe
 		case "representation":
 			var inputID mousa.RepresentationID
 			copy(inputID[:], input.id)
-			nested, err := lexicalRepresentationPaths(ctx, q, inputID, chain, visiting, visited)
+			nested, err := r.representationPaths(ctx, inputID, chain, visiting, visited)
 			if err != nil {
 				return nil, err
 			}
@@ -110,15 +164,15 @@ func lexicalRepresentationPaths(ctx context.Context, q queryer, id mousa.Represe
 		case "artifact":
 			var artifactID mousa.ArtifactID
 			copy(artifactID[:], input.id)
-			artifact, err := getArtifact(ctx, q, artifactID)
+			artifact, err := r.artifact(ctx, artifactID)
 			if err != nil {
 				return nil, lexicalStructuralError("load lexical artifact", err)
 			}
-			observation, err := getObservation(ctx, q, artifact.ObservationID)
+			observation, err := r.observation(ctx, artifact.ObservationID)
 			if err != nil {
 				return nil, lexicalStructuralError("load lexical observation", err)
 			}
-			if _, err := getSource(ctx, q, observation.SourceID); err != nil {
+			if _, err := r.source(ctx, observation.SourceID); err != nil {
 				return nil, lexicalStructuralError("load lexical source", err)
 			}
 			paths = append(paths, mousa.EvidencePath{

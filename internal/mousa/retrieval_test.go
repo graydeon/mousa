@@ -237,7 +237,7 @@ func TestRankAndVerifyLexicalCandidatesRejectsInvalidEvidence(t *testing.T) {
 			name: "candidate bound",
 			build: func() []LexicalCandidateEvidence {
 				candidate := validLexicalCandidateForTest(t, 1, "candidate bound")
-				candidates := make([]LexicalCandidateEvidence, maxLexicalCandidates+1)
+				candidates := make([]LexicalCandidateEvidence, 201)
 				for index := range candidates {
 					candidates[index] = candidate
 				}

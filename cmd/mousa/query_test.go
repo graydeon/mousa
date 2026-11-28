@@ -156,4 +156,12 @@ func TestCLIQueryTrailDigestStable(t *testing.T) {
 			t.Fatalf("owner read did not return the recorded trail: %v", inspected)
 		}
 	}
+
+	// The candidate limit is accepted to 200 and recorded in the trail.
+	_, limited := run.run(false, "query", "--full", "--source", source, "--limit", "200", "otters")
+	request, _ := trailOf(limited)["request"].(map[string]any)
+	if request["limit"] != float64(200) {
+		t.Fatalf("--limit 200 trail request = %v", trailOf(limited)["request"])
+	}
+	run.run(true, "query", "--full", "--source", source, "--limit", "201", "otters")
 }

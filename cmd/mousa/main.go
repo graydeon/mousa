@@ -206,6 +206,7 @@ query options (before positional arguments):
   default                    one-line JSON with trail ID and passages
   --full                     show the full trail and passage metadata
   --budget-bytes <positive>  released UTF-8 text bytes; default 8192, not model tokens
+  --limit <1-200>            lexical candidate limit; zero uses the default 200
   --mode lexical             query mode; only lexical is available
   --include-superseded       pack passages whose notes were superseded
 

@@ -354,6 +354,13 @@ copies of already packed passages. The trail records `packing.used`, `packed`,
 and no retrieval, candidates, or packing. An allowed query with no matches has
 an empty candidate list.
 
+Queries consider up to 200 lexical candidates per query text. Use `--limit`
+(HTTP `limit`) to set a cap from 1 to 200; zero uses the default. Shared BM25
+uses the same cap for each shard's shortlist. The trail records the cap used,
+even if fewer candidates match. Verification accepts older trails. Older
+binaries reject trails whose recorded request limit exceeds 100; fix forward
+after writing one.
+
 `mousa -store STORE trail TRAIL_ID` reads the full canonical record by `trail.id`
 without writing. This is an owner interface, not a way to retrieve historical text.
 The caller view carried by a served query reply omits `as_of`,

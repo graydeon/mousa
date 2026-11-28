@@ -101,6 +101,13 @@ copies of already packed passages. The trail records `packing.used`, `packed`,
 and no retrieval, candidates, or packing. An allowed query with no matches has
 an empty candidate list.
 
+Queries consider up to 200 lexical candidates per query text. Use `--limit`
+(HTTP `limit`) to set a cap from 1 to 200; zero uses the default. Shared BM25
+uses the same cap for each shard's shortlist. The trail records the cap used,
+even if fewer candidates match. Verification accepts older trails. Older
+binaries reject trails whose recorded request limit exceeds 100; fix forward
+after writing one.
+
 `mousa -store STORE trail TRAIL_ID` reads the full canonical record by `trail.id`
 without writing. This is an owner interface, not a way to retrieve historical text.
 Use `recheck --trail TRAIL_ID` to check whether its evidence is still current;
@@ -488,7 +495,7 @@ Use a caller token, not the monitor token, for the smoke commands.
 `POST /v1/query`, `POST /v1/notes` and `POST /v1/documents` accept one JSON
 object each with typed fields:
 
-- `/v1/query`: `{"scope":{"source"|"sources"|"collection"},"text","budget_bytes"}`
+- `/v1/query`: `{"scope":{"source"|"sources"|"collection"},"text","budget_bytes","limit"}`
 - `/v1/notes`: `{"scope":{"source"},"text","citations":[{"trail_id","segment_ids"}]}`
 - `/v1/documents`: `{"source","record":{"id","text"|"deleted"},"segment_policy"}`
 

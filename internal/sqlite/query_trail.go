@@ -180,16 +180,19 @@ func putTrail(ctx context.Context, conn *sql.Conn, trail mousa.Trail) error {
 	if err := appendLog(ctx, conn, queryTrailKind, trail.ID[:], nil, data); err != nil {
 		return err
 	}
-	written, persisted, err := readTrailRecord(ctx, conn, trail.ID)
+	row, err := readTrailRow(ctx, conn, trail.ID)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(persisted, data) {
+	if !bytes.Equal(row.data, data) {
 		return integrity("write query trail", "exact read-back disagrees with write")
+	}
+	if err := row.verify(ctx, conn, trail.ID, trail); err != nil {
+		return err
 	}
 	// Query already verified these references in its read snapshot. Check
 	// what was just written without rereading candidates under the write lock.
-	return checkTrailLookups(ctx, conn, written)
+	return checkTrailLookups(ctx, conn, trail)
 }
 
 // GetTrail reads a verified historical trail without writing anything. A nil
@@ -246,37 +249,58 @@ func checkTrailAccess(ctx context.Context, q queryer, trail mousa.Trail, grants 
 
 func missingTrail() error { return readError("get query trail", sql.ErrNoRows) }
 
-func readTrailRecord(ctx context.Context, q queryer, id mousa.SourceTrailID) (mousa.Trail, []byte, error) {
-	var requested uint64
-	var seq sql.NullInt64
-	var data, source, hash []byte
+type trailRow struct {
+	requested uint64
+	seq       sql.NullInt64
+	data      []byte
+	source    []byte
+	hash      []byte
+}
+
+func readTrailRow(ctx context.Context, q queryer, id mousa.SourceTrailID) (trailRow, error) {
+	var row trailRow
 	err := q.QueryRowContext(ctx, `SELECT t.requested_at_usec, t.record_json, l.seq, l.source_id, l.leaf_hash
 		FROM trails t LEFT JOIN log l ON l.kind = 'trail' AND l.record_id = t.id WHERE t.id = ?`, id[:]).
-		Scan(&requested, &data, &seq, &source, &hash)
+		Scan(&row.requested, &row.data, &row.seq, &row.source, &row.hash)
 	if err != nil {
-		return mousa.Trail{}, nil, readError("get query trail", err)
+		return trailRow{}, readError("get query trail", err)
 	}
-	trail, err := mousa.DecodeTrail(data)
-	if err != nil {
-		return mousa.Trail{}, nil, wrap(CodeIntegrity, "decode query trail", err)
+	return row, nil
+}
+
+func (r trailRow) verify(ctx context.Context, q queryer, id mousa.SourceTrailID, trail mousa.Trail) error {
+	if trail.ID != id || trail.Request.RequestedAtUsec != r.requested {
+		return integrity("get query trail", "trail identity or time projection disagrees")
 	}
-	if trail.ID != id || trail.Request.RequestedAtUsec != requested {
-		return mousa.Trail{}, nil, integrity("get query trail", "trail identity or time projection disagrees")
+	if !r.seq.Valid || r.seq.Int64 <= 0 || uint64(r.seq.Int64) <= trail.AsOf || r.source != nil {
+		return integrity("get query trail", "trail leaf is missing or does not follow its snapshot")
 	}
-	if !seq.Valid || seq.Int64 <= 0 || uint64(seq.Int64) <= trail.AsOf || source != nil {
-		return mousa.Trail{}, nil, integrity("get query trail", "trail leaf is missing or does not follow its snapshot")
-	}
-	if err := checkLeaf(queryTrailKind, source, hash, data, nil); err != nil {
-		return mousa.Trail{}, nil, wrap(CodeIntegrity, "get query trail", err)
+	if err := checkLeaf(queryTrailKind, r.source, r.hash, r.data, nil); err != nil {
+		return wrap(CodeIntegrity, "get query trail", err)
 	}
 	storeID, err := getStoreID(ctx, q)
 	if err != nil {
-		return mousa.Trail{}, nil, err
+		return err
 	}
 	if trail.StoreID != storeID.String() {
-		return mousa.Trail{}, nil, integrity("get query trail", "trail belongs to a different store")
+		return integrity("get query trail", "trail belongs to a different store")
 	}
-	return trail, data, nil
+	return nil
+}
+
+func readTrailRecord(ctx context.Context, q queryer, id mousa.SourceTrailID) (mousa.Trail, []byte, error) {
+	row, err := readTrailRow(ctx, q, id)
+	if err != nil {
+		return mousa.Trail{}, nil, err
+	}
+	trail, err := mousa.DecodeTrail(row.data)
+	if err != nil {
+		return mousa.Trail{}, nil, wrap(CodeIntegrity, "decode query trail", err)
+	}
+	if err := row.verify(ctx, q, id, trail); err != nil {
+		return mousa.Trail{}, nil, err
+	}
+	return trail, row.data, nil
 }
 
 func checkTrailReferences(ctx context.Context, q queryer, trail mousa.Trail) error {

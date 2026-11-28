@@ -295,10 +295,38 @@ func TestServeCLIAndSourceGrants(t *testing.T) {
 		t.Fatalf("granted source decision = %v", decision)
 	}
 
+	// The candidate limit accepts values to 200 and records them in the
+	// trail; 201 is rejected as an invalid query.
+	status, _, data := postNative(t, endpoint+"/v1/query", writerToken, []byte(`{"scope":{"source":"docs"},"text":"walruses","limit":200}`))
+	if status != http.StatusOK {
+		t.Fatalf("limit-200 query = %d: %s", status, data)
+	}
+	limited := envelopeResult(t, data)
+	request, _ := limited["trail"].(map[string]any)["request"].(map[string]any)
+	if request["limit"] != float64(200) {
+		t.Fatalf("limit-200 trail request = %v", limited["trail"])
+	}
+	status, _, data = postNative(t, endpoint+"/v1/query", writerToken, []byte(`{"scope":{"source":"docs"},"text":"walruses","limit":201}`))
+	if status != http.StatusBadRequest {
+		t.Fatalf("limit-201 query = %d, want 400: %s", status, data)
+	}
+	code, stdout, stderr = runEndpoint(t, endpoint, writerToken, "", "query", "--full", "--source", "docs", "--limit", "200", "walruses")
+	if code != 0 {
+		t.Fatalf("endpoint query --limit 200 failed: %d %s", code, stderr)
+	}
+	var limitedCLI map[string]any
+	if err := json.Unmarshal([]byte(stdout), &limitedCLI); err != nil {
+		t.Fatalf("endpoint query is not JSON: %s", stdout)
+	}
+	cliRequest, _ := trailOf(limitedCLI)["request"].(map[string]any)
+	if cliRequest["limit"] != float64(200) {
+		t.Fatalf("endpoint --limit 200 trail request = %v", trailOf(limitedCLI)["request"])
+	}
+
 	// A document add and a second revision keep one source/item identity
 	// while the representation moves forward.
 	docURL := endpoint + "/v1/documents"
-	status, _, data := postNative(t, docURL, writerToken, []byte(`{"source":"docs","record":{"id":"b.md","text":"Ferrets patrol the lower creek."}}`))
+	status, _, data = postNative(t, docURL, writerToken, []byte(`{"source":"docs","record":{"id":"b.md","text":"Ferrets patrol the lower creek."}}`))
 	if status != http.StatusOK {
 		t.Fatalf("document add = %d: %s", status, data)
 	}

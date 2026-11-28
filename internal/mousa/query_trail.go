@@ -17,7 +17,7 @@ import (
 
 const (
 	TrailSchema                   = "mousa.trail.v1"
-	MaxQueryCandidates            = 100
+	MaxQueryCandidates            = 200
 	MaxScopeSources               = 128
 	ScopedBM25                    = "fts5-bm25-ancestry-shard-v1"
 	QueryLexical       QueryMode  = "lexical"

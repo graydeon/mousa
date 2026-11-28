@@ -86,7 +86,7 @@ func searchLexical(ctx context.Context, q queryer, expression string, limit int)
 }
 
 func validateLexicalQuery(expression string, limit int) error {
-	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 || containsNUL(expression) || limit < 1 || limit > 100 {
+	if !utf8.ValidString(expression) || len(expression) < 1 || len(expression) > 4096 || containsNUL(expression) || limit < 1 || limit > mousa.MaxQueryCandidates {
 		return wrap(CodeInvalidQuery, "search lexical", errors.New("query expression or limit is out of bounds"))
 	}
 	return nil
