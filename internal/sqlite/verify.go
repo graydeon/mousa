@@ -50,30 +50,40 @@ func verificationCounts(ctx context.Context, q queryer, statement string) (map[s
 	return counts, classify("count verified records", rows.Err())
 }
 
+type Verification struct {
+	RecordCounts                  map[string]int64 `json:"record_counts"`
+	UnverifiableMetaPathOmissions int64            `json:"unverifiable_meta_path_omissions,omitzero"`
+}
+
 // Verify checks a consistent page snapshot, without a writable connection to
 // the original store. FTS5's integrity command needs write permission on the copy.
-func (store *Store) Verify(ctx context.Context) (map[string]int64, error) {
+func (store *Store) Verify(ctx context.Context) (Verification, error) {
 	dir, err := os.MkdirTemp("", "mousa-verify-")
 	if err != nil {
-		return nil, wrap(CodeInternal, "create verify snapshot directory", err)
+		return Verification{}, wrap(CodeInternal, "create verify snapshot directory", err)
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "snapshot.sqlite")
 	if err := store.copyPages(ctx, path); err != nil {
-		return nil, err
+		return Verification{}, err
 	}
 	db, err := connect(ctx, path, false)
 	if err != nil {
-		return nil, err
+		return Verification{}, err
 	}
 	defer db.Close()
 	if _, err := checkStoreIdentity(ctx, db); err != nil {
-		return nil, err
+		return Verification{}, err
 	}
-	if err := verifyStore(ctx, db, true, false); err != nil {
-		return nil, err
+	unverifiable, err := verifyStore(ctx, db, true, false)
+	if err != nil {
+		return Verification{}, err
 	}
-	return verificationCounts(ctx, db, storeCountsSQL)
+	counts, err := verificationCounts(ctx, db, storeCountsSQL)
+	if err != nil {
+		return Verification{}, err
+	}
+	return Verification{RecordCounts: counts, UnverifiableMetaPathOmissions: unverifiable}, nil
 }
 
 func (store *Store) copyPages(ctx context.Context, path string) error {
@@ -104,29 +114,39 @@ func (store *Store) copyPages(ctx context.Context, path string) error {
 }
 
 func (store *Store) VerifyLog(ctx context.Context) (map[string]int64, error) {
-	return verifyLog(ctx, store.db)
+	return verifyLog(ctx, store.db, pathHistories{})
 }
 
 // VerifyTrails verifies the named records in one read snapshot, as the store owner.
-func (store *Store) VerifyTrails(ctx context.Context, ids []mousa.SourceTrailID) (map[string]int64, error) {
+func (store *Store) VerifyTrails(ctx context.Context, ids []mousa.SourceTrailID) (Verification, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return nil, classify("begin named trail verification", err)
+		return Verification{}, classify("begin named trail verification", err)
 	}
 	defer tx.Rollback()
 	seen := make(map[mousa.SourceTrailID]bool, len(ids))
+	histories := pathHistories{}
+	var unverifiable int64
 	for _, id := range ids {
 		if seen[id] {
 			continue
 		}
 		trail, _, err := readTrailRecord(ctx, tx, id)
 		if err != nil {
-			return nil, err
+			return Verification{}, err
 		}
-		if err := checkTrailReferences(ctx, tx, trail); err != nil {
-			return nil, err
+		count, err := verifyTrailReferences(ctx, tx, trail, histories)
+		if err != nil {
+			return Verification{}, err
 		}
+		unverifiable += count
 		seen[id] = true
 	}
-	return map[string]int64{"trail": int64(len(seen))}, classify("finish named trail verification", tx.Commit())
+	if err := classify("finish named trail verification", tx.Commit()); err != nil {
+		return Verification{}, err
+	}
+	return Verification{
+		RecordCounts:                  map[string]int64{"trail": int64(len(seen))},
+		UnverifiableMetaPathOmissions: unverifiable,
+	}, nil
 }

@@ -224,7 +224,7 @@ func TestSharedBM25Verify(t *testing.T) {
 		}
 	}
 	counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{result.Trail.ID})
-	if err != nil || counts["trail"] != 1 {
+	if err != nil || counts.RecordCounts["trail"] != 1 {
 		t.Fatalf("shared trail verify = %v, %v", counts, err)
 	}
 	trail := result.Trail
@@ -323,7 +323,7 @@ func TestSharedBM25Verify(t *testing.T) {
 	if len(stats.Frequencies) != 2 || stats.Frequencies[0] != stats.Frequencies[1] {
 		t.Fatalf("repeated-phrase frequencies = %v, want two equal slots", stats.Frequencies)
 	}
-	if counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{repeated.Trail.ID}); err != nil || counts["trail"] != 1 {
+	if counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{repeated.Trail.ID}); err != nil || counts.RecordCounts["trail"] != 1 {
 		t.Fatalf("repeated-phrase trail verify = %v, %v", counts, err)
 	}
 }
@@ -360,7 +360,7 @@ func TestSharedBM25Recheck(t *testing.T) {
 		recheck.Stale[0].TrailID != result.Trail.ID || recheck.Stale[0].Reason != "bm25_statistics_changed" {
 		t.Fatalf("recheck = %+v, want stale bm25_statistics_changed", recheck)
 	}
-	if counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{result.Trail.ID}); err != nil || counts["trail"] != 1 {
+	if counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{result.Trail.ID}); err != nil || counts.RecordCounts["trail"] != 1 {
 		t.Fatalf("verify after shard growth = %v, %v", counts, err)
 	}
 	// The check runs read-only against the main database: no scratch writes.
@@ -559,7 +559,7 @@ func TestScopeFusionLegacyTrail(t *testing.T) {
 		t.Fatalf("legacy trail recheck = %+v, %v; want fresh with an empty stale list", recheck, err)
 	}
 	counts, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{result.Trail.ID})
-	if err != nil || counts["trail"] != 1 {
+	if err != nil || counts.RecordCounts["trail"] != 1 {
 		t.Fatalf("legacy trail verify = %v, %v", counts, err)
 	}
 }

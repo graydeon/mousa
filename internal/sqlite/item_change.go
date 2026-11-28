@@ -12,7 +12,7 @@ import (
 
 const logIndexSQL = `SELECT coalesce(max(seq), 0) FROM log`
 
-func appendItemChange(ctx context.Context, conn *sql.Conn, source mousa.SourceID, item string, previous, current *mousa.RepresentationID) error {
+func appendItemChange(ctx context.Context, conn *sql.Conn, source mousa.SourceID, item string, previous, current *mousa.RepresentationID, creationPath string) error {
 	var tail uint64
 	if err := conn.QueryRowContext(ctx, logIndexSQL).Scan(&tail); err != nil {
 		return classify("read item change index", err)
@@ -21,7 +21,7 @@ func appendItemChange(ctx context.Context, conn *sql.Conn, source mousa.SourceID
 	if current != nil {
 		activatedAtUsec = time.Now().UnixMicro()
 	}
-	change, err := mousa.NewItemChange(source, item, tail+1, previous, current, activatedAtUsec)
+	change, err := mousa.NewItemChange(source, item, tail+1, previous, current, activatedAtUsec, creationPath)
 	if err != nil {
 		return wrap(CodeInvalidRecord, "make item change", err)
 	}

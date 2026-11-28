@@ -50,8 +50,8 @@ func verifyCommand(ctx context.Context, storePath string, args []string) error {
 	}
 	defer store.Close()
 	result := struct {
-		Scope        string           `json:"scope"`
-		RecordCounts map[string]int64 `json:"record_counts"`
+		Scope string `json:"scope"`
+		sqlite.Verification
 	}{}
 	switch {
 	case *logOnly:
@@ -59,10 +59,10 @@ func verifyCommand(ctx context.Context, storePath string, args []string) error {
 		result.RecordCounts, err = store.VerifyLog(ctx)
 	case len(ids) != 0:
 		result.Scope = "trails"
-		result.RecordCounts, err = store.VerifyTrails(ctx, ids)
+		result.Verification, err = store.VerifyTrails(ctx, ids)
 	default:
 		result.Scope = "store"
-		result.RecordCounts, err = store.Verify(ctx)
+		result.Verification, err = store.Verify(ctx)
 	}
 	if err != nil {
 		return err

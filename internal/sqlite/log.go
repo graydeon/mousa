@@ -58,7 +58,7 @@ func checkLeaf(kind string, sourceID, leaf, record, recordSource []byte) error {
 
 // verifyLog checks sequence, leaf identity, ordered access history and coverage
 // separately for every logged record kind.
-func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
+func verifyLog(ctx context.Context, db *sql.DB, histories pathHistories) (map[string]int64, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, startupError("begin log verification", err)
@@ -72,7 +72,6 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	counts := make(map[string]int64)
 	accessTimes := make(map[mousa.SourceID]int64)
 	itemHeads := make(map[localItemKey]localItemHead)
-	pathHeads := make(map[localItemKey]string)
 	var lastChange mousa.ItemChange
 	var want int64 = 1
 	for rows.Next() {
@@ -109,6 +108,9 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 			if err := applyVerifiedItemChange(itemHeads, change); err != nil {
 				return nil, err
 			}
+			if err := histories.applyItemChange(change); err != nil {
+				return nil, err
+			}
 			lastChange = change
 		}
 		if kind == mousa.LogKindPathMove {
@@ -116,20 +118,8 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 			if err != nil {
 				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
 			}
-			for _, entry := range move.Records {
-				key := localItemKey{move.SourceID, entry.ItemID}
-				// A move only rewrites a location an earlier item change
-				// projected; activation itself writes no move leaf.
-				if _, exists := itemHeads[key]; !exists {
-					return nil, integrity("verify log", fmt.Sprintf("seq %d: path move names an item with no projected activation", seq))
-				}
-				// The first logged move is the earliest path evidence: the
-				// path an item was created under is not itself logged. Every
-				// later move must name the path the chain left.
-				if head, exists := pathHeads[key]; exists && head != entry.OldPath {
-					return nil, integrity("verify log", fmt.Sprintf("seq %d: path move old path disagrees with log history", seq))
-				}
-				pathHeads[key] = entry.NewPath
+			if err := histories.applyPathMove(move); err != nil {
+				return nil, integrity("verify log", fmt.Sprintf("seq %d: %v", seq, err))
 			}
 		}
 		if kind == logKindSourceHistory {
@@ -192,7 +182,7 @@ func verifyLog(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	if err := verifyItemChangeHeads(ctx, tx, itemHeads); err != nil {
 		return nil, err
 	}
-	if err := verifyPathHeads(ctx, tx, pathHeads); err != nil {
+	if err := verifyPathHeads(ctx, tx, histories); err != nil {
 		return nil, err
 	}
 	if _, err := getStoreID(ctx, tx); err != nil {

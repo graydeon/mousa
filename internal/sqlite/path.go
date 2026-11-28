@@ -7,7 +7,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -179,11 +181,117 @@ func decodePathMoveLeaf(seq uint64, kind string, recordID, leafSource, leaf, rec
 	return move, nil
 }
 
+type itemPathMove struct {
+	seq  uint64
+	path string
+}
+
+type itemPathHistory struct {
+	createdAt uint64
+	initial   string
+	moves     []itemPathMove
+}
+
+type pathHistories map[mousa.SourceID]map[string]itemPathHistory
+
+func (h itemPathHistory) pathAtSeq(asOf uint64) (string, bool) {
+	if h.createdAt == 0 || asOf < h.createdAt {
+		return mousa.DefaultNotePath, true
+	}
+	if h.initial == "" {
+		return "", false
+	}
+	for _, move := range slices.Backward(h.moves) {
+		if move.seq <= asOf {
+			return move.path, true
+		}
+	}
+	return h.initial, true
+}
+
+func (histories pathHistories) applyItemChange(change mousa.ItemChange) error {
+	items, exists := histories[change.SourceID]
+	if !exists {
+		items = make(map[string]itemPathHistory)
+		histories[change.SourceID] = items
+	}
+	if _, exists := items[change.ItemID]; !exists {
+		if change.Previous != nil || change.Current == nil {
+			return integrity("verify item path history", "first item change is not a creation")
+		}
+		items[change.ItemID] = itemPathHistory{createdAt: change.Seq, initial: change.CreationPath}
+		return nil
+	}
+	if change.CreationPath != "" {
+		return integrity("verify item path history", "non-initial item change carries a creation path")
+	}
+	return nil
+}
+
+func (histories pathHistories) applyPathMove(move mousa.PathMove) error {
+	items := histories[move.SourceID]
+	for _, entry := range move.Records {
+		h, exists := items[entry.ItemID]
+		if !exists {
+			return integrity("verify path move", "path move names an item with no creation")
+		}
+		if h.initial == "" {
+			h.initial = entry.OldPath
+		} else if path, known := h.pathAtSeq(move.Seq); !known || path != entry.OldPath {
+			return integrity("verify path move", "path move old path disagrees with log history")
+		}
+		h.moves = append(h.moves, itemPathMove{seq: move.Seq, path: entry.NewPath})
+		items[entry.ItemID] = h
+	}
+	return nil
+}
+
+func (histories pathHistories) loadSource(ctx context.Context, q queryer, source mousa.SourceID) error {
+	if _, exists := histories[source]; exists {
+		return nil
+	}
+	histories[source] = make(map[string]itemPathHistory)
+	rows, err := q.QueryContext(ctx, logRecordSQL+` WHERE l.source_id = ? AND l.kind IN ('item_change', 'path_move') ORDER BY l.seq`, source[:])
+	if err != nil {
+		return classify("load item path history", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var seq int64
+		var kind string
+		var recordID, leafSource, leaf, record, recordSource []byte
+		if err := rows.Scan(&seq, &kind, &recordID, &leafSource, &leaf, &record, &recordSource); err != nil {
+			return classify("scan item path history", err)
+		}
+		switch kind {
+		case mousa.LogKindItemChange:
+			if err := checkLeaf(kind, leafSource, leaf, record, recordSource); err != nil {
+				return integrity("load item path history", fmt.Sprintf("seq %d: %v", seq, err))
+			}
+			change, err := readItemChange(uint64(seq), recordID, leafSource, record)
+			if err != nil {
+				return err
+			}
+			if err := histories.applyItemChange(change); err != nil {
+				return err
+			}
+		case mousa.LogKindPathMove:
+			move, err := decodePathMoveLeaf(uint64(seq), kind, recordID, leafSource, leaf, record, recordSource)
+			if err != nil {
+				return err
+			}
+			if err := histories.applyPathMove(move); err != nil {
+				return err
+			}
+		}
+	}
+	return classify("scan item path history", rows.Err())
+}
+
 // verifyPathHeads compares every stored item path with the path the logged
-// move chain leaves, consuming each head it accounts for. Items never moved
-// keep whatever path activation wrote; their projection still has to be a
-// valid path or their literal item ID.
-func verifyPathHeads(ctx context.Context, q queryer, heads map[localItemKey]string) error {
+// creation and move chain leaves. Legacy items with no logged anchor remain
+// unprovable rather than contradicting their projection.
+func verifyPathHeads(ctx context.Context, q queryer, histories pathHistories) error {
 	rows, err := q.QueryContext(ctx, `SELECT source_id, item_id, path FROM local_items`)
 	if err != nil {
 		return classify("scan item paths", err)
@@ -198,22 +306,16 @@ func verifyPathHeads(ctx context.Context, q queryer, heads map[localItemKey]stri
 		if len(source) != len(mousa.SourceID{}) {
 			return integrity("verify item paths", "invalid item identity projection")
 		}
-		key := localItemKey{mousa.SourceID(source), item}
+		sourceID := mousa.SourceID(source)
 		if !validStoredPath(path, item) {
 			return integrity("verify item paths", "item path is not a valid path")
 		}
-		if head, exists := heads[key]; exists {
-			if head != path {
-				return integrity("verify item paths", "local item path disagrees with log history")
-			}
-			delete(heads, key)
+		if head, known := histories[sourceID][item].pathAtSeq(math.MaxUint64); known && head != path {
+			return integrity("verify item paths", "local item path disagrees with log history")
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return classify("scan item paths", err)
-	}
-	if len(heads) != 0 {
-		return integrity("verify item paths", "path move names an item with no projection")
 	}
 	return nil
 }

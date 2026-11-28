@@ -605,11 +605,9 @@ type passageLocation struct {
 	activationSeq uint64
 }
 
-func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (passageLocation, error) {
-	candidate := row.candidate
-	id := candidate.SourceIDs[0]
+func queryPassageItem(ctx context.Context, q queryer, paths []mousa.EvidencePath, id mousa.SourceID) (string, bool, error) {
 	var path mousa.EvidencePath
-	for _, p := range row.paths {
+	for _, p := range paths {
 		if p.SourceID == id {
 			path = p
 			break
@@ -617,19 +615,30 @@ func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (
 	}
 	observation, err := getObservation(ctx, q, path.ObservationID)
 	if err != nil {
-		return passageLocation{}, err
+		return "", false, err
 	}
 	item := observation.ExternalObservationID
-	isItem := strings.HasPrefix(item, "item/")
-	if rest, ok := strings.CutPrefix(item, "item/"); ok {
+	rest, isItem := strings.CutPrefix(item, "item/")
+	if isItem {
 		artifact, err := getArtifact(ctx, q, path.ArtifactID)
 		if err != nil {
-			return passageLocation{}, err
+			return "", false, err
 		}
+		var ok bool
 		item, ok = strings.CutSuffix(rest, localRevisionSuffix(artifact.ContentSHA256))
 		if !ok || item == "" {
-			return passageLocation{}, integrity("query passage item", "item revision identity disagrees with artifact")
+			return "", false, integrity("query passage item", "item revision identity disagrees with artifact")
 		}
+	}
+	return item, isItem, nil
+}
+
+func queryPassageLocation(ctx context.Context, q queryer, row *queryCandidate) (passageLocation, error) {
+	candidate := row.candidate
+	id := candidate.SourceIDs[0]
+	item, isItem, err := queryPassageItem(ctx, q, row.paths, id)
+	if err != nil {
+		return passageLocation{}, err
 	}
 	location := passageLocation{item: item, path: mousa.DefaultNotePath}
 	if isItem {

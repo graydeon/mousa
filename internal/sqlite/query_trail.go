@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -86,39 +87,45 @@ func (store *Store) ListTrails(ctx context.Context, filter TrailListFilter, emit
 	return classify("finish trail list", tx.Commit())
 }
 
-func verifyQueryTrails(ctx context.Context, db *sql.DB) error {
+func verifyQueryTrails(ctx context.Context, db *sql.DB, histories pathHistories) (int64, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return classify("begin verify trails", err)
+		return 0, classify("begin verify trails", err)
 	}
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM trails ORDER BY id`)
 	if err != nil {
-		return classify("scan trails", err)
+		return 0, classify("scan trails", err)
 	}
 	defer rows.Close()
+	var unverifiable int64
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
-			return classify("scan trail ID", err)
+			return 0, classify("scan trail ID", err)
 		}
 		var id mousa.SourceTrailID
 		if len(raw) != len(id) {
-			return integrity("scan trail ID", "invalid trail ID length")
+			return 0, integrity("scan trail ID", "invalid trail ID length")
 		}
 		copy(id[:], raw)
 		trail, _, err := readTrailRecord(ctx, tx, id)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if err := checkTrailReferences(ctx, tx, trail); err != nil {
-			return err
+		count, err := verifyTrailReferences(ctx, tx, trail, histories)
+		if err != nil {
+			return 0, err
 		}
+		unverifiable += count
 	}
 	if err := rows.Err(); err != nil {
-		return classify("finish scanning trails", err)
+		return 0, classify("finish scanning trails", err)
 	}
-	return classify("finish verify trails", tx.Commit())
+	if err := classify("finish verify trails", tx.Commit()); err != nil {
+		return 0, err
+	}
+	return unverifiable, nil
 }
 
 func sourceHeadAt(ctx context.Context, q queryer, source mousa.SourceID, asOf uint64) (mousa.SourceHead, error) {
@@ -320,6 +327,48 @@ func checkTrailReferences(ctx context.Context, q queryer, trail mousa.Trail) err
 		return integrity("read query trail", "supersession effect names an unknown candidate")
 	}
 	return nil
+}
+
+func verifyTrailReferences(ctx context.Context, q queryer, trail mousa.Trail, histories pathHistories) (int64, error) {
+	if err := checkTrailReferences(ctx, q, trail); err != nil {
+		return 0, err
+	}
+	var unverifiable int64
+	for _, candidate := range trail.Candidates {
+		if candidate.Omitted != mousa.MetaPathV1 {
+			continue
+		}
+		segment, err := getSegment(ctx, q, candidate.SegmentID)
+		if err != nil {
+			return 0, lexicalStructuralError("verify meta path omission", err)
+		}
+		paths, err := queryEvidencePaths(ctx, q, segment)
+		if err != nil {
+			return 0, err
+		}
+		source := candidate.SourceIDs[0]
+		item, isItem, err := queryPassageItem(ctx, q, paths, source)
+		if err != nil {
+			return 0, err
+		}
+		path := mousa.DefaultNotePath
+		known := true
+		if isItem {
+			if err := histories.loadSource(ctx, q, source); err != nil {
+				return 0, err
+			}
+			path, known = histories[source][item].pathAtSeq(trail.AsOf)
+		}
+		if !known {
+			unverifiable++
+			continue
+		}
+		if !strings.HasPrefix(path, "_") {
+			return 0, integrity("verify meta path omission",
+				fmt.Sprintf("trail %s segment %s: meta-path-v1 path does not start with _", trail.ID, candidate.SegmentID))
+		}
+	}
+	return unverifiable, nil
 }
 
 func checkTrailLookups(ctx context.Context, q queryer, trail mousa.Trail) error {

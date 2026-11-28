@@ -2,8 +2,11 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/graydeon/mousa/internal/mousa"
@@ -18,12 +21,17 @@ func auditRequest(source mousa.SourceID) mousa.QueryRequest {
 
 func seedAuditItem(t *testing.T, s *Store, name, text string) (mousa.SourceID, mousa.Segment) {
 	t.Helper()
+	return seedAuditItemAtPath(t, s, name, nil, text)
+}
+
+func seedAuditItemAtPath(t *testing.T, s *Store, name string, path *string, text string) (mousa.SourceID, mousa.Segment) {
+	t.Helper()
 	source, repr, normalized := prepareLocalRevision(t, s, name, text)
 	segments, err := mousa.SegmentUTF8Text(repr, normalized)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ActivateLocalItem(t.Context(), source.ID, name, repr.ID, normalized, nil, ""); err != nil {
+	if _, err := s.ActivateLocalItem(t.Context(), source.ID, name, repr.ID, normalized, path, ""); err != nil {
 		t.Fatal(err)
 	}
 	return source.ID, segments[0]
@@ -431,4 +439,246 @@ func TestCollectionOmitsMetaPath(t *testing.T) {
 	if recheck.Released == nil || len(*recheck.Released) != 1 || (*recheck.Released)[0].SegmentID != regular.ID {
 		t.Fatalf("historical released = %+v, want only regular", recheck.Released)
 	}
+}
+
+func TestVerifyMetaPathContradiction(t *testing.T) {
+	s := openLexicalStore(t)
+	defer s.Close()
+	ctx := t.Context()
+	path := "docs/guide"
+	a, _ := seedAuditItemAtPath(t, s, "guide", &path, "harbor evidence")
+	allowSource(t, s, a)
+	if err := s.CreateCollection(ctx, "fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCollectionSource(ctx, "fleet", a, true); err != nil {
+		t.Fatal(err)
+	}
+	req := auditRequest(a)
+	req.Scope = mousa.Scope{Collection: "fleet"}
+	result, err := s.Query(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Trail.Candidates) != 1 {
+		t.Fatalf("candidates = %+v, want one", result.Trail.Candidates)
+	}
+
+	trail := result.Trail
+	trail.Candidates[0].Omitted = mousa.MetaPathV1
+	packing := mousa.ApplyFirstFit(trail.Candidates, trail.Request.Budget.Limit, nil)
+	trail.Packing = &packing
+	forged, err := mousa.NewTrail(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.writeImmediate(ctx, "forge test trail", func(conn *sql.Conn) error { return putTrail(ctx, conn, forged) }); err != nil {
+		t.Fatal(err)
+	}
+
+	assertContradiction := func(name string, err error) {
+		t.Helper()
+		if !IsCode(err, CodeIntegrity) ||
+			!strings.Contains(err.Error(), "meta-path-v1") || !strings.Contains(err.Error(), "does not start with _") {
+			t.Fatalf("%s error = %v, want integrity meta-path contradiction", name, err)
+		}
+	}
+	_, err = s.VerifyTrails(ctx, []mousa.SourceTrailID{forged.ID})
+	assertContradiction("named verify", err)
+	_, err = s.Verify(ctx)
+	assertContradiction("full verify", err)
+	_, err = s.RecheckTrail(ctx, forged.ID)
+	assertContradiction("recheck", err)
+}
+
+func TestVerifyCreationPathProjection(t *testing.T) {
+	s := openLexicalStore(t)
+	defer s.Close()
+	ctx := t.Context()
+	a, _ := seedAuditItem(t, s, "created", "harbor evidence")
+	var record []byte
+	if err := s.db.QueryRowContext(ctx, `SELECT record_json FROM item_changes WHERE source_id = ?`, a[:]).Scan(&record); err != nil {
+		t.Fatal(err)
+	}
+	creation, err := mousa.DecodeItemChange(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creation.Schema != mousa.ItemChangeSchema || creation.CreationPath != "created" {
+		t.Fatalf("default creation record schema/path = %q/%q, want current schema and item ID", creation.Schema, creation.CreationPath)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE local_items SET path = 'tampered' WHERE source_id = ? AND item_id = 'created'`, a[:]); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.VerifyLog(ctx)
+	if !IsCode(err, CodeIntegrity) || !strings.Contains(err.Error(), "path") || !strings.Contains(err.Error(), "log") {
+		t.Fatalf("VerifyLog error = %v, want integrity path/log contradiction", err)
+	}
+}
+
+func TestItemPathAtSeq(t *testing.T) {
+	anchored := itemPathHistory{createdAt: 1, initial: "_x"}
+	if path, known := anchored.pathAtSeq(1); !known || path != "_x" {
+		t.Fatalf("anchored path at creation = %q, %t; want _x, true", path, known)
+	}
+	if path, known := anchored.pathAtSeq(0); !known || path != mousa.DefaultNotePath {
+		t.Fatalf("precreation path = %q, %t; want %q, true", path, known, mousa.DefaultNotePath)
+	}
+
+	source := mousa.SourceID{1}
+	repr := mousa.RepresentationID{2}
+	activation, err := mousa.NewItemChange(source, "legacy", 1, nil, &repr, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	histories := pathHistories{}
+	if err := histories.applyItemChange(activation); err != nil {
+		t.Fatal(err)
+	}
+	for _, move := range []mousa.PathMove{
+		{Actor: "test", Seq: 3, SourceID: source, Records: []mousa.PathMoveEntry{{ItemID: "legacy", OldPath: "_old", NewPath: "middle"}}},
+		{Actor: "test", Seq: 5, SourceID: source, Records: []mousa.PathMoveEntry{{ItemID: "legacy", OldPath: "middle", NewPath: "end"}}},
+	} {
+		if err := histories.applyPathMove(move); err != nil {
+			t.Fatal(err)
+		}
+	}
+	history := histories[source]["legacy"]
+	for _, tt := range []struct {
+		asOf uint64
+		want string
+	}{
+		{2, "_old"},
+		{3, "middle"},
+		{4, "middle"},
+		{5, "end"},
+	} {
+		if path, known := history.pathAtSeq(tt.asOf); !known || path != tt.want {
+			t.Fatalf("legacy path as of %d = %q, %t; want %q, true", tt.asOf, path, known, tt.want)
+		}
+	}
+
+	unanchoredSource := mousa.SourceID{2}
+	unanchoredActivation, err := mousa.NewItemChange(unanchoredSource, "unanchored", 1, nil, &repr, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := histories.applyItemChange(unanchoredActivation); err != nil {
+		t.Fatal(err)
+	}
+	if path, known := histories[unanchoredSource]["unanchored"].pathAtSeq(1); known || path != "" {
+		t.Fatalf("unanchored legacy path = %q, %t; want empty, false", path, known)
+	}
+}
+
+func TestVerifyMetaPathEvidence(t *testing.T) {
+	collectionTrail := func(t *testing.T, s *Store, source mousa.SourceID) mousa.Trail {
+		t.Helper()
+		allowSource(t, s, source)
+		if err := s.CreateCollection(t.Context(), "fleet"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetCollectionSource(t.Context(), "fleet", source, true); err != nil {
+			t.Fatal(err)
+		}
+		req := auditRequest(source)
+		req.Scope = mousa.Scope{Collection: "fleet"}
+		result, err := s.Query(t.Context(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Trail.Candidates) != 1 || result.Trail.Candidates[0].Omitted != mousa.MetaPathV1 {
+			t.Fatalf("collection candidates = %+v, want one meta omission", result.Trail.Candidates)
+		}
+		return result.Trail
+	}
+	assertUnverifiable := func(t *testing.T, s *Store, trail mousa.Trail, want int64) {
+		t.Helper()
+		ctx := t.Context()
+		named, err := s.VerifyTrails(ctx, []mousa.SourceTrailID{trail.ID})
+		if err != nil {
+			t.Fatalf("named verify: %v", err)
+		}
+		if named.UnverifiableMetaPathOmissions != want {
+			t.Fatalf("named unverifiable count = %d, want %d", named.UnverifiableMetaPathOmissions, want)
+		}
+		full, err := s.Verify(ctx)
+		if err != nil {
+			t.Fatalf("full verify: %v", err)
+		}
+		if full.UnverifiableMetaPathOmissions != want {
+			t.Fatalf("full unverifiable count = %d, want %d", full.UnverifiableMetaPathOmissions, want)
+		}
+		recheck, err := s.RecheckTrail(ctx, trail.ID)
+		if err != nil {
+			t.Fatalf("recheck: %v", err)
+		}
+		if recheck.UnverifiableMetaPathOmissions != want {
+			t.Fatalf("recheck unverifiable count = %d, want %d", recheck.UnverifiableMetaPathOmissions, want)
+		}
+		if recheck.Status != "empty" {
+			t.Fatalf("recheck status = %q, want empty for the sole omitted candidate", recheck.Status)
+		}
+	}
+
+	t.Run("logged creation and later move", func(t *testing.T) {
+		s := openLexicalStore(t)
+		defer s.Close()
+		ctx := t.Context()
+		path := "_x"
+		source, _ := seedAuditItemAtPath(t, s, "x", &path, "harbor evidence")
+		trail := collectionTrail(t, s, source)
+		assertUnverifiable(t, s, trail, 0)
+		moved, err := s.SetDocumentPath(ctx, source, "x", "docs/x", "test")
+		if err != nil || !moved {
+			t.Fatalf("move after trail: moved=%t err=%v", moved, err)
+		}
+		assertUnverifiable(t, s, trail, 0)
+	})
+
+	t.Run("legacy creation is unverifiable", func(t *testing.T) {
+		s := openLexicalStore(t)
+		defer s.Close()
+		ctx := t.Context()
+		path := "_legacy"
+		source, _ := seedAuditItemAtPath(t, s, "legacy", &path, "harbor evidence")
+		if err := s.writeImmediate(ctx, "simulate legacy item creation", func(conn *sql.Conn) error {
+			var originalID, original []byte
+			if err := conn.QueryRowContext(ctx, `SELECT id, record_json FROM item_changes WHERE source_id = ?`, source[:]).Scan(&originalID, &original); err != nil {
+				return err
+			}
+			change, err := mousa.DecodeItemChange(original)
+			if err != nil {
+				return err
+			}
+			legacy, err := mousa.NewItemChange(change.SourceID, change.ItemID, change.Seq, change.Previous, change.Current, change.ActivatedAtUsec, "")
+			if err != nil {
+				return err
+			}
+			if legacy.Schema != mousa.ItemChangeSchemaV2 {
+				return fmt.Errorf("legacy simulation schema = %q, want v2", legacy.Schema)
+			}
+			data, err := mousa.EncodeItemChange(legacy)
+			if err != nil {
+				return err
+			}
+			leaf := mousa.LogLeafHash(data)
+			result, err := conn.ExecContext(ctx, `UPDATE item_changes SET id = ?, record_json = ? WHERE id = ?`, legacy.ID[:], data, originalID)
+			if err != nil {
+				return err
+			}
+			if err := oneRow(result); err != nil {
+				return err
+			}
+			result, err = conn.ExecContext(ctx, `UPDATE log SET record_id = ?, leaf_hash = ? WHERE kind = 'item_change' AND record_id = ?`, legacy.ID[:], leaf[:], originalID)
+			if err != nil {
+				return err
+			}
+			return oneRow(result)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		trail := collectionTrail(t, s, source)
+		assertUnverifiable(t, s, trail, 1)
+	})
 }

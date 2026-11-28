@@ -248,7 +248,11 @@ func (store *Store) ActivateLocalItem(ctx context.Context, sourceID mousa.Source
 		if previous.Active {
 			prior = &previous.RepresentationID
 		}
-		return appendItemChange(ctx, conn, sourceID, itemID, prior, &representationID)
+		var creationPath string
+		if action == "added" {
+			creationPath = initial
+		}
+		return appendItemChange(ctx, conn, sourceID, itemID, prior, &representationID, creationPath)
 	})
 	if err != nil {
 		return "", err
@@ -284,7 +288,7 @@ func (store *Store) DeleteLocalItem(ctx context.Context, sourceID mousa.SourceID
 			return classify("deactivate local item", err)
 		}
 		action = "deleted"
-		return appendItemChange(ctx, conn, sourceID, itemID, &item.RepresentationID, nil)
+		return appendItemChange(ctx, conn, sourceID, itemID, &item.RepresentationID, nil, "")
 	})
 	if err != nil {
 		return "", err

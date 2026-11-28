@@ -10,11 +10,12 @@ import (
 )
 
 type RecheckResult struct {
-	ID       mousa.SHA256        `json:"id"`
-	AsOf     uint64              `json:"as_of,omitempty"`
-	Status   string              `json:"status"`
-	Stale    []NoteStale         `json:"stale"`
-	Released *[]RecheckedSegment `json:"released,omitempty"`
+	ID                            mousa.SHA256        `json:"id"`
+	AsOf                          uint64              `json:"as_of,omitempty"`
+	Status                        string              `json:"status"`
+	Stale                         []NoteStale         `json:"stale"`
+	Released                      *[]RecheckedSegment `json:"released,omitempty"`
+	UnverifiableMetaPathOmissions int64               `json:"unverifiable_meta_path_omissions,omitzero"`
 }
 
 // RecheckedSegment is one released passage's current text availability:
@@ -91,9 +92,12 @@ func (store *Store) recheckTrail(ctx context.Context, id mousa.SourceTrailID, gr
 				return "", nil, err
 			}
 		}
-		if err := checkTrailReferences(ctx, q, trail); err != nil {
+		histories := pathHistories{}
+		unverifiable, err := verifyTrailReferences(ctx, q, trail, histories)
+		if err != nil {
 			return "", nil, err
 		}
+		result.UnverifiableMetaPathOmissions = unverifiable
 		var segments []mousa.SegmentID
 		for _, candidate := range trail.Candidates {
 			if candidate.Packed != "none" {

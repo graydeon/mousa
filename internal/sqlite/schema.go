@@ -172,14 +172,14 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 }
 
 // verifyStore checks a store whose identity checkStoreIdentity accepted.
-func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool) error {
+func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool) (int64, error) {
 	objects, err := schemaObjects(ctx, db)
 	if err != nil {
-		return startupError("verify database", err)
+		return 0, startupError("verify database", err)
 	}
 	scopes, err := lexicalScopes(ctx, db, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	expected := slices.Clone(requiredObjects)
 	for _, scope := range scopes {
@@ -188,65 +188,70 @@ func verifyStore(ctx context.Context, db *sql.DB, requireWAL bool, readOnly bool
 		}
 	}
 	if !equalStringSets(objects, expected) {
-		return integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, expected))
+		return 0, integrity("verify database", fmt.Sprintf("schema objects are %v, want %v", objects, expected))
 	}
 
 	var quickCheck string
 	if err := db.QueryRowContext(ctx, `PRAGMA quick_check`).Scan(&quickCheck); err != nil {
-		return startupError("quick check", err)
+		return 0, startupError("quick check", err)
 	}
 	if quickCheck != "ok" {
-		return integrity("quick check", quickCheck)
+		return 0, integrity("quick check", quickCheck)
 	}
 	foreignRows, err := db.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	if err != nil {
-		return startupError("foreign key check", err)
+		return 0, startupError("foreign key check", err)
 	}
 	if foreignRows.Next() {
 		foreignRows.Close()
-		return integrity("foreign key check", "foreign-key violation")
+		return 0, integrity("foreign key check", "foreign-key violation")
 	}
 	if err := foreignRows.Err(); err != nil {
-		return startupError("foreign key check", err)
+		return 0, startupError("foreign key check", err)
 	}
 	if err := foreignRows.Close(); err != nil {
-		return startupError("foreign key check", err)
+		return 0, startupError("foreign key check", err)
 	}
 	if err := verifyPragmas(ctx, db, requireWAL); err != nil {
-		return err
+		return 0, err
 	}
 	if err := verifyCanonicalRecords(ctx, db); err != nil {
-		return err
+		return 0, err
 	}
 	if err := verifyIngestRecords(ctx, db); err != nil {
-		return err
+		return 0, err
 	}
-	if _, err := verifyLog(ctx, db); err != nil {
-		return err
+	histories := pathHistories{}
+	if _, err := verifyLog(ctx, db, histories); err != nil {
+		return 0, err
 	}
 	if err := verifyLexicalRecords(ctx, db); err != nil {
-		return err
+		return 0, err
 	}
 	if err := verifyScopedLexical(ctx, db, scopes, readOnly); err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := readCollections(ctx, db, ""); err != nil {
-		return err
+		return 0, err
 	}
 	// The FTS5 integrity-check command is an INSERT, so it needs a writable
 	// connection; read-only verification keeps the content-level checks above.
 	if !readOnly {
 		if err := checkLexicalIndexIntegrity(ctx, db); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	if err := verifyQueryTrails(ctx, db); err != nil {
-		return err
+	unverifiable, err := verifyQueryTrails(ctx, db, histories)
+	if err != nil {
+		return 0, err
 	}
 	if err := verifySegmentHistory(ctx, db); err != nil {
-		return err
+		return 0, err
 	}
-	return verifyLocalItemRecords(ctx, db)
+	if err := verifyLocalItemRecords(ctx, db); err != nil {
+		return 0, err
+	}
+	return unverifiable, nil
 }
 
 func schemaObjects(ctx context.Context, db *sql.DB) ([]string, error) {

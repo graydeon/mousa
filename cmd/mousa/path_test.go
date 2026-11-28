@@ -53,6 +53,20 @@ func noteIDOf(t *testing.T, emitted map[string]any) string {
 	return id
 }
 
+func creationPathCount(t *testing.T, store, path string) int {
+	t.Helper()
+	db := openRawStore(t, store)
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM item_changes c
+		JOIN log l ON l.kind = 'item_change' AND l.record_id = c.id
+		JOIN notes n ON n.source_id = c.source_id AND n.item_id = json_extract(CAST(c.record_json AS TEXT), '$.item_id')
+		WHERE json_extract(CAST(c.record_json AS TEXT), '$.schema') = 'mousa.item_change.v3'
+		AND json_extract(CAST(c.record_json AS TEXT), '$.creation_path') = ?`, path).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
 func TestPathRoundTrip(t *testing.T) {
 	run, _ := setup(t)
 	run.run(false, "access", "--source", "docs", "--create", "allow")
@@ -70,6 +84,12 @@ func TestPathRoundTrip(t *testing.T) {
 	}
 	if path, _ := pathOfQuery(t, run, "notes", "placed fixture note"); path != "work/notes" {
 		t.Fatalf("placed note path = %q, want work/notes", path)
+	}
+	if got := creationPathCount(t, run.store, "unsorted"); got != 1 {
+		t.Fatalf("unsorted note creation records = %d, want 1", got)
+	}
+	if got := creationPathCount(t, run.store, "work/notes"); got != 1 {
+		t.Fatalf("placed note creation records = %d, want 1", got)
 	}
 
 	// A JSONL record path locates a new item; replay without it keeps it.

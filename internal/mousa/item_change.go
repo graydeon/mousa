@@ -7,13 +7,15 @@ import (
 )
 
 const ItemChangeSchemaV1 = "mousa.item_change.v1"
-const ItemChangeSchema = "mousa.item_change.v2"
+const ItemChangeSchemaV2 = "mousa.item_change.v2"
+const ItemChangeSchema = "mousa.item_change.v3"
 const LogKindItemChange = "item_change"
 
 // ItemChange records an atomic change to the searchable revision of an item.
 // The log index distinguishes two separate activations of the same revision.
 type ItemChange struct {
 	ActivatedAtUsec int64             `json:"activated_at_usec,omitzero"`
+	CreationPath    string            `json:"creation_path,omitempty"`
 	Current         *RepresentationID `json:"current,omitempty"`
 	ID              SHA256            `json:"id,omitzero"`
 	ItemID          string            `json:"item_id"`
@@ -23,8 +25,12 @@ type ItemChange struct {
 	SourceID        SourceID          `json:"source_id"`
 }
 
-func NewItemChange(source SourceID, item string, seq uint64, previous, current *RepresentationID, activatedAtUsec int64) (ItemChange, error) {
-	change := ItemChange{SourceID: source, ItemID: item, Seq: seq, Schema: ItemChangeSchema, Previous: previous, Current: current, ActivatedAtUsec: activatedAtUsec}
+func NewItemChange(source SourceID, item string, seq uint64, previous, current *RepresentationID, activatedAtUsec int64, creationPath string) (ItemChange, error) {
+	schema := ItemChangeSchemaV2
+	if creationPath != "" {
+		schema = ItemChangeSchema
+	}
+	change := ItemChange{SourceID: source, ItemID: item, Seq: seq, Schema: schema, Previous: previous, Current: current, ActivatedAtUsec: activatedAtUsec, CreationPath: creationPath}
 	if err := change.validate(); err != nil {
 		return ItemChange{}, err
 	}
@@ -53,9 +59,19 @@ func (change ItemChange) validate() error {
 		if change.ActivatedAtUsec != 0 {
 			return errors.New("legacy item change has an activation time")
 		}
-	case ItemChangeSchema:
+		if change.CreationPath != "" {
+			return errors.New("legacy item change has a creation path")
+		}
+	case ItemChangeSchemaV2, ItemChangeSchema:
 		if change.ActivatedAtUsec < 0 || change.ActivatedAtUsec > maxJSONSafeInteger || (change.ActivatedAtUsec != 0) != (current != nil) {
 			return errors.New("invalid item activation time")
+		}
+		if change.Schema == ItemChangeSchemaV2 && change.CreationPath != "" {
+			return errors.New("version 2 item change has a creation path")
+		}
+		if change.Schema == ItemChangeSchema && (previous != nil || current == nil || change.CreationPath == "" ||
+			(!ValidPath(change.CreationPath) && change.CreationPath != change.ItemID)) {
+			return errors.New("invalid item creation path")
 		}
 	default:
 		return errors.New("unknown item change schema")

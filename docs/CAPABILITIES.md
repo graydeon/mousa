@@ -375,6 +375,13 @@ In a `--full` CLI result or HTTP query reply, each selected passage includes:
 Passage coordinates are measured in normalized bytes. Trails do not contain
 passage text.
 
+The log records the initial path of each new item in its version 3 item change.
+Later moves are logged. For older items, the first logged move provides the
+initial path. If neither record exists, that item's historical path is unknown.
+Trail verification and recheck reject contradicted collection meta-path
+omissions and report unresolved omissions as `unverifiable_meta_path_omissions`
+when nonzero.
+
 To locate a passage from original source bytes, first validate UTF-8, remove one
 initial UTF-8 BOM (`EF BB BF`), then replace CRLF with LF and remaining CR with LF.
 No Unicode normalization or whitespace trimming is performed. For JSONL, the
